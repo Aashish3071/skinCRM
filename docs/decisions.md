@@ -40,11 +40,7 @@ request also types the form that produced it. Chosen over Python/FastAPI because
 the shared-contract benefit outweighs Python's edge in reporting work, and the
 reporting here is SQL aggregation rather than data science.
 
-**D-05. NestJS for the API rather than bare Fastify.**
-The dominant complexity is authorization and tenancy, not routing. Nest's guards
-and interceptors give one place to attach the capability check and the
-`withTenant` transaction, which is exactly the cross-cutting concern that gets
-forgotten when written per-route.
+**D-05. ~~NestJS for the API.~~ Superseded by D-24.**
 
 **D-06. Drizzle rather than Prisma.**
 Raw SQL is needed for exclusion constraints, `set_config`, RLS policies and
@@ -160,3 +156,58 @@ CI.
 **D-23. Database tests run against the real Postgres, not a mock or SQLite.**
 RLS, exclusion constraints, `set_config` and partial unique indexes are the
 things most worth testing, and none of them exist in a substitute engine.
+
+---
+
+## API framework
+
+**D-24. Fastify for the API, replacing the planned NestJS (supersedes D-05).**
+NestJS resolves providers from `emitDecoratorMetadata`, which esbuild does not
+emit — and esbuild is what tsx, Vitest and tsup all use here. Keeping NestJS would
+have meant either SWC plugins throughout the toolchain or `@Inject()` on every
+constructor parameter, and its tsc-based build does not handle workspace packages
+that ship TypeScript source (D-08).
+
+The reason NestJS was chosen in the first place — one place to attach the
+capability check and the tenant transaction — is met by the `registerRoute` helper
+in `apps/api/src/route.ts`. Routes declare `auth` and their schemas and receive a
+tenant-scoped transaction; there is no way to register a route that skips either,
+because `getTx()` only resolves inside the transaction the helper opens. That is a
+stronger guarantee than a guard an author can forget to annotate.
+*Would change if:* the API grows to need Nest's module ecosystem more than it
+needs a fast, dependency-light toolchain.
+
+**D-25. Credential rate limiting is per IP; per-account protection is the login
+lockout.**
+The first implementation keyed the rate-limit bucket on IP *and* the submitted
+email. It silently did nothing: `@fastify/rate-limit` runs in `onRequest`, before
+the body is parsed, so `request.body` is undefined and every login collapsed into
+one per-IP bucket — which also made the limit far too tight for a clinic behind a
+single NAT. Rather than move rate limiting to `preHandler` purely to read an
+email, the two concerns are now separated: a coarse per-IP cap (30 per 5 minutes)
+stops one host spraying many addresses, and the per-account lockout (5 failures,
+15 minutes) stops a targeted attack from anywhere. Both are tested.
+
+**D-26. A foreign record returns 404, not 403.**
+RLS hides the row, so the lookup misses and the natural answer is "not found".
+Kept deliberately rather than distinguishing the two: replying 403 would confirm
+that a record exists, which is itself a disclosure across a tenant boundary.
+
+**D-27. One database transaction per request.**
+Gives atomicity and RLS in the same mechanism. The cost is that a slow handler
+holds a pooled connection, so long-running work (CSV import, backfill,
+reconciliation) belongs in a worker job that opens its own `withTenant` per unit
+of work rather than on the request path.
+
+**D-28. Sessions are resolved unscoped, then everything else is scoped.**
+A session cookie cannot be looked up inside a tenant transaction because the
+clinic is unknown until the row is read. That lookup, the login email lookup and
+single-use token redemption are the only three `withoutTenantScope` callers, and
+each passes a written reason so review can grep for them.
+
+**D-29. Email is unique per clinic, not globally.**
+The same person may work at two clinics on the platform. Login handles the
+ambiguity by verifying the password against every match and, if more than one
+matches, returning `clinic_selection_required` with the clinic names — disclosed
+only after the password is proven, so it tells an attacker nothing they did not
+already have.

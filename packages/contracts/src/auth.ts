@@ -24,6 +24,14 @@ export const loginRequestSchema = z.object({
     .string()
     .regex(/^\d{6}$/, "Enter the 6-digit code")
     .optional(),
+  /**
+   * Which clinic to sign in to. Email is unique per clinic rather than globally,
+   * so the same address can belong to staff at two clinics on the platform. It is
+   * only needed after the server has replied `clinic_selection_required`.
+   */
+  clinicId: uuidSchema.optional(),
+  /** One-time MFA recovery code, as an alternative to `totpCode`. */
+  recoveryCode: z.string().min(8).max(32).optional(),
 });
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 
@@ -51,6 +59,15 @@ export const loginResponseSchema = z.discriminatedUnion("result", [
   z.object({ result: z.literal("authenticated"), user: sessionUserSchema }),
   /** Credentials were right but a TOTP code is still needed. */
   z.object({ result: z.literal("mfa_required") }),
+  /**
+   * The password matched staff accounts at more than one clinic. Only returned
+   * after the password is verified, so it discloses nothing to an attacker who
+   * does not already hold the credentials.
+   */
+  z.object({
+    result: z.literal("clinic_selection_required"),
+    clinics: z.array(z.object({ id: uuidSchema, name: z.string() })),
+  }),
 ]);
 export type LoginResponse = z.infer<typeof loginResponseSchema>;
 

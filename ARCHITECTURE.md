@@ -15,7 +15,7 @@ for the current resume point.
                     └──────┬───────┘
                            │ typed fetch, session cookie
                     ┌──────▼───────┐
-  ad platforms ────▶│  apps/api    │  NestJS. REST + webhook receivers.
+  ad platforms ────▶│  apps/api    │  Fastify. REST + webhook receivers.
   WhatsApp     ────▶│  (port 4000) │  Verifies, persists, acknowledges, enqueues.
                     └──┬────────┬──┘
                        │        │ BullMQ
@@ -40,7 +40,7 @@ rest.
 | `@skincrm/security` | Argon2id passwords, opaque token hashing, per-clinic envelope encryption, TOTP, idempotency keys | config |
 | `@skincrm/db` | Drizzle schema, migrations, RLS policies, tenant-scoped query helpers, seed | config, contracts, security |
 | `@skincrm/connectors` | Adapter interfaces plus `mock` and `live` implementations for email, WhatsApp, Meta, Google, calendar | config, contracts |
-| `apps/api` | HTTP surface, auth, guards, webhooks, audit | all packages |
+| `apps/api` | HTTP surface, auth, capability checks, webhooks, audit | all packages |
 | `apps/worker` | Queue processors | all packages |
 | `apps/web` | UI | config, contracts |
 
@@ -288,6 +288,54 @@ KMS; `CRYPTO_PROVIDER=local` is refused at boot.
 
 ---
 
+## 8a. The API route contract
+
+Routes are **never** registered on Fastify directly. They go through
+`registerRoute` in `apps/api/src/route.ts`, which is the one place every
+cross-cutting concern attaches:
+
+```ts
+registerRoute(app, {
+  method: "GET",
+  url: "/leads/:id",
+  auth: { capability: "leads:read" },   // or `auth: false` for public routes
+  params: z.object({ id: uuidSchema }),
+  handler: async ({ params }) => {
+    const tx = getTx();               // tenant-scoped transaction, always present
+    // ...
+  },
+});
+```
+
+In order, per request, it:
+
+1. Creates a correlation id and the `AsyncLocalStorage` request context.
+2. Validates body, query and params against the Zod schemas, before any auth work.
+3. Resolves the session cookie, clearing a cookie that no longer resolves.
+4. Checks the declared capability against the caller's resolved set.
+5. Opens `withTenant(clinicId, …, { actorUserId })` and puts the transaction in
+   the context.
+6. Runs the handler, serializes the result, logs one structured line.
+
+**Why a helper instead of middleware:** there is no way to write a handler that
+touches tenant data outside a tenant transaction. `getTx()` only resolves inside
+one and throws otherwise, and services have no other handle to reach for. A new
+endpoint cannot silently skip tenancy or authorization.
+
+Consequences to know about:
+
+- **One transaction per request.** This gives atomicity and RLS together, but a
+  slow handler holds a connection. Long-running work (CSV import, backfill) must
+  not use this path; it belongs in a worker job that opens its own `withTenant`
+  per unit of work.
+- **404, not 403, for another tenant's record.** RLS hides the row, so the lookup
+  simply misses. That is deliberate: confirming a record exists but is off-limits
+  is itself a disclosure.
+- **Rate limiting runs in `onRequest`,** before the body is parsed, so a
+  rate-limit `keyGenerator` cannot read the request body. Credential endpoints are
+  therefore capped per IP, and per-account protection comes from the login
+  lockout instead. See decision D-25.
+
 ## 9. Conventions
 
 - **Errors** use one envelope: `{ error: { code, message, details?, correlationId? } }`.
@@ -315,8 +363,9 @@ KMS; `CRYPTO_PROVIDER=local` is refused at boot.
 | Security primitives — passwords, tokens, encryption, TOTP | ✅ Built |
 | RBAC capability matrix and field masking | ✅ Built |
 | Seed data, two clinics | ✅ Built |
-| `apps/api` — NestJS bootstrap, guards, audit service | 🔜 Next |
-| Auth routes `[ID-01]` | 🔜 Next |
+| `apps/api` — Fastify bootstrap, route contract, audit service, logging | ✅ Built |
+| Auth routes, MFA, lockout, sessions `[ID-01]` | ✅ Built, 34 tests |
+| User administration and branch assignment | ✅ Built |
 | `apps/web` — shell and sign-in | 🔜 Next |
 | People, General Notes `[ID-02, ID-08]` | ⬜ Phase 2 |
 | Leads, pipeline, tasks `[LEAD-01…06]` | ⬜ Phase 2 |

@@ -1,8 +1,8 @@
 # Handoff — resume point
 
 **Updated:** 2026-09-26
-**Phase:** 1 of 9 (Foundation) — data layer complete, API not started
-**Overall:** ~8% of the build
+**Phase:** 1 of 9 (Foundation) — data layer and API complete, web app not started
+**Overall:** ~15% of the build
 
 Read [README.md](../README.md) to run it and [ARCHITECTURE.md](../ARCHITECTURE.md)
 for the rules that must not be broken. This file says only what to do next.
@@ -18,115 +18,133 @@ cp .env.example .env          # skip if .env already exists
 docker compose up -d
 pnpm db:migrate
 pnpm db:seed
-pnpm --filter @skincrm/db test   # expect 12 passing
+pnpm typecheck                # 5 packages, clean
+pnpm test                     # expect 70 passing
 ```
 
-If those 12 tests pass, the foundation is intact and you can build on it.
+If those 70 tests pass, the foundation is intact and you can build on it.
+
+To drive the API by hand:
+
+```bash
+pnpm --filter @skincrm/api dev
+```
+
+```bash
+curl -s -c /tmp/c.txt -X POST http://localhost:4000/auth/login -H 'content-type: application/json' -d '{"email":"admin@sunshine-skin.test","password":"ChangeMe-Dev-2026!"}'
+```
 
 ---
 
 ## What is finished and verified
 
-- Monorepo: pnpm workspaces + Turborepo. Packages `config`, `contracts`, `db`,
-  `security`.
-- `docker-compose.yml`: Postgres 16 (port **5433**), Redis 7 (port **6380**),
-  Mailpit (8025).
-- `packages/config` — environment parsed and validated once, with a production
-  gate that refuses dev placeholders, a local crypto provider, or a missing
+### Packages
+
+- **`config`** — environment parsed and validated once, with a production gate
+  that refuses dev placeholders, a local crypto provider, or a missing
   `DATABASE_APP_URL`.
-- `packages/contracts` — all domain enums, the RBAC capability matrix with
-  per-role field masking, phone/email normalization and masking, shared
-  primitives, and auth request/response schemas.
-- `packages/security` — Argon2id with transparent rehash and timing-equalized
-  failure, SHA-256 opaque token handling, per-clinic AES-256-GCM envelope
-  encryption with the clinic id as AAD, TOTP with replay rejection, recovery
-  codes, and the outbound idempotency-key builder.
-- `packages/db` — Drizzle schema for `clinics`, `branches`, `users`,
-  `user_branches`, `sessions`, `auth_tokens`, `mfa_recovery_codes`,
-  `pipeline_stages`, `audit_events`. Migration `drizzle/0000_tidy_network.sql`
-  applied. RLS policies in `sql/900_rls.sql`, re-applied on every migrate.
-- **12 RLS isolation tests passing.** This is the load-bearing test suite.
-- Idempotent seed: two clinics (Sunshine Skin & Laser, plus Northside
-  Dermatology as the isolation control), 11 pipeline stages each, 7 users.
+- **`contracts`** — all domain enums (the source of truth for the Postgres
+  enums), the RBAC capability matrix with per-role field masking, phone/email
+  normalization and masking, shared primitives, auth request/response schemas.
+- **`security`** — Argon2id with transparent rehash and timing-equalized failure,
+  SHA-256 opaque token handling, per-clinic AES-256-GCM envelope encryption with
+  the clinic id as AAD, TOTP with replay rejection, recovery codes, the outbound
+  idempotency-key builder. **24 unit tests.**
+- **`db`** — Drizzle schema for `clinics`, `branches`, `users`, `user_branches`,
+  `sessions`, `auth_tokens`, `mfa_recovery_codes`, `pipeline_stages`,
+  `audit_events`. Migration `drizzle/0000_tidy_network.sql` applied. RLS policies
+  in `sql/900_rls.sql`, re-applied on every migrate. **12 isolation tests** — the
+  load-bearing suite. Idempotent seed: two clinics, 11 stages each, 7 users.
+
+### `apps/api` (Fastify)
+
+- `src/route.ts` — the route contract. Correlation id, request context, Zod
+  validation, session resolution, capability check, tenant transaction and
+  request logging, all in one place. **Read ARCHITECTURE.md section 8a before
+  adding an endpoint.**
+- `src/context.ts` — `AsyncLocalStorage` request context. `getTx()` is the only
+  way to reach the database inside a request.
+- `src/errors.ts` — one error envelope, `{ error: { code, message, details?,
+  correlationId } }`. No stack traces or driver messages reach the client.
+- `src/logger.ts` — pino with a redaction list, plus `redactForAudit`.
+- `src/audit.ts` — `recordAudit` writes inside the caller's transaction so an
+  audited change and its audit row commit together. `diffSummary` records which
+  fields changed without duplicating their values.
+- `src/auth/` — sessions (opaque token stored as a hash, sliding idle expiry,
+  epoch-based mass revocation) and the full auth service.
+- `src/users/` — invite, list, update, archive, branch assignment.
+
+Routes live today:
+
+| Route | Notes |
+|---|---|
+| `GET /health`, `GET /health/ready` | Ready means the database answered |
+| `POST /auth/login` | MFA challenge, recovery codes, clinic selection, lockout |
+| `POST /auth/logout` | Public by design so a dead session can still clear its cookie |
+| `GET /auth/session` | Returns `SessionUser` |
+| `POST /auth/password-reset` + `/confirm` | Identical response whether or not the address exists |
+| `POST /auth/change-password` | Revokes all sessions |
+| `POST /auth/mfa/enroll` / `confirm` / `disable` | Admins cannot remove their own second factor |
+| `POST /auth/accept-invite` | |
+| `GET /users`, `POST /users`, `PATCH /users/:id`, `DELETE /users/:id` | Admin only |
+| `GET /branches` | |
+
+**34 API integration tests**, covering the permission half of PRD UAT scenario 9,
+cross-tenant attempts over real HTTP, lockout isolation, MFA end to end, and the
+audit trail containing no personal data.
 
 Nothing is half-finished. There are no known failing tests and no temporary
-workarounds in place.
+workarounds, apart from the two `TODO(phase 4)` markers noted below.
 
 ---
 
 ## Do this next, in order
 
-### 1. `apps/api` — NestJS skeleton
+### 1. `apps/web` — Next.js shell
 
-New app at `apps/api`. Run with `tsx watch` in dev; build with `tsup`.
+New app at `apps/web`. `transpilePackages: ["@skincrm/contracts", "@skincrm/config"]`
+because those packages ship TypeScript source.
 
-Build these in this order, because each depends on the one before:
+1. **Typed API client** that forwards the session cookie (`credentials:
+   "include"`), sends `x-correlation-id`, and narrows errors to the shared
+   envelope. Import request/response types from `@skincrm/contracts` — do not
+   restate shapes.
+2. **Sign-in page** handling all three `LoginResponse` branches:
+   `authenticated`, `mfa_required` (show a code field, accept a recovery code
+   too), and `clinic_selection_required` (let the user pick, resubmit with
+   `clinicId`).
+3. **Authenticated layout** with the nine sections from PRD section 6: Home,
+   Inbox, Leads, Lead detail, People, Calendar, Automations, Reports, Settings.
+   Render navigation from `session.capabilities` so a marketing analyst never
+   sees a People link. The API already enforces this; the UI should match it.
+4. **Settings → Staff** against the existing `/users` routes, so phase 1 has a
+   visible surface end to end.
+5. Keyboard-usable forms and labelled controls from the start. WCAG 2.2 AA is a
+   release gate (PRD 9), not a later pass.
 
-1. **Bootstrap** — Nest app, `API_PORT` from `@skincrm/config`, `helmet`, CORS
-   restricted to `WEB_PORT`, cookie parsing, graceful shutdown that closes the
-   DB pool via `closeAllConnections()`.
-2. **Request context** — an `AsyncLocalStorage` store holding
-   `{ correlationId, clinicId, userId, role, capabilities }`. Generate a
-   correlation id per request and return it on every error.
-3. **`ZodValidationPipe`** — validate body/query/params against a schema from
-   `@skincrm/contracts`. On failure emit the shared error envelope from
-   `apiErrorSchema` with `details` keyed by dotted path.
-4. **Global exception filter** — map to `{ error: { code, message, details?,
-   correlationId } }`. Never leak a stack trace or a driver message to the client.
-5. **`SessionGuard`** — read the session cookie, hash it, look the session up,
-   check `expiresAt`, `revokedAt` and that `sessions.session_epoch` still matches
-   `users.session_epoch`. Refresh `lastSeenAt`. Populate the request context.
-6. **`@RequireCapability(...)` decorator + `CapabilityGuard`** — resolve the
-   caller's role through `capabilitiesForRole()` plus
-   `users.grantedCapabilities`, and 403 when the capability is missing.
-7. **`TenantInterceptor`** — wrap the handler in `withTenant(clinicId, ...,
-   { actorUserId })` and expose the transaction handle to services. Every
-   tenant-scoped query must run through it. Do not let a service reach for
-   `getDb()` directly.
-8. **`AuditService`** — one `record()` call writing to `audit_events` with actor,
-   action, entity, redacted summary, ip, user agent and correlation id. It must
-   **refuse** to store note bodies, message bodies or full contact details; write
-   a unit test that proves a redaction helper strips them.
+### 2. Phase 2 — People and General Notes `[ID-02, ID-08]`
 
-### 2. Auth routes `[ID-01]`
+- `people`: `phone_e164` plus the original string, normalized email, preferred
+  contact method, communication preferences. Use `normalizePhone` from
+  `@skincrm/contracts` — do not write another parser.
+- `general_notes`: belongs to the **person**, not the lead, so it stays visible
+  across every lead for that person. Pinnable, archivable, fully audited.
+  **Never** exported to an ad platform, inserted into an automated message, or
+  logged.
+- Duplicate detection on normalized phone and email, with a review queue and a
+  reversible merge that preserves all submissions, notes, tasks and appointments.
 
-Contracts already exist in `packages/contracts/src/auth.ts` — use them, do not
-invent new shapes.
+### 3. Phase 2 — Leads, pipeline, tasks `[LEAD-01…06]`
 
-| Route | Notes |
-|---|---|
-| `POST /auth/login` | Cross-tenant email lookup via `withoutTenantScope("login lookup by email", ...)`. Verify Argon2, rehash if `needsRehash`. If `mfaEnabledAt` is set and no `totpCode`, return `{ result: "mfa_required" }`. On unknown email call `burnPasswordVerification()` so timing does not reveal existence. Increment `failedLoginCount`, set `lockedUntil` after 5 failures. Audit `login_success` / `login_failure`. |
-| `POST /auth/logout` | Set `revokedAt`. Clear the cookie. |
-| `GET /auth/session` | Return `SessionUser`. |
-| `POST /auth/password-reset` | Always return 200 regardless of whether the email exists. Create an `auth_tokens` row with purpose `password_reset`, 1-hour expiry. |
-| `POST /auth/password-reset/confirm` | Single-use token, bump `session_epoch`. |
-| `POST /auth/change-password` | Verify current password, bump `session_epoch`. |
-| `POST /auth/mfa/enroll` | `createTotpEnrollment()`, store the secret encrypted with `encryptForClinic`. |
-| `POST /auth/mfa/confirm` | Verify the code, set `mfaEnabledAt`, return hashed recovery codes once. |
-| `POST /users` / `POST /auth/accept-invite` | Invite with `auth_tokens` purpose `invite`; accept sets name, password and `status: active`. |
+`leads`, `lead_stage_events`, `activities`, `tasks`, assignment rules, the
+unassigned queue. `pipeline_stages` already exists and is seeded.
 
-Cookie: `HttpOnly`, `SameSite=Lax`, `Secure` when not development, 30-day
-absolute expiry with a sliding idle timeout.
+### 4. Phase 2 — Intake `[ID-03…05]`
 
-Add a rate limit on `/auth/login` and `/auth/password-reset`, keyed by IP and
-email.
-
-**Add a test that a marketing analyst receives 403 from any people or leads
-route.** It will be the template for the permission suite in PRD UAT scenario 9.
-
-### 3. `apps/web` — shell
-
-Next.js App Router, `transpilePackages: ["@skincrm/contracts", "@skincrm/config"]`.
-Sign-in page, authenticated layout with the nine sections from PRD section 6, a
-typed fetch client that forwards the session cookie, and role-aware navigation
-that hides what the user has no capability for. Keyboard-usable forms and labelled
-controls from the start — WCAG 2.2 AA is a release gate, not a later pass.
-
-### 4. Then phase 2
-
-Start with `people` and `general_notes` `[ID-02, ID-08]`. Remember: a new tenant
-table must be added to the `tenant_tables` array in
-`packages/db/sql/900_rls.sql`, and the RLS suite extended to cover it.
+Walk-in form, CSV import with preview and field mapping, website lead endpoint.
+`source_submissions` with its unique `(platform, external_id)` index is the
+idempotency backbone for phase 7 — build it now, even though the ad adapters come
+later.
 
 ---
 
@@ -134,20 +152,40 @@ table must be added to the `tenant_tables` array in
 
 1. **A new tenant table not listed in `packages/db/sql/900_rls.sql` has no RLS
    policy.** It will work perfectly in development and leak across clinics in
-   production. This is the easiest way to cause a breach here.
-2. **Do not add `.js` extensions to relative imports.** See decision D-08.
-3. **Do not call `getOwnerDb()` or `getDb()` from request-handling code.** Use the
-   transaction from `TenantInterceptor`, or `withoutTenantScope(reason, fn)` when
-   the work is genuinely cross-tenant.
-4. **Never hand-edit `packages/db/drizzle/*.sql`.** Edit the schema, then
+   production. This is the easiest way to cause a breach here. Add the table
+   name to the `tenant_tables` array and extend the isolation suite.
+2. **Do not add `.js` extensions to relative imports.** Decision D-08.
+3. **Do not call `getDb()` or `getOwnerDb()` from request-handling code.** Use
+   `getTx()`. For genuinely cross-tenant work use
+   `withoutTenantScope(reason, fn)` — there are only three legitimate callers
+   today (decision D-28).
+4. **Register routes through `registerRoute`,** never `app.route` directly, or
+   you lose tenancy, authorization and validation at once.
+5. **Never hand-edit `packages/db/drizzle/*.sql`.** Edit the schema, then
    `pnpm db:generate`.
-5. **Leave the safety switches off.** `OUTBOUND_SENDING_ENABLED` and
+6. **Leave the safety switches off.** `OUTBOUND_SENDING_ENABLED` and
    `CONVERSION_FEEDBACK_ENABLED` stay `false`; mock connectors are how the app is
    demoed.
-6. **Do not delete the Northside Dermatology seed clinic.** It is the isolation
-   control tenant.
-7. **Adding an enum value** means editing `packages/contracts/src/enums.ts` and
+7. **Do not delete the Northside Dermatology seed clinic.** It is the isolation
+   control tenant, and tests assert against it.
+8. **Adding an enum value** means editing `packages/contracts/src/enums.ts` and
    running `pnpm db:generate` — the Postgres enum is derived from it.
+9. **Tests share the seeded database.** They reset the state they touch
+   (`resetAuthState` in `apps/api/src/__tests__/helpers.ts`). Keep that habit, or
+   run `pnpm db:reset` if a suite leaves things dirty.
+
+---
+
+## Known gaps and deferred items
+
+| Item | Where | When |
+|---|---|---|
+| Password-reset and invite emails are logged to the console, not sent | `TODO(phase 4)` in `apps/api/src/auth/routes.ts` and `users/routes.ts` | Phase 4, with the email connector |
+| `pruneExpiredSessions()` is written but nothing calls it | `apps/api/src/auth/sessions.ts` | Phase 4, as a scheduled worker job |
+| No lint setup yet (`pnpm lint` is a no-op) | root | Add ESLint with the phase 2 work |
+| `disableRequestLogging` is deprecated in Fastify 5 | `apps/api/src/app.ts` | Swap for a `LogController` instance when upgrading to Fastify 6 |
+| No per-IP cap on the login route beyond 30/5min | `apps/api/src/auth/routes.ts` | Phase 9 hardening: consider a Redis-backed sliding window |
+| `apps/worker` does not exist yet | — | Phase 4, when the first job appears |
 
 ---
 

@@ -35,7 +35,7 @@ Keep all four documents current. A stale doc is treated as a broken build.
 | Language | TypeScript, strict mode, ESM |
 | Monorepo | pnpm workspaces + Turborepo |
 | Web | Next.js (App Router) + React |
-| API | NestJS (REST, Zod-validated) |
+| API | Fastify (REST, Zod-validated) — see [decision D-24](docs/decisions.md) for why not NestJS |
 | Background jobs | BullMQ on Redis |
 | Database | PostgreSQL 16 + Drizzle ORM, row-level security for tenancy |
 | Auth | Server-side sessions, Argon2id passwords, TOTP MFA for admins |
@@ -132,7 +132,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 
 | # | Phase | State |
 |---|---|---|
-| 1 | Foundation — monorepo, DB, tenancy, auth, RBAC, audit, seed `[ID-01, AUD-01, SET-01]` | 🟡 In progress |
+| 1 | Foundation — monorepo, DB, tenancy, auth, RBAC, audit, seed `[ID-01, AUD-01, SET-01]` | 🟡 API done; web shell outstanding |
 | 2 | Core CRM — people, General Notes, leads, pipeline, tasks, intake, CSV `[ID-02…08, LEAD-01…06]` | ⬜ Not started |
 | 3 | Calendar — types, booking, conflict prevention, statuses `[CAL-01…05]` | ⬜ Not started |
 | 4 | Messaging core — templates, consent ledger, automations, delivery log `[MSG-01…07]` | ⬜ Not started |
@@ -141,6 +141,13 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 | 7 | Real integrations — Meta, Google, WhatsApp Cloud, email `[INT-01…09]` | ⬜ Not started |
 | 8 | Conversion feedback — outbox, eligibility gate, adapters `[FB-01…10]` | ⬜ Not started |
 | 9 | Hardening, backups, monitoring, deployment guide, 15 UAT scenarios | ⬜ Not started |
+
+### Verify the build yourself
+
+```bash
+pnpm typecheck    # 5 packages, clean
+pnpm test         # 70 tests: 12 RLS isolation, 24 security, 34 API integration
+```
 
 ### Done and verified in phase 1
 
@@ -160,17 +167,34 @@ Phases follow PRD section 10. Requirement IDs in brackets.
   replay rejection, and the outbound idempotency-key builder.
 - Capability-based RBAC matrix for the four roles, plus per-role field masking.
 - Idempotent seed with two clinics so isolation is testable by hand.
+- **`apps/api` (Fastify)** — a single `registerRoute` helper attaches correlation
+  id, request context, session resolution, capability check, the tenant
+  transaction and Zod validation, so none of them can be forgotten on a new
+  endpoint. Structured logging with a redaction list, one error envelope, and an
+  append-only audit service that strips personal data from change summaries.
+- **Auth `[ID-01]`** — login with per-account lockout and timing-equalized
+  failure, logout, session read, password reset, change password, TOTP MFA with
+  single-use recovery codes, and staff invite/accept. Sessions are opaque tokens
+  stored as hashes, with sliding idle expiry and epoch-based mass revocation.
+- **User administration** — invite, update, archive, branch assignment, with
+  guards against demoting the last admin, changing your own role, or granting a
+  non-delegatable capability. A role or status change revokes that user's
+  sessions immediately.
+- **34 API integration tests**, including the permission half of PRD UAT
+  scenario 9 and cross-tenant attempts over real HTTP.
 
 ### Next up
 
-1. `apps/api` — NestJS bootstrap, request context (tenant + actor), the
-   `withTenant` interceptor, capability guard, Zod validation pipe, audit
-   service, and the error envelope.
-2. Auth routes: login (with MFA challenge), logout, session read, password reset,
-   change password, MFA enrolment, user invite and accept `[ID-01]`.
-3. `apps/web` — Next.js shell, sign-in page, authenticated layout with the nine
-   sections from PRD 6, and the typed API client.
-4. Then phase 2, starting with People and General Notes `[ID-02, ID-08]`.
+1. `apps/web` — Next.js shell, sign-in page (with the MFA and clinic-selection
+   branches), authenticated layout covering the nine sections from PRD 6, a typed
+   API client, and role-aware navigation.
+2. Phase 2 `[ID-02, ID-08]` — `people` and `general_notes`: normalized phone and
+   email, duplicate detection and merge, person-level notes that stay visible
+   across all of that person's leads.
+3. Phase 2 `[LEAD-01…06]` — leads, pipeline, stage history, assignment rules,
+   tasks, activity timeline.
+4. Phase 2 `[ID-03…05]` — walk-in intake, CSV import with preview, website lead
+   endpoint.
 
 ---
 
@@ -178,7 +202,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 
 ```
 apps/
-  api/                 NestJS REST API and webhook receivers
+  api/                 Fastify REST API and webhook receivers
   web/                 Next.js front end
   worker/              BullMQ job processors
 packages/
@@ -187,6 +211,7 @@ packages/
   db/                  Drizzle schema, migrations, RLS policies, seed, scripts
   security/            Password hashing, tokens, envelope encryption, TOTP
   connectors/          Adapter interfaces plus mock and live implementations
+                       (planned, phase 4)
 docs/
   HANDOFF.md           Resume point for the next session or agent
   decisions.md         Decision log with rationale
