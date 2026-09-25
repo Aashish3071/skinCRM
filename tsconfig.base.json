@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    /**
+     * Bundler resolution, not NodeNext. Workspace packages export their `.ts`
+     * source rather than a build artifact, so relative imports are written
+     * without a file extension. Every consumer in this repo understands that:
+     * tsx and vitest (esbuild), tsup for the api/worker builds, Next.js via
+     * transpilePackages, and drizzle-kit's config loader. NodeNext would demand
+     * `.js` specifiers that only resolve after a compile step, which breaks
+     * drizzle-kit and the seed scripts.
+     */
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "noEmit": true,
+    "sourceMap": true
+  }
+}

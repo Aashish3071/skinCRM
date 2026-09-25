@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: skincrm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: skincrm
+      POSTGRES_PASSWORD: skincrm_dev_password
+      POSTGRES_DB: skincrm
+    ports:
+      - "5433:5432"
+    volumes:
+      - skincrm-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U skincrm -d skincrm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: skincrm-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - skincrm-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Local SMTP catcher. The mock email connector logs to the DB instead, but a
+  # real-provider smoke test can point at this without sending to the internet.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: skincrm-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  skincrm-pgdata:
+  skincrm-redisdata:
