@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   CLOSED_STAGE_CATEGORIES,
   REASON_REQUIRED_STAGE_CATEGORIES,
@@ -32,6 +32,22 @@ export async function stageById(stageId: string): Promise<StageRow> {
   const stage = rows[0];
   if (!stage) throw badRequest("That stage does not belong to this clinic.");
   return stage;
+}
+
+/** Position of the furthest open stage this lead has ever been in. */
+export async function furthestOpenPosition(leadId: string): Promise<number | null> {
+  const rows = await getTx()
+    .select({ furthest: sql<number | null>`max(${pipelineStages.position})` })
+    .from(leadStageEvents)
+    .innerJoin(pipelineStages, eq(pipelineStages.id, leadStageEvents.toStageId))
+    .where(
+      and(
+        eq(leadStageEvents.leadId, leadId),
+        eq(pipelineStages.isActive, true),
+        eq(pipelineStages.isClosed, false),
+      ),
+    );
+  return rows[0]?.furthest ?? null;
 }
 
 export async function stageByCategory(category: StageCategory): Promise<StageRow> {
@@ -85,6 +101,19 @@ export async function changeStage(params: {
 
   if (lead.stageId === toStage.id) return lead;
   if (!toStage.isActive) throw badRequest(`${toStage.name} is no longer part of the pipeline.`);
+
+  // Forward only (D-69). A lead never goes back to an earlier open stage than
+  // the furthest it has reached — "Qualified" back to "New" would rewrite what
+  // happened and double-count the funnel. Won and Lost can be set at any time,
+  // and a closed lead can be reopened at (or beyond) where it had got to.
+  if (!toStage.isClosed) {
+    const furthest = await furthestOpenPosition(lead.id);
+    if (furthest !== null && toStage.position < furthest) {
+      throw badRequest(`Leads only move forward. This one has already reached a later stage than ${toStage.name}.`, {
+        stageId: ["Earlier stage"],
+      });
+    }
+  }
 
   const fromStage = await stageById(lead.stageId);
   const reason = params.reason?.trim() || null;

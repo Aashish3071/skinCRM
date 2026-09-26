@@ -20,10 +20,10 @@ pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
 pnpm lint                     # clean
-pnpm test                     # expect 268 passing
+pnpm test                     # expect 289 passing
 ```
 
-If those 268 tests pass, the foundation is intact and you can build on it.
+If those 289 tests pass, the foundation is intact and you can build on it.
 
 To run everything (the API also runs the background worker when
 `WORKER_IN_API=true`, the development default):
@@ -120,37 +120,23 @@ Nothing is half-finished. No failing tests, no temporary workarounds beyond the
 
 ## Do this next, in order
 
-Landed on 2026-09-26 (second session): Templates tab, Sent messages log, public
-unsubscribe page, WhatsApp inbox, Notes and Activity sections, Qualified = booked
-(D-63), calendar time grid, and a mobile pass over every screen. See README
-"Done in phase 4 (final slice) and phase 5" and decisions D-63…D-68.
+Landed (third session): forward-only stages (D-69), WhatsApp → lead always
+(D-70), Meta Lead Ads + Google lead forms + WhatsApp Cloud webhooks, queue and
+live connectors (D-71), Settings → Lead sources & messaging, test-lead buttons,
+source/test badges on lead cards. Reporting built but **parked** (D-72).
 
-### 1. Phase 6 — Reporting `[REP-01…04]`
+### 1. WhatsApp-style inbox redesign — in progress
+Make `/inbox` look and feel like WhatsApp (green header, chat wallpaper,
+bubble tails, ticks for sent/delivered/read, pill composer).
 
-Replace the Reports placeholder (currently hidden from the nav in
-`apps/web/src/components/nav.tsx` — add it back when built).
-- Funnel on the six stages using the write-once milestone timestamps
-  (`createdAt → firstContactedAt → bookedAt/qualifiedAt → attendedAt → convertedAt`),
-  never the current stage — a lead that moved back still counted.
-- Source and campaign table from `source_submissions`; exclude `is_test`.
-- Operations: response time to first contact, no-show rate, unassigned count.
-- CSV export with per-role field masking (`maskPeopleFields`) and an audit row
-  (`export_generated`). Marketing analysts see aggregates only.
+### 2. Switch sending on and prove it
+The client has signed off. Set `OUTBOUND_SENDING_ENABLED=true` and
+`CONNECTOR_EMAIL=live` (Mailpit locally), tick "Marketing messages are
+approved" in Settings, and verify an automation email lands in Mailpit
+(http://localhost:8025). For real WhatsApp: `CONNECTOR_WHATSAPP=live`, connect
+the number in Settings, set `META_APP_SECRET`, and subscribe the webhooks.
 
-### 2. Phase 7 — WhatsApp Cloud API
-
-- `POST /webhooks/whatsapp`: verify `X-Hub-Signature-256` with the app secret,
-  resolve the clinic from the phone-number id, then `runAsSystem(clinicId, () =>
-  receiveInboundWhatsApp(...))` for each message. Status callbacks update
-  `messages.state` (delivered/read/failed) by `provider_message_id`.
-- A live `WhatsAppConnector` beside the mock in `packages/connectors`; per-clinic
-  tokens encrypted with `encryptForClinic`.
-- Template sync from Meta so `whatsapp_status` is real, not typed in.
-
-### 3. Email connection test `[MSG-01]`
-
-Settings → Email: call `connectors.email.verify()`, per-clinic SMTP credentials
-encrypted rather than global env.
+### 3. Unpark Reporting when asked (D-72)
 
 ---
 

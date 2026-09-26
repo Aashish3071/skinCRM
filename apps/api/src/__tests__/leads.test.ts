@@ -30,7 +30,13 @@ beforeAll(async () => {
   stages = Object.fromEntries(
     (response.json().items as { id: string; category: string }[]).map((s) => [s.category, s.id]),
   );
+  positions = Object.fromEntries(
+    (response.json().items as { category: string; position: number }[]).map((s) => [s.category, s.position]),
+  );
 });
+
+let positions: Record<string, number> = {};
+const stagesPosition = (category: string) => positions[category];
 
 afterAll(async () => {
   await cleanup();
@@ -247,8 +253,8 @@ describe("stage transitions (PRD LEAD-02)", () => {
     const originalBookedAt = first.bookedAt as string;
     expect(originalBookedAt).not.toBeNull();
 
-    // Bounce back and forward again.
-    await moveStage(id, "connected");
+    // Close and reopen at the same stage.
+    await moveStage(id, "lost", "Changed their mind");
     const second = (await moveStage(id, "consultation_booked")).json();
 
     // The first time it genuinely happened is the truthful event time, and
@@ -264,11 +270,29 @@ describe("stage transitions (PRD LEAD-02)", () => {
     const lost = (await moveStage(id, "lost", "Changed their mind")).json();
     expect(lost.closedAt).not.toBeNull();
 
-    const reopened = (await moveStage(id, "connected")).json();
+    const reopened = (await moveStage(id, "consultation_booked")).json();
     expect(reopened.closedAt).toBeNull();
     expect(reopened.lossReason).toBeNull();
     // The milestone stays: it records what actually happened.
     expect(reopened.bookedAt).toBe(lost.bookedAt);
+  });
+
+  it("only moves forward: a lead cannot go back to an earlier stage (D-69)", async () => {
+    const lead = await createLead();
+    const id = lead.id as string;
+    await moveStage(id, "consultation_booked");
+
+    const back = await moveStage(id, "new");
+    expect(back.statusCode).toBe(400);
+    expect(back.json().error.message).toMatch(/only move forward/);
+    expect((await moveStage(id, "connected")).statusCode).toBe(400);
+
+    // Won and Lost are always allowed; reopening can't go below where it got to.
+    expect((await moveStage(id, "lost", "No show")).statusCode).toBe(200);
+    expect((await moveStage(id, "connected")).statusCode).toBe(400);
+    const reopened = await moveStage(id, "consultation_attended");
+    expect(reopened.statusCode).toBe(200);
+    expect(reopened.json().furthestPosition).toBe(stagesPosition("consultation_attended"));
   });
 
   it("rejects a stage belonging to another clinic", async () => {

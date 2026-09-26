@@ -4,6 +4,8 @@ import {
   AUTOMATION_STATUSES,
   AUTOMATION_TRIGGERS,
   ENROLLMENT_STATES,
+  INBOUND_EVENT_STATES,
+  INBOUND_EVENT_TYPES,
   APPOINTMENT_STATUSES,
   AUDIT_ACTIONS,
   CONSENT_PURPOSES,
@@ -107,3 +109,5 @@ export const auditActionEnum = pgEnum("audit_action", tuple(AUDIT_ACTIONS));
 export const automationTriggerEnum = pgEnum("automation_trigger", tuple(AUTOMATION_TRIGGERS));
 export const automationStatusEnum = pgEnum("automation_status", tuple(AUTOMATION_STATUSES));
 export const enrollmentStateEnum = pgEnum("enrollment_state", tuple(ENROLLMENT_STATES));
+export const inboundEventTypeEnum = pgEnum("inbound_event_type", tuple(INBOUND_EVENT_TYPES));
+export const inboundEventStateEnum = pgEnum("inbound_event_state", tuple(INBOUND_EVENT_STATES));

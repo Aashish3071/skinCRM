@@ -1,0 +1,63 @@
+import Link from "next/link";
+import type { IntegrationsOverview } from "@skincrm/contracts";
+import { Badge, Card, PageHeader } from "@/components/ui";
+import { apiFetch } from "@/lib/api";
+import { relativeTime } from "@/lib/format";
+import { can, requireCapability } from "@/lib/session";
+import { GoogleCard, MetaCard, SendingCard, WhatsAppCard } from "./cards";
+
+export const metadata = { title: "Lead sources & messaging — SkinCRM" };
+
+const EVENT_LABEL: Record<string, string> = {
+  meta_leadgen: "Facebook/Instagram lead",
+  google_lead: "Google Ads lead",
+  whatsapp_message: "WhatsApp message",
+  whatsapp_status: "WhatsApp delivery update",
+};
+
+export default async function IntegrationsPage() {
+  const session = await requireCapability("integrations:read");
+  const data = await apiFetch<IntegrationsOverview>("/integrations");
+  const by = (p: string) => data.connections.find((c) => c.provider === p);
+  const writable = can(session, "integrations:write");
+
+  return (
+    <>
+      <Link href="/settings" className="text-sm text-ink-muted hover:text-ink">← Settings</Link>
+      <PageHeader title="Lead sources & messaging" description="Connect your ad accounts and WhatsApp number, and control what the CRM sends." />
+      {!writable && <p className="mb-4 text-sm text-ink-muted">Only an admin can change these.</p>}
+      <div className="flex flex-col gap-4">
+        <SendingCard sending={data.sending} modes={data.modes} />
+        <MetaCard connection={by("meta_lead_ads")} webhook={data.webhooks.meta} verifyToken={data.verifyTokens.meta} live={data.modes.meta === "live"} />
+        <GoogleCard connection={by("google_lead_forms")} webhook={data.webhooks.google} />
+        <WhatsAppCard connection={by("whatsapp_cloud")} webhook={data.webhooks.whatsapp} verifyToken={data.verifyTokens.whatsapp} live={data.modes.whatsapp === "live"} />
+
+        <Card title="Recently received" description="The last 30 things your connected accounts sent in.">
+          {data.events.length === 0 ? (
+            <p className="text-sm text-ink-muted">Nothing yet.</p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-line">
+              {data.events.map((e) => (
+                <li key={e.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
+                  <span className="font-medium">{EVENT_LABEL[e.type]}</span>
+                  {e.isTest && <Badge>Test</Badge>}
+                  <span className="text-ink-subtle">{relativeTime(e.receivedAt)}</span>
+                  <span className="ml-auto">
+                    {e.state === "processed" ? (
+                      e.result?.startsWith("lead:") ? <Link href={`/leads/${e.result.slice(5)}`} className="text-brand">Open lead</Link> : <Badge tone="positive">Done</Badge>
+                    ) : e.state === "pending" ? (
+                      <Badge tone="caution">{e.attempts ? `Retrying (${e.attempts})` : "Waiting"}</Badge>
+                    ) : (
+                      <Badge tone="critical">Failed</Badge>
+                    )}
+                  </span>
+                  {e.lastError && e.state !== "processed" && <p className="w-full text-xs text-critical">{e.lastError}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </>
+  );
+}

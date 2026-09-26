@@ -106,6 +106,8 @@ export const leadSchema = z.object({
   personName: z.string(),
   personPhone: z.string().nullable(),
   personEmail: z.string().nullable(),
+  /** Position of the furthest open stage reached; earlier stages are locked (D-69). */
+  furthestPosition: z.number().int().nullable(),
   source: z.enum(LEAD_SOURCES),
   reportingSource: z.enum(LEAD_SOURCES).nullable(),
   stageId: uuidSchema,

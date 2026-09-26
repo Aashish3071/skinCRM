@@ -23,6 +23,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   if (search) query.set("search", search);
   if (single(params.unassigned) === "true") query.set("unassigned", "true");
   if (single(params.mine) === "true") query.set("ownerUserId", session.id);
+  // Test leads (from "Send a test lead") show with a badge; Reports excludes them.
+  query.set("includeTest", "true");
   // The board needs every lead at once; the list is paged.
   query.set("limit", view === "board" ? "100" : "50");
 

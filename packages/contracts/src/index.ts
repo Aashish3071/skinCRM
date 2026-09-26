@@ -10,3 +10,5 @@ export * from "./messaging";
 export * from "./automations";
 export * from "./workspace";
 export * from "./inbox";
+export * from "./integrations";
+export * from "./reports";

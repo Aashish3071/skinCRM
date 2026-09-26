@@ -121,3 +121,12 @@ function safeJsonParse(text: string): unknown {
 }
 
 export { SESSION_COOKIE };
+
+/** Raw response, for downloads (CSV) the browser should receive unchanged. */
+export async function apiRaw(path: string): Promise<Response> {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  return fetch(`${apiBaseUrl()}${path}`, {
+    headers: { ...(token ? { cookie: `${SESSION_COOKIE}=${token}` } : {}), "x-correlation-id": randomUUID() },
+    cache: "no-store",
+  });
+}

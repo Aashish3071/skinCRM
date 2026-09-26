@@ -612,6 +612,12 @@ const leadSelection = {
   stageCategory: pipelineStages.category,
   stageClosed: pipelineStages.isClosed,
   ownerName: users.fullName,
+  // Furthest open stage ever reached, so the UI can grey out earlier ones (D-69).
+  furthestPosition: sql<number | null>`(
+    select max(ps.position) from lead_stage_events e
+    join pipeline_stages ps on ps.id = e.to_stage_id
+    where e.lead_id = ${leads.id} and ps.is_active and not ps.is_closed
+  )`,
 };
 
 type LeadJoinRow = {
@@ -623,6 +629,7 @@ type LeadJoinRow = {
   stageCategory: LeadDto["stageCategory"];
   stageClosed: boolean;
   ownerName: string | null;
+  furthestPosition: number | null;
 };
 
 function serializeLead(row: LeadJoinRow): LeadDto {
@@ -633,6 +640,7 @@ function serializeLead(row: LeadJoinRow): LeadDto {
     personName: row.personName,
     personPhone: row.personPhone,
     personEmail: row.personEmail,
+    furthestPosition: row.furthestPosition,
     source: lead.source,
     reportingSource: lead.reportingSource,
     stageId: lead.stageId,

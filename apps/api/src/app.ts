@@ -13,11 +13,14 @@ import { registerAssignmentRuleRoutes } from "./leads/assignment-routes";
 import { registerAutomationRoutes } from "./automations/routes";
 import { registerCalendarRoutes } from "./calendar/routes";
 import { registerInboxRoutes } from "./inbox/routes";
+import { registerIntegrationRoutes } from "./integrations/routes";
+import { registerWebhooks } from "./integrations/webhooks";
 import { registerIntakeRoutes } from "./intake/routes";
 import { registerLeadRoutes } from "./leads/routes";
 import { registerMessagingRoutes } from "./messaging/routes";
 import { registerUnsubscribeRoutes } from "./messaging/unsubscribe-routes";
 import { registerPeopleRoutes } from "./people/routes";
+import { registerReportRoutes } from "./reports/routes";
 import { registerUserRoutes } from "./users/routes";
 import { registerWorkspaceRoutes } from "./workspace/routes";
 
@@ -82,6 +85,19 @@ export async function buildApp(): Promise<FastifyInstance> {
     timeWindow: "1 minute",
   });
 
+  // Keep the raw JSON text: Meta's webhook signature is over the exact bytes.
+  app.addContentTypeParser("application/json", { parseAs: "string" }, (request, body, done) => {
+    (request as typeof request & { rawBody?: string }).rawBody = body as string;
+    if (body === "") return done(null, undefined);
+    try {
+      done(null, JSON.parse(body as string));
+    } catch {
+      const error = new Error("The request body is not valid JSON.") as Error & { statusCode: number };
+      error.statusCode = 400;
+      done(error, undefined);
+    }
+  });
+
   registerErrorHandler(app);
 
   // --- Health checks ------------------------------------------------------
@@ -116,6 +132,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerUnsubscribeRoutes(app);
   registerWorkspaceRoutes(app);
   registerInboxRoutes(app);
+  registerIntegrationRoutes(app);
+  registerWebhooks(app);
+  registerReportRoutes(app);
 
   return app;
 }

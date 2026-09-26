@@ -75,7 +75,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       </div>
 
       <Card>
-        <StageStepper leadId={lead.id} stages={stages} currentStageId={lead.stageId} canMove={writable} />
+        <StageStepper leadId={lead.id} stages={stages} currentStageId={lead.stageId} furthestPosition={lead.furthestPosition} canMove={writable} />
+        <p className="mt-2 text-xs text-ink-subtle">Leads move forward only. Mark Won or Lost at any time.</p>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
           {can(session, "leads:assign") ? (
             <OwnerPicker leadId={lead.id} staff={staff} currentOwnerId={lead.ownerUserId} />

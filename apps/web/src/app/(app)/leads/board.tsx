@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOptimistic, useRef, useState, useTransition } from "react";
-import { STAGE_HINTS, type LeadDto, type StageCategory } from "@skincrm/contracts";
+import { LEAD_SOURCE_LABELS, STAGE_HINTS, type LeadDto, type StageCategory } from "@skincrm/contracts";
+
+/** A little colour per channel so WhatsApp and ad leads stand out at a glance. */
+const SOURCE_TONE: Partial<Record<LeadDto["source"], string>> = {
+  whatsapp_organic: "bg-positive-soft text-positive",
+  whatsapp_ad: "bg-positive-soft text-positive",
+  meta_lead_ad: "bg-brand-soft text-brand",
+  google_lead_form: "bg-caution-soft text-caution",
+};
 import { moveLeadAction } from "@/lib/crm-actions";
 import { buttonClasses, inputClasses } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
@@ -14,6 +22,12 @@ export interface BoardStage {
   category: string;
   isClosed: boolean;
   requiresReason: boolean;
+  position: number;
+}
+
+/** Leads only move forward through open stages (D-69); Won/Lost are always allowed. */
+export function canMoveTo(lead: { furthestPosition: number | null }, stage: BoardStage): boolean {
+  return stage.isClosed || lead.furthestPosition === null || stage.position >= lead.furthestPosition;
 }
 
 const LOSS_REASONS = ["Not interested", "Went to another clinic", "Price", "Never replied", "Not a fit"];
@@ -50,6 +64,10 @@ export function LeadBoard({
 
   const move = (lead: LeadDto, stage: BoardStage, reason?: string) => {
     if (lead.stageId === stage.id) return;
+    if (!canMoveTo(lead, stage)) {
+      setError(`${lead.personName} has already reached a later stage — leads only move forward.`);
+      return;
+    }
     if (stage.requiresReason && !reason) {
       setAsking({ lead, stage });
       dialogRef.current?.showModal();
@@ -129,6 +147,12 @@ export function LeadBoard({
                       <p className="mt-0.5 truncate text-xs text-ink-muted">
                         {lead.personPhone ?? lead.personEmail ?? "No contact details"}
                       </p>
+                      <p className="mt-1.5 flex flex-wrap gap-1">
+                        <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${SOURCE_TONE[lead.source] ?? "bg-surface-muted text-ink-muted"}`}>
+                          {LEAD_SOURCE_LABELS[lead.source]}
+                        </span>
+                        {lead.isTest && <span className="rounded bg-caution-soft px-1.5 py-0.5 text-[11px] font-medium text-caution">Test</span>}
+                      </p>
                       <p className="mt-1 truncate text-xs text-ink-subtle">
                         {lead.ownerName ?? "Unassigned"} · {relativeTime(lead.createdAt)}
                       </p>
@@ -148,7 +172,7 @@ export function LeadBoard({
                                 Move…
                               </option>
                               {stages
-                                .filter((s) => s.id !== lead.stageId)
+                                .filter((s) => s.id !== lead.stageId && canMoveTo(lead, s))
                                 .map((s) => (
                                   <option key={s.id} value={s.id}>
                                     {s.name}

@@ -19,8 +19,8 @@ import {
 } from "./icons";
 
 /**
- * Main navigation. Only sections that work are listed; Reports (phase 6)
- * joins when it exists.
+ * Main navigation. Only sections that work are listed. Reports is built but
+ * parked (not linked) until the client asks for it — see docs/HANDOFF.md.
  *
  * `capability` decides whether a link renders at all. Presentation only: the
  * API enforces the same capability independently.

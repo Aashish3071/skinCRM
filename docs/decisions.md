@@ -494,3 +494,32 @@ sheet with large rows. Tables use the `.stack-table` class (globals.css) so each
 row becomes a labelled card below 640px instead of scrolling sideways. The
 calendar shows a day strip and an agenda list on phones and a time grid from
 768px up.
+
+**D-69. Leads move forward only.**
+`changeStage` refuses an open stage earlier than the furthest open stage the
+lead has ever reached (from stage history). Won and Lost are always allowed;
+a closed lead can be reopened at or beyond where it had got to. The lead DTO
+carries `furthestPosition` so the board and stepper grey out earlier stages.
+
+**D-70. Every WhatsApp inquiry is a lead.**
+An inbound message from a known patient with no open lead creates a new
+`whatsapp_organic` lead (via intake, `externalId = wa-msg:<provider id>`), so a
+conversation never lives only in the inbox.
+
+**D-71. Ad-platform and WhatsApp webhooks queue events; the worker processes them.**
+`/webhooks/meta` (Lead Ads), `/webhooks/whatsapp` (messages + delivery statuses)
+and `/webhooks/google/lead-form` verify the sender (Meta: X-Hub-Signature-256
+over the raw body; Google: the per-clinic key, stored hashed for lookup and
+encrypted), resolve the clinic from `integration_connections.external_account_id`,
+write an `inbound_events` row (payload encrypted, idempotent on the provider id)
+and answer 200. The worker fetches the Meta lead with the page token, maps the
+answers and runs the normal intake pipeline; failures retry with exponential
+backoff and show on Settings → Lead sources & messaging. Credentials are per
+clinic, encrypted with `encryptForClinic`, never returned. Live WhatsApp sends use
+the clinic's own number and token (`WhatsAppCloudConnector`).
+
+**D-72. Reporting is built but parked.**
+`/reports/summary`, `/reports/export` (CSV, personal columns only for roles with
+`people:read`, formula-injection safe, audited) and the `/reports` page exist and
+are tested, but Reports is not linked in the nav at the client's request. To
+unpark, add it back to `NAV_SECTIONS` in `apps/web/src/components/nav.tsx`.

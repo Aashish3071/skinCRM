@@ -56,6 +56,8 @@ const schema = z.object({
   NEXT_PUBLIC_API_URL: z.string().url().default("http://localhost:4000"),
   /** Base URL clients reach, used to build unsubscribe and self-service links. */
   PUBLIC_WEB_URL: z.string().url().default("http://localhost:3000"),
+  /** Where Meta and Google reach the API's webhooks. Must be public HTTPS in production. */
+  PUBLIC_API_URL: z.string().url().default("http://localhost:4000"),
 
   SESSION_SECRET: z.string().min(16),
   CRYPTO_PROVIDER: z.enum(["local", "aws-kms"]).default("local"),

@@ -66,7 +66,10 @@ declare
     'automation_enrollments',
     -- Phase 5: shared inbox
     'conversations',
-    'conversation_notes'
+    'conversation_notes',
+    -- Phase 7: integrations
+    'integration_connections',
+    'inbound_events'
   ];
 begin
   foreach tbl in array tenant_tables loop

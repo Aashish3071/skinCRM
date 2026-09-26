@@ -7,3 +7,4 @@ export * from "./calendar";
 export * from "./messaging";
 export * from "./automations";
 export * from "./inbox";
+export * from "./integrations";

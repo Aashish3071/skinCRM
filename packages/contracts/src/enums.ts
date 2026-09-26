@@ -469,3 +469,11 @@ export const AUDIT_ACTIONS = [
   "event_replayed",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+// --- Inbound provider events (phase 7) ------------------------------------
+
+export const INBOUND_EVENT_TYPES = ["meta_leadgen", "google_lead", "whatsapp_message", "whatsapp_status"] as const;
+export type InboundEventType = (typeof INBOUND_EVENT_TYPES)[number];
+
+export const INBOUND_EVENT_STATES = ["pending", "processed", "failed", "ignored"] as const;
+export type InboundEventState = (typeof INBOUND_EVENT_STATES)[number];

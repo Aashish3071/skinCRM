@@ -121,3 +121,6 @@ export const LockIcon = (p: IconProps) => (
 export const ChevronLeftIcon = (p: IconProps) => (
   <Svg {...p}><path d="m15 6-6 6 6 6" /></Svg>
 );
+export const ReportsIcon = (p: IconProps) => (
+  <Svg {...p}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></Svg>
+);

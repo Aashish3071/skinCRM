@@ -8,7 +8,8 @@ import { logger } from "../logger";
 import { recordAudit } from "../audit";
 import { addActivity } from "../leads/service";
 import { evaluateSend, resolveDestination } from "./send-gate";
-import { renderTemplate } from "./render";
+import { extractVariables, renderTemplate } from "./render";
+import { whatsappConnector } from "../integrations/connections";
 import { ensureConversation, touchConversation } from "../inbox/store";
 
 const { messages, messageTemplates, people, clinics, appointments, users, suppressions } = schema;
@@ -230,14 +231,16 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
             unsubscribeUrl: classification === "promotional" ? variables["link.unsubscribe"] ?? undefined : undefined,
             idempotencyKey: request.idempotencyKey,
           })
-        : await connectors.whatsapp.send(
+        : await (await whatsappConnector()).send(
             template?.whatsappTemplateName
               ? {
                   kind: "template",
                   toWaId: destination!,
                   templateName: template.whatsappTemplateName,
                   languageCode: template.whatsappLanguageCode ?? "en",
-                  variables: Object.values(variables).filter((v): v is string => v !== null),
+                  // Meta templates take positional parameters: the variables in the
+                  // order the body uses them, not every variable we know.
+                  variables: extractVariables(template.body).map((name) => (variables as Record<string, string | null>)[name] ?? ""),
                   idempotencyKey: request.idempotencyKey,
                 }
               : {

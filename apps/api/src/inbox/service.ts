@@ -73,10 +73,26 @@ export async function receiveInboundWhatsApp(input: InboundWhatsApp): Promise<{ 
     const open = await tx
       .select({ id: leads.id })
       .from(leads)
-      .where(and(eq(leads.personId, person.id), isNull(leads.closedAt)))
+      .where(and(eq(leads.personId, person.id), isNull(leads.closedAt), isNull(leads.archivedAt)))
       .orderBy(desc(leads.createdAt))
       .limit(1);
     leadId = open[0]?.id ?? null;
+  }
+
+  // Every WhatsApp inquiry is a lead (D-70). A known patient writing in with
+  // nothing open — a past client asking about a new treatment — gets a new
+  // lead too, so the conversation never lives only in the inbox.
+  if (!leadId) {
+    const outcome = await ingestSubmission({
+      platform: "whatsapp",
+      source: "whatsapp_organic",
+      externalId: `wa-msg:${input.providerMessageId}`,
+      submittedAt: at,
+      phone: phone.e164,
+      inquiryNote: input.body.slice(0, 2_000),
+      clinicCountry: clinic?.country ?? "US",
+    });
+    if (outcome.status === "created") leadId = outcome.leadId;
   }
 
   const conversationId = await ensureConversation(person.id, "whatsapp", leadId);

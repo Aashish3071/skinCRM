@@ -5,7 +5,7 @@ import { useOptimistic, useRef, useState, useTransition } from "react";
 import { STAGE_HINTS, type StageCategory } from "@skincrm/contracts";
 import { buttonClasses, inputClasses } from "@/components/ui";
 import { assignLeadAction, moveLeadAction } from "@/lib/crm-actions";
-import type { BoardStage } from "../board";
+import { canMoveTo, type BoardStage } from "../board";
 
 const LOSS_REASONS = ["Not interested", "Went to another clinic", "Price", "Never replied", "Not a fit"];
 
@@ -20,11 +20,13 @@ export function StageStepper({
   leadId,
   stages,
   currentStageId,
+  furthestPosition,
   canMove,
 }: {
   leadId: string;
   stages: BoardStage[];
   currentStageId: string;
+  furthestPosition: number | null;
   canMove: boolean;
 }) {
   const router = useRouter();
@@ -60,12 +62,14 @@ export function StageStepper({
         <ol className="grid flex-1 grid-cols-2 gap-1.5 sm:flex" aria-label="Stage">
           {open.map((stage, index) => {
             const isCurrent = stage.id === current;
-            const done = currentIndex >= 0 && index < currentIndex;
+            const done = (currentIndex >= 0 && index < currentIndex) || (furthestPosition !== null && stage.position < furthestPosition);
+            // Passed stages are locked: leads only move forward (D-69).
+            const locked = !canMoveTo({ furthestPosition }, stage);
             return (
               <li key={stage.id} className="min-w-0 sm:flex-1">
                 <button
                   type="button"
-                  disabled={!canMove}
+                  disabled={!canMove || (locked && !isCurrent)}
                   aria-current={isCurrent ? "step" : undefined}
                   onClick={() => move(stage)}
                   title={STAGE_HINTS[stage.category as StageCategory]}
@@ -73,7 +77,7 @@ export function StageStepper({
                     isCurrent
                       ? "bg-brand font-medium text-on-brand"
                       : done
-                        ? "bg-brand-soft text-brand hover:bg-brand-soft/70"
+                        ? "cursor-default bg-brand-soft text-brand"
                         : "border border-line-strong text-ink-muted hover:bg-surface-muted"
                   }`}
                 >

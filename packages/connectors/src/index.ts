@@ -8,15 +8,18 @@ export * from "./types";
 export { MockEmailConnector } from "./email/mock";
 export { SmtpEmailConnector } from "./email/smtp";
 export { MockWhatsAppConnector } from "./whatsapp/mock";
+export { WhatsAppCloudConnector } from "./whatsapp/cloud";
+export * from "./meta/leads";
+export { GRAPH_BASE, GRAPH_VERSION, type FetchLike } from "./graph";
 
 let cached: Connectors | undefined;
 
 /**
  * Resolve the connectors for this process from `CONNECTOR_*`.
  *
- * Email `live` is SMTP (any relay; Mailpit in development). WhatsApp has no
- * live implementation yet, and set to `live` it fails loudly at resolution
- * rather than silently falling back to a mock. Quietly mocking in
+ * Email `live` is SMTP (any relay; Mailpit in development). Live WhatsApp is
+ * per clinic and built by the API from the clinic's encrypted connection
+ * (apps/api/src/integrations/connections.ts), never silently mocked. Quietly mocking in
  * production would mean a clinic believing messages were sent when nothing left
  * the building.
  */
@@ -35,18 +38,11 @@ export function getConnectors(): Connectors {
             password: env.SMTP_PASSWORD,
           }),
     whatsapp:
-      env.CONNECTOR_WHATSAPP === "mock"
-        ? new MockWhatsAppConnector()
-        : notImplemented("whatsapp", "phase 7"),
+      // Live WhatsApp is per clinic (its own number and token) and is built by
+      // the API from the clinic's connection; this process-wide slot is the mock.
+      new MockWhatsAppConnector(),
   };
   return cached;
-}
-
-function notImplemented(name: string, phase: string): never {
-  throw new Error(
-    `CONNECTOR_${name.toUpperCase()}=live, but no live ${name} connector exists yet (${phase}). ` +
-      `Set it back to "mock", or implement the adapter — do not let this fall through to a mock.`,
-  );
 }
 
 /** Tests replace the whole set. */
@@ -56,4 +52,18 @@ export function setConnectors(connectors: Connectors): void {
 
 export function resetConnectors(): void {
   cached = undefined;
+}
+
+import { LiveMetaLeadsConnector, MockMetaLeadsConnector, type MetaLeadsConnector } from "./meta/leads";
+
+let metaLeads: MetaLeadsConnector | undefined;
+
+/** Meta Lead Ads adapter for this process, from `CONNECTOR_META`. */
+export function getMetaLeadsConnector(): MetaLeadsConnector {
+  metaLeads ??= getEnv().CONNECTOR_META === "live" ? new LiveMetaLeadsConnector() : new MockMetaLeadsConnector();
+  return metaLeads;
+}
+
+export function setMetaLeadsConnector(connector: MetaLeadsConnector | undefined): void {
+  metaLeads = connector;
 }
