@@ -10,6 +10,7 @@ import { registerErrorHandler } from "./errors";
 import { logger } from "./logger";
 import { registerRoute } from "./route";
 import { registerAssignmentRuleRoutes } from "./leads/assignment-routes";
+import { registerCalendarRoutes } from "./calendar/routes";
 import { registerIntakeRoutes } from "./intake/routes";
 import { registerLeadRoutes } from "./leads/routes";
 import { registerPeopleRoutes } from "./people/routes";
@@ -101,6 +102,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerLeadRoutes(app);
   registerAssignmentRuleRoutes(app);
   registerIntakeRoutes(app);
+  registerCalendarRoutes(app);
 
   return app;
 }

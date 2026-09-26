@@ -133,8 +133,8 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 | # | Phase | State |
 |---|---|---|
 | 1 | Foundation — monorepo, DB, tenancy, auth, RBAC, audit, seed `[ID-01, AUD-01, SET-01]` | ✅ Complete |
-| 2 | Core CRM — people, General Notes, leads, pipeline, tasks, intake, CSV `[ID-02…08, LEAD-01…06]` | 🟡 API done; CSV/website intake and UI outstanding |
-| 3 | Calendar — types, booking, conflict prevention, statuses `[CAL-01…05]` | ⬜ Not started |
+| 2 | Core CRM — people, General Notes, leads, pipeline, tasks, intake, CSV `[ID-02…08, LEAD-01…06]` | ✅ Complete |
+| 3 | Calendar — types, booking, conflict prevention, statuses `[CAL-01…05]` | 🟡 API done; reminders need phase 4, UI outstanding |
 | 4 | Messaging core — templates, consent ledger, automations, delivery log `[MSG-01…07]` | ⬜ Not started |
 | 5 | WhatsApp shared inbox `[WA-01…09]` | ⬜ Not started |
 | 6 | Reporting and exports `[REP-01…04]` | ⬜ Not started |
@@ -146,7 +146,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 
 ```bash
 pnpm typecheck    # 5 packages, clean
-pnpm test         # 127 tests: 14 RLS isolation, 24 security, 89 API integration
+pnpm test         # 183 tests: 14 RLS isolation, 24 security, 145 API integration
 ```
 
 ### Done and verified in phase 1
@@ -183,37 +183,52 @@ pnpm test         # 127 tests: 14 RLS isolation, 24 security, 89 API integration
 - **34 API integration tests**, including the permission half of PRD UAT
   scenario 9 and cross-tenant attempts over real HTTP.
 
-### Done in phase 2 so far
+### Done in phase 2
 
-- **Core CRM schema** — `people`, `general_notes`, `consent_records`,
-  `person_merges`, `source_submissions`, `raw_payloads`, `leads`,
-  `lead_stage_events`, `activities`, `tasks`. All RLS-protected.
-- **People `[ID-02, ID-06]`** — E.164 normalization with the original always
-  kept, duplicate detection answering 409 with candidates, a review queue, and a
-  reversible merge that re-points leads, notes, tasks, consent and activities.
-- **General Notes `[ID-08]`** — person-level, pinnable, archived not deleted,
+- **Core CRM schema** and the People API: E.164 normalization keeping the
+  original, duplicate detection answering 409 with candidates, a review queue,
+  and a reversible merge `[ID-02, ID-06]`.
+- **General Notes** `[ID-08]` — person-level, pinnable, archived not deleted,
   and provably absent from the audit trail.
-- **Consent ledger `[MSG-04]`** — append-only per (channel, purpose).
-- **Leads and pipeline `[LEAD-01…06]`** — walk-in intake creating person and
-  lead in one call, stage machine with required exit reasons and write-once
-  milestones, assignment and the unassigned queue, unified timeline, contact
-  attempts, tasks with mandatory completion outcomes and future-dated snoozes.
-- **Role-scoped lead visibility** — a practitioner's list is filtered in SQL to
-  their own leads plus the unassigned queue, so counts and rows always agree.
+- **Consent ledger** `[MSG-04]` — append-only per (channel, purpose).
+- **Leads and pipeline** `[LEAD-01, 02, 04, 05, 06]` — stage machine with
+  required exit reasons and write-once milestones, unified timeline, contact
+  attempts, tasks with mandatory outcomes.
+- **Assignment rules** `[LEAD-03]` — deterministic priority order, source /
+  service / branch conditions, named assignee or round-robin, falls through
+  when the target is inactive, dry-run preview.
+- **Intake** `[ID-04, ID-05, ID-07]` — one shared pipeline (persist, dedupe,
+  match, create, route) behind CSV import and the public website endpoint.
+  Deduplication is a unique index, so re-importing a file imports nothing twice.
+- **UI** — leads list and Kanban, lead detail with timeline and tasks, People
+  search and profile, duplicate review, and a Home wired to live counts.
+
+### Done in phase 3 so far
+
+- **Consultation types** `[CAL-02]` with duration, buffer and eligible staff,
+  plus per-staff working hours stored as clinic-local wall-clock time.
+- **Booking** `[CAL-03]` where overlap is refused by a Postgres **exclusion
+  constraint**, not an application check — a read-then-write check races, and
+  two receptionists booking the same slot would both succeed. Reserved time
+  includes the buffer. Cancelled and rescheduled rows free their slot.
+- **Reschedule** frees the old row inside the same transaction, so nudging an
+  appointment by ten minutes is not blocked by its own original booking.
+- **Statuses** `[CAL-04]` independent of lead stage: attending advances the lead,
+  cancelling deliberately does not touch it.
+- **Availability** computed from working hours minus existing bookings.
+- **Timezone handling** `[CAL-01]` through the IANA database, with tests that
+  pin behaviour either side of a daylight-saving change.
 
 ### Next up
 
-1. **Assignment rules `[LEAD-03]`** — a deterministic rule table (source,
-   service, branch) with a fallback to the unassigned queue.
-2. **Remaining intake `[ID-04, ID-05, ID-07]`** — CSV import with preview and
-   field mapping, and the website lead endpoint with abuse controls and consent
-   capture. Both write `source_submissions`, which already has the unique
-   `(clinic, platform, external_id)` index that makes ingestion idempotent.
-3. **Phase 2 UI** — Leads list and Kanban, lead detail with the timeline and
-   General Notes panel, People search and profile, the duplicate review screen,
-   and the Home work queue wired to real counts.
-4. **Phase 3 — Calendar `[CAL-01…05]`**, starting with consultation types and
-   booking with an exclusion constraint to prevent double-booking.
+1. **Calendar UI `[CAL-01]`** — day and week views by staff and branch, a
+   booking dialog driven by the availability endpoint, and reschedule/cancel
+   with the reason captured.
+2. **Phase 4 — messaging core `[MSG-01…07]`**: provider interfaces plus mocks,
+   templates with classification, the automation engine, and the delivery log.
+   This is also what finally sends the invite and password-reset emails, and
+   what schedules and invalidates appointment reminders `[CAL-05]`.
+3. **`apps/worker`** — the first BullMQ processors arrive with phase 4.
 
 ---
 

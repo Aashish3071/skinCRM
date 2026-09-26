@@ -53,7 +53,11 @@ declare
     'lead_stage_events',
     'activities',
     'tasks',
-    'assignment_rules'
+    'assignment_rules',
+    -- Phase 3: calendar
+    'consultation_types',
+    'working_hours',
+    'appointments'
   ];
 begin
   foreach tbl in array tenant_tables loop

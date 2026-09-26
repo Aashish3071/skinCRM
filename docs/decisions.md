@@ -275,3 +275,56 @@ without the check RLS would make it a silent no-op that looks like success.
 The task views resolve the end of the clinic-local day and convert to a UTC
 instant. Using the server's timezone puts the boundary in the wrong place, which
 front-desk staff notice every evening.
+
+---
+
+## Calendar (phase 3)
+
+**D-40. Double-booking is prevented by a Postgres exclusion constraint, not an
+application check.**
+`exclude using gist (staff_user_id with =, tstzrange(starts_at, ends_at) with &&)`
+on `appointments`, skipping cancelled and rescheduled rows. A read-then-write
+check races: two receptionists booking the same slot in the same moment would
+both see it free and both writes would land. The API only translates Postgres
+error `23P01` into a 409. A test inserts directly, bypassing the API, to prove
+the guarantee does not depend on application code.
+*Consequence:* the constraint lives in `packages/db/sql/920_constraints.sql`,
+re-applied after every migration, because Drizzle cannot express it.
+
+**D-41. The reserved range includes the consultation type's buffer.**
+`ends_at` covers duration plus buffer, and `client_visible_ends_at` covers only
+the duration. The buffer has to be inside the range the exclusion constraint
+sees, or it protects nothing; the client is still told the shorter time.
+
+**D-42. Rescheduling frees the old row before inserting the replacement, in the
+same transaction.**
+Otherwise the constraint sees the original booking and refuses any new time that
+overlaps it — including nudging an appointment by ten minutes, which is the most
+common reschedule there is.
+
+**D-43. Working hours are stored as clinic-local wall-clock time.**
+"We open at nine" must stay true across a daylight-saving change. A stored UTC
+time would silently shift the clinic's opening hour twice a year. All conversion
+goes through the IANA database via `Intl`, with a two-pass offset measurement so
+times near a DST boundary land in the right hour. Tested either side of a
+transition.
+
+**D-44. Appointment status is independent of lead stage, with one deliberate
+exception.**
+Booking advances the lead to Consultation booked and marking attended advances
+it to Consultation attended, because those are pipeline milestones the clinic
+reports on and later feeds back to ad platforms. **Cancelling does not move the
+lead at all** (BRD 6: changing an appointment must not silently overwrite the
+stage). Both advances are forward-only, so a follow-up appointment cannot drag
+an attended or converted lead backwards.
+
+**D-45. Booking outside working hours is allowed, but must be explicit.**
+It answers 422 `outside_working_hours` unless `allowOutsideWorkingHours` is set.
+Clinics genuinely do run early and late appointments; refusing outright would
+push staff to work around the system. A clinic with no hours configured at all
+is not blocked.
+
+**D-46. `rescheduled` is not a status a user can set directly.**
+It is set by the reschedule flow, which also creates the replacement row.
+Allowing it in the status endpoint would leave an appointment marked rescheduled
+with nothing to point at.

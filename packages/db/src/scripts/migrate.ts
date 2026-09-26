@@ -8,6 +8,7 @@
  *   2. app role     - must exist before the RLS script grants it privileges
  *   3. migrations   - the generated Drizzle SQL
  *   4. RLS          - re-applied every time so new tables cannot be left open
+ *   5. constraints  - exclusion and check constraints Drizzle cannot express
  */
 import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -62,18 +63,21 @@ async function main(): Promise<void> {
   const env = getEnv();
   console.log(`Migrating ${redactUrl(env.DATABASE_URL)}`);
 
-  console.log("1/4 extensions");
+  console.log("1/5 extensions");
   await runSqlFile("sql/010_extensions.sql");
 
-  console.log("2/4 application role");
+  console.log("2/5 application role");
   await ensureAppRole();
 
-  console.log("3/4 schema migrations");
+  console.log("3/5 schema migrations");
   const { db } = getOwnerDb();
   await migrate(db, { migrationsFolder: join(packageRoot, "drizzle") });
 
-  console.log("4/4 row-level security");
+  console.log("4/5 row-level security");
   await runSqlFile("sql/900_rls.sql");
+
+  console.log("5/5 constraints");
+  await runSqlFile("sql/920_constraints.sql");
 
   console.log("Done.");
 }

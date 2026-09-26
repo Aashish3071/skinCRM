@@ -158,9 +158,34 @@ planned in the phase noted.
 | `activities` | The unified timeline. |
 | `tasks` | Due time, owner, priority, mandatory completion outcome, `snoozed_from`. |
 
+### Built (phase 3 — calendar)
+
+| Table | Notes |
+|---|---|
+| `consultation_types` | Duration, buffer, eligible staff, and a generic `public_label` so a reminder need not disclose the service. |
+| `working_hours` | Per staff, or clinic-wide when `user_id` is null. Stored as **clinic-local wall-clock time**, so "we open at nine" survives a daylight-saving change — a stored UTC time would not. |
+| `appointments` | UTC start/end, status independent of lead stage, change reason, reschedule chain. The reserved range includes the buffer. |
+
+Two constraints live in `packages/db/sql/920_constraints.sql`, re-applied on every
+migrate because Drizzle cannot express them:
+
+```sql
+exclude using gist (staff_user_id with =, tstzrange(starts_at, ends_at) with &&)
+  where (status not in ('canceled', 'rescheduled'))
+```
+
+That is the double-booking guard (PRD CAL-03). It is a database constraint and
+not an application check on purpose: two receptionists booking the same slot in
+the same moment would both read it as free, and the second write would succeed.
+Postgres refuses it. The API only translates error `23P01` into a 409. There is
+a test that inserts directly, bypassing the API, to prove the guarantee holds
+without application help.
+
+`assignment_rules` (phase 2) carries a unique `(clinic_id, priority)` for the
+same reason: deterministic evaluation order is a requirement, so the database
+enforces it rather than a convention.
+
 ### Planned
-| `appointments` | 3 | UTC start/end, status independent of lead stage, change reason. Overlap prevented by an exclusion constraint. |
-| `consultation_types` | 3 | Duration, buffer, eligible staff. |
 | `templates` | 4 | Channel, classification (operational/promotional), approved variables, version. |
 | `automation_rules`, `enrollments`, `jobs` | 4 | Trigger, conditions, schedule, stop conditions, idempotency key. |
 | `messages` | 4 | Rendered content + template version, recipient, provider id, delivery state, suppression reason. |
@@ -378,9 +403,12 @@ Consequences to know about:
 | People, duplicates, merge, General Notes, consent `[ID-02, ID-06, ID-08, MSG-04]` | ✅ Built, 26 tests |
 | Leads, pipeline, timeline, tasks `[LEAD-01, 02, 04, 05, 06]` | ✅ Built, 29 tests |
 | Walk-in / manual intake `[ID-03]` | ✅ Built |
-| Assignment rules `[LEAD-03]` | 🔜 Next (manual assignment works; rule engine outstanding) |
-| CSV import and website endpoint `[ID-04, ID-05]` | 🔜 Next |
-| Phase 2 UI — leads, people, timeline | 🔜 Next |
+| Assignment rules `[LEAD-03]` | ✅ Built |
+| CSV import and website endpoint `[ID-04, ID-05, ID-07]` | ✅ Built |
+| Phase 2 UI — leads, Kanban, lead detail, people, duplicates | ✅ Built |
+| Calendar API — types, hours, booking, reschedule, availability `[CAL-01…04]` | ✅ Built, 25 tests |
+| Calendar UI | 🔜 Next |
+| Appointment reminders `[CAL-05]` | ⬜ Phase 4, needs the messaging layer |
 | Calendar `[CAL-01…05]` | ⬜ Phase 3 |
 | Templates, consent ledger, automations `[MSG-01…07]` | ⬜ Phase 4 |
 | WhatsApp shared inbox `[WA-01…09]` | ⬜ Phase 5 |
