@@ -222,7 +222,9 @@ that is what the automation "They reply" stop condition and the send gate's
    UI; `changeStage` refuses them and `930_simplify_pipeline.sql` deactivates
    them on every migrate.
 21. **`next build` beside `next dev`:** use `NEXT_DIST_DIR=.next-build npx next build`
-   in `apps/web` so the running dev server's `.next` is not clobbered.
+   in `apps/web` so the running dev server's `.next` is not clobbered. It rewrites
+   `apps/web/tsconfig.json` and `next-env.d.ts` to point at `.next-build` —
+   `git checkout` both afterwards.
 
 ---
 
