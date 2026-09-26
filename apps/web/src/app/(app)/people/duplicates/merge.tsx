@@ -108,7 +108,7 @@ function Submit() {
     <button
       type="submit"
       disabled={pending}
-      className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-60"
+      className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-on-brand hover:bg-brand-hover disabled:opacity-60"
     >
       {pending ? "Merging…" : "Merge records"}
     </button>

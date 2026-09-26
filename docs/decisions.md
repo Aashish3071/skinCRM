@@ -395,3 +395,57 @@ looking broken to a client.
 `getConnectors()` throws when `CONNECTOR_*=live` and no live adapter is written,
 rather than falling back to a mock. Quietly mocking in production would mean a
 clinic believing messages were sent when nothing left the building.
+
+**D-57. The pipeline is six stages: New, Contacted, Booked, Visited, Won, Lost.**
+The client found eleven stages too many — staff do not distinguish "attempting
+contact" from "connected" from "qualified" for every inquiry. The retired
+categories (`attempting_contact`, `qualified`, `nurture`, `unqualified`,
+`duplicate`) stay in the Postgres enum so history and the conversion-feedback
+mapping keep working, but they are no longer seeded and existing clinics have
+them deactivated by `packages/db/sql/930_simplify_pipeline.sql`, which moves
+leads in them to their successor (`RETIRED_STAGE_CATEGORIES`) and writes that
+move to stage history. `changeStage` refuses an inactive stage. The `qualified`
+feedback milestone therefore cannot be reached through the UI any more; if
+Qualified-based ad optimisation is needed later (PRD 4.5a), reactivate the stage
+for that clinic rather than re-adding it for everyone.
+
+**D-58. Automations are linear: one trigger, then an ordered list of steps.**
+Drawn top to bottom on a canvas, Zapier-style, with a "+" between steps. No
+branching trees: a clinic needs "when X, wait, check, send", and branching is
+where builders stop being usable by the front desk. "Only continue if" (a filter
+step) covers the real conditional need. Trigger and steps are JSON validated by
+the shared Zod schema (`packages/contracts/src/automations.ts`), so the canvas
+and the API cannot disagree about what is valid.
+
+**D-59. Postgres is the job queue; the worker is a second entry point of the API.**
+Automation runs (`automation_enrollments`) are rows with `next_run_at`. They are
+created in the same transaction as the event that caused them, so a trigger is
+never lost and never fires for something rolled back — which a separate Redis
+queue cannot promise without an outbox. The worker claims due rows with
+`UPDATE … FOR UPDATE SKIP LOCKED` (safe with many workers), then runs each inside
+its clinic's tenant transaction. It lives at `apps/api/src/worker/` rather than a
+separate `apps/worker` package so it shares services without duplication. Redis
+and BullMQ are not used; keep Redis in docker-compose only for future rate
+limiting. In development the API runs the worker in-process (`WORKER_IN_API`).
+
+**D-60. Each run snapshots the rule's steps; pausing a rule stops everyone in it.**
+Editing a rule must not change what an in-flight run does halfway through (a
+reminder sequence gaining a marketing step for people already enrolled is a
+consent problem). Pausing stops active runs rather than freezing them, because
+"paused" that silently resumes weeks later with stale messages is worse than
+"stopped" with a recorded reason.
+
+**D-61. Quiet hours are waited out, not recorded as a block.**
+An automation step due in quiet hours reschedules itself to the end of the
+window (probed a minute at a time with the same `Intl` check the gate uses, so
+DST cannot make them disagree). A reminder due at 22:00 should arrive at 08:00,
+not never. If a clinic makes every hour quiet, it waits a day rather than
+sending anyway.
+
+**D-62. Email "live" mode is SMTP.**
+`SmtpEmailConnector` (nodemailer) works with any relay — SES, Postmark,
+SendGrid and Mailgun all provide SMTP — so no provider is locked in. In
+development `CONNECTOR_EMAIL=live` points at Mailpit (docker compose,
+http://localhost:8025). Invite and password-reset emails go through the same
+connector but bypass the client send gate: they are account email to staff, and
+a reset that waits for the end of quiet hours is a locked-out front desk.

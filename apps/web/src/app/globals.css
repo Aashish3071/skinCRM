@@ -14,19 +14,20 @@
  * alone").
  */
 @theme {
-  --color-canvas: #f7f8fa;
+  --color-canvas: #f6f7f8;
   --color-surface: #ffffff;
-  --color-surface-muted: #f2f4f7;
-  --color-line: #e1e5ea;
-  --color-line-strong: #c9d0d8;
+  --color-surface-muted: #f1f3f4;
+  --color-line: #e4e7ea;
+  --color-line-strong: #cdd2d7;
 
-  --color-ink: #12181f;
-  --color-ink-muted: #5a6472;
-  --color-ink-subtle: #737d8b;
+  --color-ink: #14191f;
+  --color-ink-muted: #56606b;
+  --color-ink-subtle: #6f7883;
 
-  --color-brand: #1d5fd0;
-  --color-brand-hover: #1a52b4;
-  --color-brand-soft: #eaf1fd;
+  /* Deep teal: calm for all-day use, 5.4:1 on white for text and focus rings. */
+  --color-brand: #0f766e;
+  --color-brand-hover: #115e59;
+  --color-brand-soft: #e7f4f2;
 
   --color-positive: #126b48;
   --color-positive-soft: #e6f4ee;
@@ -35,7 +36,9 @@
   --color-critical: #a81f18;
   --color-critical-soft: #fdecea;
 
-  --radius-card: 10px;
+  --radius-card: 12px;
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04);
+  --shadow-pop: 0 8px 24px rgb(16 24 40 / 0.12);
 }
 
 /**
@@ -45,19 +48,19 @@
  */
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-canvas: #0f1318;
-    --color-surface: #171c23;
-    --color-surface-muted: #1f2630;
-    --color-line: #2a323d;
-    --color-line-strong: #3a4450;
+    --color-canvas: #0e1215;
+    --color-surface: #161b1f;
+    --color-surface-muted: #1d2328;
+    --color-line: #283036;
+    --color-line-strong: #38424a;
 
-    --color-ink: #eef1f5;
-    --color-ink-muted: #a3adba;
-    --color-ink-subtle: #8891a0;
+    --color-ink: #edf1f3;
+    --color-ink-muted: #a4afb8;
+    --color-ink-subtle: #8a959e;
 
-    --color-brand: #6da2f5;
-    --color-brand-hover: #8ab6f8;
-    --color-brand-soft: #172943;
+    --color-brand: #4fc4b6;
+    --color-brand-hover: #74d3c8;
+    --color-brand-soft: #12302d;
 
     --color-positive: #5fc79b;
     --color-positive-soft: #10281f;
@@ -65,6 +68,9 @@
     --color-caution-soft: #2a2113;
     --color-critical: #f08a82;
     --color-critical-soft: #2d1614;
+
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5);
   }
 }
 
@@ -94,5 +100,16 @@ body {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Text on a brand-coloured surface: white in light mode, near-black on the
+   lighter dark-mode teal so it keeps AA contrast in both. */
+.text-on-brand {
+  color: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  .text-on-brand {
+    color: #0e1215;
   }
 }

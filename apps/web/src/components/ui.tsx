@@ -17,12 +17,12 @@ export function Card({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-card border border-line bg-surface">
+    <section className="rounded-card border border-line bg-surface shadow-[var(--shadow-card)]">
       {(title || actions) && (
-        <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4">
+        <header className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
           <div>
-            {title && <h2 className="text-sm font-semibold tracking-tight">{title}</h2>}
-            {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
+            {title && <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>}
+            {description && <p className="mt-0.5 text-sm text-ink-muted">{description}</p>}
           </div>
           {actions}
         </header>
@@ -44,7 +44,7 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {description && <p className="mt-1 max-w-2xl text-sm text-ink-muted">{description}</p>}
       </div>
       {actions}
@@ -113,8 +113,27 @@ export function Field({
 }
 
 export const inputClasses =
-  "w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm " +
+  "w-full rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-sm " +
   "placeholder:text-ink-subtle disabled:opacity-60";
+
+type ButtonKind = "primary" | "secondary" | "ghost" | "danger";
+
+const BUTTON_KINDS: Record<ButtonKind, string> = {
+  primary: "bg-brand text-on-brand hover:bg-brand-hover",
+  secondary: "border border-line-strong bg-surface hover:bg-surface-muted",
+  ghost: "text-ink-muted hover:bg-surface-muted hover:text-ink",
+  danger: "border border-line-strong bg-surface text-critical hover:bg-critical-soft",
+};
+
+/**
+ * One button style for the whole app. Minimum 40px tall so it is an easy
+ * target on a tablet at the front desk (WCAG 2.5.8 asks for 24px; we go well
+ * past it on purpose).
+ */
+export function buttonClasses(kind: ButtonKind = "primary", size: "md" | "sm" = "md"): string {
+  const sizing = size === "md" ? "min-h-10 px-4 text-sm" : "min-h-8 px-3 text-[13px]";
+  return `inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:opacity-60 ${sizing} ${BUTTON_KINDS[kind]}`;
+}
 
 export function EmptyState({
   title,
@@ -124,7 +143,7 @@ export function EmptyState({
   children?: ReactNode;
 }) {
   return (
-    <div className="rounded-md border border-dashed border-line-strong px-5 py-8 text-center">
+    <div className="rounded-lg border border-dashed border-line-strong px-5 py-8 text-center">
       <p className="text-sm font-medium">{title}</p>
       {children && <div className="mt-2 text-sm text-ink-muted">{children}</div>}
     </div>

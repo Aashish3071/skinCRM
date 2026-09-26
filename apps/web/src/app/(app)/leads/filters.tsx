@@ -1,157 +1,115 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { LEAD_SOURCES, LEAD_SOURCE_LABELS } from "@skincrm/contracts";
-import type { PipelineStage } from "@/lib/crm";
+import { SearchIcon } from "@/components/icons";
 
 /**
- * Filters live in the URL rather than component state, so a filtered view can
- * be bookmarked, shared with a colleague and survives a refresh — which is what
- * "saved views" in PRD LEAD-07 will build on.
+ * The whole leads toolbar: search, whose leads, and board or list.
+ *
+ * Deliberately short. Stage is what the board's columns already show, and
+ * source-level slicing belongs to Reports; putting both here made the most
+ * used screen the most crowded one. Filters live in the URL so a view
+ * survives a refresh and can be shared.
  */
-export function LeadFilters({
-  stages,
-  staff,
-  view,
-}: {
-  stages: PipelineStage[];
-  staff: { id: string; fullName: string }[];
-  view: "list" | "board";
-}) {
+export function LeadFilters({ view, canSeeAll }: { view: "list" | "board"; canSeeAll: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
 
-  const set = (key: string, value: string) => {
+  const push = (mutate: (next: URLSearchParams) => void) => {
     const next = new URLSearchParams(params.toString());
-    if (value === "") next.delete(key);
-    else next.set(key, value);
-    // Changing a filter should not leave you on page 4 of the old result set.
+    mutate(next);
     next.delete("offset");
     router.push(`${pathname}?${next.toString()}`);
   };
 
-  const current = (key: string) => params.get(key) ?? "";
+  const owner = params.get("unassigned") === "true" ? "unassigned" : params.get("mine") === "true" ? "mine" : "all";
 
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface px-4 py-3">
-      <Filter label="Search" htmlFor="filter-search">
+    <div className="flex flex-wrap items-center gap-3">
+      <form
+        role="search"
+        className="relative min-w-0 basis-full sm:basis-auto sm:flex-1 sm:max-w-xs"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const value = new FormData(e.currentTarget).get("search")?.toString().trim() ?? "";
+          push((next) => (value ? next.set("search", value) : next.delete("search")));
+        }}
+      >
+        <label htmlFor="lead-search" className="sr-only">
+          Search leads
+        </label>
+        <SearchIcon size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-subtle" />
         <input
-          id="filter-search"
+          id="lead-search"
+          name="search"
           type="search"
-          defaultValue={current("search")}
-          placeholder="Name, phone or email"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") set("search", (e.target as HTMLInputElement).value);
-          }}
-          onBlur={(e) => set("search", e.target.value)}
-          className="w-52 rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm"
+          defaultValue={params.get("search") ?? ""}
+          placeholder="Search name, phone or email"
+          className="min-h-10 w-full rounded-lg border border-line-strong bg-surface pl-9 pr-3 text-sm placeholder:text-ink-subtle"
         />
-      </Filter>
+      </form>
 
-      <Filter label="Stage" htmlFor="filter-stage">
-        <select
-          id="filter-stage"
-          value={current("stageCategory")}
-          onChange={(e) => set("stageCategory", e.target.value)}
-          className="rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm"
-        >
-          <option value="">All stages</option>
-          {stages.map((stage) => (
-            <option key={stage.id} value={stage.category}>
-              {stage.name}
-            </option>
-          ))}
-        </select>
-      </Filter>
-
-      <Filter label="Source" htmlFor="filter-source">
-        <select
-          id="filter-source"
-          value={current("source")}
-          onChange={(e) => set("source", e.target.value)}
-          className="rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm"
-        >
-          <option value="">All sources</option>
-          {LEAD_SOURCES.map((source) => (
-            <option key={source} value={source}>
-              {LEAD_SOURCE_LABELS[source]}
-            </option>
-          ))}
-        </select>
-      </Filter>
-
-      {staff.length > 0 && (
-        <Filter label="Owner" htmlFor="filter-owner">
-          <select
-            id="filter-owner"
-            value={current("unassigned") === "true" ? "__unassigned" : current("ownerUserId")}
-            onChange={(e) => {
-              const next = new URLSearchParams(params.toString());
-              next.delete("ownerUserId");
+      {canSeeAll && (
+        <Segmented
+          label="Whose leads"
+          value={owner}
+          options={[
+            { value: "all", label: "Everyone" },
+            { value: "mine", label: "Mine" },
+            { value: "unassigned", label: "Unassigned" },
+          ]}
+          onChange={(value) =>
+            push((next) => {
+              next.delete("mine");
               next.delete("unassigned");
-              if (e.target.value === "__unassigned") next.set("unassigned", "true");
-              else if (e.target.value !== "") next.set("ownerUserId", e.target.value);
-              router.push(`${pathname}?${next.toString()}`);
-            }}
-            className="rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm"
-          >
-            <option value="">Anyone</option>
-            <option value="__unassigned">Unassigned queue</option>
-            {staff.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.fullName}
-              </option>
-            ))}
-          </select>
-        </Filter>
+              if (value !== "all") next.set(value, "true");
+            })
+          }
+        />
       )}
 
-      <label className="flex items-center gap-2 pb-1.5 text-sm">
-        <input
-          type="checkbox"
-          checked={current("includeClosed") !== "false"}
-          onChange={(e) => set("includeClosed", e.target.checked ? "" : "false")}
+      <div className="ml-auto">
+        <Segmented
+          label="View"
+          value={view}
+          options={[
+            { value: "board", label: "Board" },
+            { value: "list", label: "List" },
+          ]}
+          onChange={(value) => push((next) => (value === "board" ? next.delete("view") : next.set("view", value)))}
         />
-        Show closed
-      </label>
-
-      <div className="ml-auto flex items-center gap-1 pb-0.5" role="group" aria-label="View">
-        {(["list", "board"] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            aria-pressed={view === option}
-            onClick={() => set("view", option === "list" ? "" : option)}
-            className={`rounded-md px-2.5 py-1.5 text-sm capitalize ${
-              view === option
-                ? "bg-brand-soft font-medium text-brand"
-                : "border border-line-strong hover:bg-surface-muted"
-            }`}
-          >
-            {option}
-          </button>
-        ))}
       </div>
     </div>
   );
 }
 
-function Filter({
+function Segmented({
   label,
-  htmlFor,
-  children,
+  value,
+  options,
+  onChange,
 }: {
   label: string;
-  htmlFor: string;
-  children: React.ReactNode;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={htmlFor} className="text-xs font-medium text-ink-muted">
-        {label}
-      </label>
-      {children}
+    <div role="group" aria-label={label} className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={`min-h-9 rounded-md px-3 text-sm transition-colors ${
+            value === option.value ? "bg-brand-soft font-medium text-brand" : "text-ink-muted hover:text-ink"
+          }`}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }

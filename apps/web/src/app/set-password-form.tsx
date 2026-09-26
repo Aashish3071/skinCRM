@@ -17,7 +17,7 @@ export function SetPasswordForm({ mode, token }: { mode: "reset" | "invite"; tok
         <p className="text-sm">
           {mode === "invite" ? "Your account is ready." : "Your password has been changed."} You can sign in now.
         </p>
-        <Link href="/login" className="rounded-md bg-brand px-4 py-2.5 text-center text-sm font-medium text-white hover:bg-brand-hover">
+        <Link href="/login" className="rounded-md bg-brand px-4 py-2.5 text-center text-sm font-medium text-on-brand hover:bg-brand-hover">
           Go to sign in
         </Link>
       </div>
@@ -69,7 +69,7 @@ function Submit({ label }: { label: string }) {
     <button
       type="submit"
       disabled={pending}
-      className="rounded-md bg-brand px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-60"
+      className="rounded-md bg-brand px-4 py-2.5 text-sm font-medium text-on-brand hover:bg-brand-hover disabled:opacity-60"
     >
       {pending ? "Saving…" : label}
     </button>

@@ -210,7 +210,7 @@ function SubmitButton({
     ? danger
       ? "border border-line-strong text-critical hover:bg-critical-soft"
       : "border border-line-strong hover:bg-surface-muted"
-    : "bg-brand text-white hover:bg-brand-hover";
+    : "bg-brand text-on-brand hover:bg-brand-hover";
   return (
     <button type="submit" disabled={pending} className={`${base} ${style}`}>
       {pending ? pendingLabel : label}

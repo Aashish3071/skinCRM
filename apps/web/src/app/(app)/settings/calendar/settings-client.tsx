@@ -7,7 +7,7 @@ import { Badge, Card, Field, inputClasses } from "@/components/ui";
 import type { CalendarOptions } from "@/lib/calendar-view";
 import { saveConsultationType, saveWorkingHours } from "@/lib/calendar-actions";
 
-const button = "rounded-md bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
+const button = "rounded-md bg-brand px-4 py-2 text-sm font-medium text-on-brand disabled:opacity-50";
 const smallButton = "rounded border border-line-strong px-3 py-1.5 text-sm disabled:opacity-50";
 
 export function CalendarSettings({ options, types, hours }: { options: CalendarOptions; types: ConsultationTypeDto[]; hours: WorkingHoursDto[] }) {

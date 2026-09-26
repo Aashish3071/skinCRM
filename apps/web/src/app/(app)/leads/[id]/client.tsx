@@ -3,185 +3,22 @@
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import {
-  CONTACT_ATTEMPT_OUTCOMES,
   TASK_OUTCOMES,
   TASK_PRIORITIES,
   type TaskDto,
 } from "@skincrm/contracts";
-import { Badge, Field, inputClasses } from "@/components/ui";
+import { Badge, Field, buttonClasses, inputClasses } from "@/components/ui";
 import {
   addLeadNoteAction,
-  assignLeadAction,
-  changeStageAction,
   completeTaskAction,
   createTaskAction,
   logContactAttemptAction,
   type ActionState,
 } from "@/lib/crm-actions";
-import type { PipelineStage } from "@/lib/crm";
 
 const idle: ActionState = { status: "idle" };
 
 const humanize = (value: string) => value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
-
-export function LeadActions({
-  leadId,
-  stages,
-  currentStageId,
-  staff,
-  currentOwnerId,
-  canAssign,
-}: {
-  leadId: string;
-  stages: PipelineStage[];
-  currentStageId: string;
-  staff: { id: string; fullName: string }[];
-  currentOwnerId: string | null;
-  canAssign: boolean;
-}) {
-  const [stageState, stageAction] = useActionState(changeStageAction, idle);
-  const [assignState, assignAction] = useActionState(assignLeadAction, idle);
-
-  const [selectedStageId, setSelectedStageId] = useState(currentStageId);
-  const selected = stages.find((s) => s.id === selectedStageId);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <form action={stageAction} className="flex flex-wrap items-end gap-3">
-        <input type="hidden" name="leadId" value={leadId} />
-        <div className="flex flex-col gap-1">
-          <label htmlFor="stageId" className="text-xs font-medium text-ink-muted">
-            Move to stage
-          </label>
-          <select
-            id="stageId"
-            name="stageId"
-            value={selectedStageId}
-            onChange={(e) => setSelectedStageId(e.target.value)}
-            className="rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm"
-          >
-            {stages.map((stage) => (
-              <option key={stage.id} value={stage.id}>
-                {stage.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Shown only when the chosen stage needs one, so the field appears at
-            the moment it becomes relevant rather than always (PRD LEAD-02). */}
-        {selected?.requiresReason && (
-          <div className="flex min-w-56 flex-1 flex-col gap-1">
-            <label htmlFor="reason" className="text-xs font-medium text-ink-muted">
-              Reason (required for {selected.name})
-            </label>
-            <input
-              id="reason"
-              name="reason"
-              required
-              className="rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm"
-            />
-          </div>
-        )}
-
-        <Submit label="Update stage" />
-        <Feedback state={stageState} />
-      </form>
-
-      {canAssign && (
-        <form action={assignAction} className="flex flex-wrap items-end gap-3">
-          <input type="hidden" name="leadId" value={leadId} />
-          <div className="flex flex-col gap-1">
-            <label htmlFor="ownerUserId" className="text-xs font-medium text-ink-muted">
-              Owner
-            </label>
-            <select
-              id="ownerUserId"
-              name="ownerUserId"
-              defaultValue={currentOwnerId ?? ""}
-              className="rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm"
-            >
-              <option value="">Unassigned queue</option>
-              {staff.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.fullName}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Submit label="Assign" subtle />
-          <Feedback state={assignState} />
-        </form>
-      )}
-    </div>
-  );
-}
-
-export function ContactAttemptForm({ leadId }: { leadId: string }) {
-  const [state, action] = useActionState(logContactAttemptAction, idle);
-  return (
-    <form action={action} className="flex flex-col gap-3">
-      <input type="hidden" name="leadId" value={leadId} />
-      <div className="flex flex-wrap gap-3">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="outcome" className="text-xs font-medium text-ink-muted">
-            Outcome
-          </label>
-          <select
-            id="outcome"
-            name="outcome"
-            className="rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm"
-          >
-            {CONTACT_ATTEMPT_OUTCOMES.map((outcome) => (
-              <option key={outcome} value={outcome}>
-                {humanize(outcome)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label htmlFor="channel" className="text-xs font-medium text-ink-muted">
-            Channel
-          </label>
-          <select
-            id="channel"
-            name="channel"
-            className="rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-sm"
-          >
-            {["phone", "email", "whatsapp", "in_person"].map((channel) => (
-              <option key={channel} value={channel}>
-                {humanize(channel)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <Field label="Note" htmlFor="note">
-        <textarea id="note" name="note" rows={2} className={inputClasses} />
-      </Field>
-      <div className="flex items-center gap-3">
-        <Submit label="Log attempt" />
-        <Feedback state={state} />
-      </div>
-    </form>
-  );
-}
-
-export function InquiryNoteForm({ leadId }: { leadId: string }) {
-  const [state, action] = useActionState(addLeadNoteAction, idle);
-  return (
-    <form action={action} className="flex flex-col gap-3">
-      <input type="hidden" name="leadId" value={leadId} />
-      <Field label="Note" htmlFor="body">
-        <textarea id="body" name="body" rows={3} required className={inputClasses} />
-      </Field>
-      <div className="flex items-center gap-3">
-        <Submit label="Add note" />
-        <Feedback state={state} />
-      </div>
-    </form>
-  );
-}
 
 export function AddTaskForm({ leadId }: { leadId: string }) {
   const [state, action] = useActionState(createTaskAction, idle);
@@ -316,11 +153,7 @@ function Submit({ label, subtle = false }: { label: string; subtle?: boolean }) 
     <button
       type="submit"
       disabled={pending}
-      className={`rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-60 ${
-        subtle
-          ? "border border-line-strong hover:bg-surface-muted"
-          : "bg-brand text-white hover:bg-brand-hover"
-      }`}
+      className={buttonClasses(subtle ? "secondary" : "primary", "sm")}
     >
       {pending ? "Saving…" : label}
     </button>
@@ -345,4 +178,108 @@ function Feedback({ state }: { state: ActionState }) {
 function toLocalInput(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+const CALL_OUTCOMES = [
+  { value: "connected", label: "Reached them" },
+  { value: "no_answer", label: "No answer" },
+  { value: "invalid_contact", label: "Wrong number" },
+] as const;
+
+/**
+ * One box for the two things staff record most: a note, or a contact attempt.
+ * Tabs instead of two separate cards, so the page has one obvious place to
+ * type.
+ */
+export function QuickLog({ leadId }: { leadId: string }) {
+  const [tab, setTab] = useState<"note" | "call">("call");
+  const [noteState, noteAction] = useActionState(addLeadNoteAction, idle);
+  const [callState, callAction] = useActionState(logContactAttemptAction, idle);
+  const [outcome, setOutcome] = useState<string>("connected");
+
+  return (
+    <div>
+      <div role="tablist" aria-label="Log" className="mb-3 flex gap-1 border-b border-line">
+        {(
+          [
+            ["call", "Log a contact"],
+            ["note", "Add a note"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={tab === value}
+            onClick={() => setTab(value)}
+            className={`-mb-px border-b-2 px-3 pb-2 text-sm ${
+              tab === value ? "border-brand font-medium text-brand" : "border-transparent text-ink-muted hover:text-ink"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "call" ? (
+        <form action={callAction} role="tabpanel" className="flex flex-col gap-3">
+          <input type="hidden" name="leadId" value={leadId} />
+          <input type="hidden" name="outcome" value={outcome} />
+          <div className="flex flex-wrap items-center gap-2">
+            {CALL_OUTCOMES.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                aria-pressed={outcome === o.value}
+                onClick={() => setOutcome(o.value)}
+                className={`min-h-9 rounded-full border px-3.5 text-sm ${
+                  outcome === o.value
+                    ? "border-brand bg-brand-soft font-medium text-brand"
+                    : "border-line-strong text-ink-muted hover:bg-surface-muted"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+            <label className="ml-auto flex items-center gap-2 text-sm text-ink-muted">
+              via
+              <select name="channel" defaultValue="phone" className="min-h-9 rounded-lg border border-line-strong bg-surface px-2 text-sm text-ink">
+                <option value="phone">Phone</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="email">Email</option>
+                <option value="in_person">In person</option>
+              </select>
+            </label>
+          </div>
+          <label htmlFor="call-note" className="sr-only">
+            Note
+          </label>
+          <textarea id="call-note" name="note" rows={2} placeholder="Anything worth remembering (optional)" className={inputClasses} />
+          <div className="flex items-center gap-3">
+            <Submit label="Save" />
+            <Feedback state={callState} />
+          </div>
+        </form>
+      ) : (
+        <form action={noteAction} role="tabpanel" className="flex flex-col gap-3">
+          <input type="hidden" name="leadId" value={leadId} />
+          <label htmlFor="lead-note" className="sr-only">
+            Note
+          </label>
+          <textarea
+            id="lead-note"
+            name="body"
+            rows={3}
+            required
+            placeholder="A note about this inquiry"
+            className={inputClasses}
+          />
+          <div className="flex items-center gap-3">
+            <Submit label="Add note" />
+            <Feedback state={noteState} />
+          </div>
+        </form>
+      )}
+    </div>
+  );
 }

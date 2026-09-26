@@ -17,17 +17,21 @@ for the current resume point.
                     ┌──────▼───────┐
   ad platforms ────▶│  apps/api    │  Fastify. REST + webhook receivers.
   WhatsApp     ────▶│  (port 4000) │  Verifies, persists, acknowledges, enqueues.
-                    └──┬────────┬──┘
-                       │        │ BullMQ
-             ┌─────────▼──┐  ┌──▼──────────────┐
-             │ PostgreSQL │  │  apps/worker    │  ingest, automation sends,
-             │  (RLS)     │◀─│                 │  feedback outbox, reconcile
-             └────────────┘  └─────────────────┘
+                    └──┬───────────┘
+                       │
+             ┌─────────▼──┐  ┌─────────────────────┐
+             │ PostgreSQL │◀─│ worker               │  automation runs, housekeeping;
+             │  (RLS)     │  │ apps/api/src/worker  │  later: ingest, feedback outbox
+             └────────────┘  └─────────────────────┘
 ```
 
-Three processes, one database. The API never does slow work inline: a webhook
-verifies, writes the raw event, returns 200, and enqueues. The worker does the
-rest.
+Three processes, one database, and **Postgres is the queue** (D-59). Work is a
+row with a due time — an automation run is an `automation_enrollments` row with
+`next_run_at` — written in the same transaction as the event that caused it. The
+worker claims due rows with `FOR UPDATE SKIP LOCKED` and runs each in its
+clinic's tenant transaction. The worker is a second entry point of the API
+package (`src/worker/main.ts` → `dist/worker.js`); in development the API starts
+it in-process when `WORKER_IN_API=true`.
 
 ---
 
@@ -40,8 +44,7 @@ rest.
 | `@skincrm/security` | Argon2id passwords, opaque token hashing, per-clinic envelope encryption, TOTP, idempotency keys | config |
 | `@skincrm/db` | Drizzle schema, migrations, RLS policies, tenant-scoped query helpers, seed | config, contracts, security |
 | `@skincrm/connectors` | Adapter interfaces plus `mock` and `live` implementations for email, WhatsApp, Meta, Google, calendar | config, contracts |
-| `apps/api` | HTTP surface, auth, capability checks, webhooks, audit | all packages |
-| `apps/worker` | Queue processors | all packages |
+| `apps/api` | HTTP surface, auth, capability checks, webhooks, audit, and the background worker | all packages |
 | `apps/web` | UI | config, contracts |
 
 ### Module resolution
@@ -270,6 +273,37 @@ log with that reason**, never dropped. The message row is inserted *before* the
 provider is called, so the idempotency key is already claimed if the process
 dies mid-send.
 
+## 6a. Automations
+
+Code: `apps/api/src/automations/` (engine, routes, system context),
+`apps/api/src/worker/` (claim loop), schema `packages/db/src/schema/automations.ts`,
+contracts `packages/contracts/src/automations.ts`, UI `apps/web/src/app/(app)/automations/`.
+
+- **Rule** (`automation_rules`) = one trigger + ordered steps + stop conditions,
+  JSON validated by `saveAutomationSchema`. New rules start **paused**. Saving
+  bumps `version`. Deleting archives.
+- **Triggers** are emitted by `emitAutomationEvent()` from the code that causes
+  them, inside that request's transaction: lead creation (both `POST /leads` and
+  the intake pipeline), `changeStage`, and the appointment book / reschedule /
+  cancel / status routes. **If you add a new way to create a lead or change an
+  appointment, emit the event there too.**
+- **Enrollment** (`automation_enrollments`) is unique on `(rule_id, dedupe_key)`
+  — `lead:<id>` or `appt:<id>` — so replays and ping-pong rules cannot enroll
+  twice. It snapshots the steps (D-60).
+- **Running**: `runEnrollment()` re-checks stop conditions before every step,
+  then executes until a Wait or the end. Sends go through `sendMessage()` and so
+  the full send gate; idempotency key `auto:<run>:<step>`. Quiet hours
+  reschedule the run (D-61). A blocked send is recorded and the run continues; a
+  failed "Only continue if" stops it.
+- **Appointment runs** stop when the appointment leaves the state that started
+  them (a reminder for a cancelled appointment), and cancel/reschedule stop them
+  eagerly. Reminders (`appointment_upcoming`) start `hoursBefore` ahead, or now
+  if booked at shorter notice.
+- **System context**: background code calls `runAsSystem(clinicId, fn)` which
+  opens `withTenant` and a request context with no user and **no capabilities**.
+
+---
+
 ## 7. Conversion feedback (CRM → ad platform)
 
 The highest-risk feature in the product. Architecture reflects that.
@@ -423,11 +457,13 @@ Consequences to know about:
 | Calendar UI — day/week views, booking, settings | ✅ Built |
 | Connectors package with email and WhatsApp mocks | ✅ Built |
 | Templates, send gate, delivery log `[MSG-02, 04, 05, 06, 07]` | ✅ Built, 31 tests |
-| Automation engine `[MSG-03]` | 🔜 Next |
-| `apps/worker` and appointment reminders `[CAL-05]` | 🔜 Next |
-| Messaging UI — template editor, delivery log | 🔜 Next |
-| Calendar `[CAL-01…05]` | ⬜ Phase 3 |
-| Templates, consent ledger, automations `[MSG-01…07]` | ⬜ Phase 4 |
+| Six-stage pipeline and migration of existing clinics (D-57) | ✅ Built |
+| Automation engine, stop conditions, reminders `[MSG-03, MSG-06, CAL-05]` | ✅ Built, 18 tests |
+| Worker (Postgres queue) and session pruning | ✅ Built |
+| Automation canvas, recipes, dry run, run history | ✅ Built |
+| SMTP email connector; invite and reset emails `[MSG-01]` | ✅ Built (connection-test screen not yet) |
+| UI simplification — shell, Add lead, board, stepper | ✅ Built |
+| Messaging UI — template editor, delivery log, unsubscribe page | 🔜 Next |
 | WhatsApp shared inbox `[WA-01…09]` | ⬜ Phase 5 |
 | Reports and exports `[REP-01…04]` | ⬜ Phase 6 |
 | Meta / Google / WhatsApp adapters `[INT-01…09]` | ⬜ Phase 7 |

@@ -28,7 +28,7 @@ export function PeopleSearch({ initial }: { initial: string }) {
       />
       <button
         type="submit"
-        className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-white hover:bg-brand-hover"
+        className="rounded-md bg-brand px-3 py-2 text-sm font-medium text-on-brand hover:bg-brand-hover"
       >
         Search
       </button>

@@ -1,8 +1,8 @@
 # Handoff — resume point
 
 **Updated:** 2026-09-26
-**Phase:** 4 of 9 (Messaging core) — send gate, templates and delivery log done; automation engine and worker outstanding
-**Overall:** ~55% of the build
+**Phase:** 4 of 9 (Messaging core) — engine, worker, canvas and SMTP done; template editor, delivery-log screen and unsubscribe page outstanding
+**Overall:** ~62% of the build
 
 Read [README.md](../README.md) to run it and [ARCHITECTURE.md](../ARCHITECTURE.md)
 for the rules that must not be broken. This file says only what to do next.
@@ -20,16 +20,20 @@ pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
 pnpm lint                     # clean
-pnpm test                     # expect 237 passing
+pnpm test                     # expect 256 passing
 ```
 
-If those 237 tests pass, the foundation is intact and you can build on it.
+If those 256 tests pass, the foundation is intact and you can build on it.
 
-To drive the API by hand:
+To run everything (the API also runs the background worker when
+`WORKER_IN_API=true`, the development default):
 
 ```bash
-pnpm --filter @skincrm/api dev
+pnpm dev
 ```
+
+**Stop the dev API before `pnpm test`.** Its in-process worker claims the
+automation runs the tests create and the automation tests then fail.
 
 ```bash
 curl -s -c /tmp/c.txt -X POST http://localhost:4000/auth/login -H 'content-type: application/json' -d '{"email":"admin@sunshine-skin.test","password":"ChangeMe-Dev-2026!"}'
@@ -60,7 +64,7 @@ curl -s -c /tmp/c.txt -X POST http://localhost:4000/auth/login -H 'content-type:
   discovers every `clinic_id` table from the catalog and fails if any is
   unprotected. Idempotent seed: two clinics, 11 stages each, 7 users.
 
-### `apps/api` (Fastify) — 194 integration tests
+### `apps/api` (Fastify) — 213 integration tests
 
 - `src/route.ts` — the route contract. Correlation id, request context, Zod
   validation, session resolution, capability check, tenant transaction and
@@ -116,55 +120,45 @@ Nothing is half-finished. No failing tests, no temporary workarounds beyond the
 
 ## Do this next, in order
 
-### 1. Automation engine `[MSG-03, MSG-06]`
+The automation engine, worker, canvas builder, SMTP connector and the UI
+simplification landed on 2026-09-26 — see README "Done in phase 4, second
+slice" and ARCHITECTURE §6a. The pipeline is now six stages (D-57).
 
-The send path exists and is safe; nothing triggers it automatically yet.
+### 1. Templates tab `[MSG-02]`
 
-- New tables: `automation_rules` (trigger, conditions, template, delay, quiet
-  hours, active) and `automation_enrollments` (rule, person, lead, state, next
-  run, stop reason). **Add both to `tenant_tables` in
-  `packages/db/sql/900_rls.sql`.**
-- Triggers to cover the five templates named in PRD 4.4: new-inquiry
-  acknowledgement, first-follow-up task when no contact inside the clinic SLA,
-  consultation confirmation, 24-hour appointment reminder, post-no-show task.
-- **Stop conditions are the subtle part** (MSG-06): a rule stops on reply,
-  booking, conversion, opt-out or closure, and a scheduled job must re-check
-  them before sending. `evaluateSend` already covers consent, suppression and
-  lead closure; the enrollment needs to handle "they replied" and "they booked".
-- Each rule can pick email or WhatsApp independently.
-- Keep promotional nurture disabled until the clinic approves audience, copy
-  and legal basis.
+API is complete (`GET/POST/PATCH /templates`, `POST /templates/:id/preview`,
+`GET /templates/variables`). Add a Templates tab under `/automations` with an
+editor, the operational/promotional choice, variable insert chips (reuse
+`friendlyVariable` and the insert logic in
+`apps/web/src/app/(app)/automations/builder/inspector.tsx`) and a live preview.
+The canvas already offers saved templates in its send steps once any exist.
 
-### 2. `apps/worker`
+### 2. Delivery log tab `[MSG-07]`
 
-Does not exist yet. Create it with tsup + tsx like `apps/api`.
+`GET /messages` exists. Show each message with state and, for suppressed ones,
+the reason in plain English (`SUPPRESSION_REASON_LABELS` in
+`packages/contracts/src/messaging.ts`). Link each row to its lead and, when
+`ruleId` is set, to the automation.
 
-- BullMQ queues: scheduled sends, automation evaluation, maintenance.
-- Appointment reminders `[CAL-05]`: schedule on booking, and **cancel pending
-  jobs when the appointment is rescheduled or cancelled**. There is a
-  `TODO(phase 4)` at the reschedule handler in `apps/api/src/calendar/routes.ts`.
-- Deliver the invite and password-reset emails, which are still printed to the
-  API console (`TODO(phase 4)` in `auth/routes.ts` and `users/routes.ts`).
-- Call `pruneExpiredSessions()`, written in `auth/sessions.ts` and never
-  scheduled.
-- Bounded retry and a dead-letter view an admin can replay.
+### 3. Public unsubscribe page
 
-### 3. Messaging UI
+`/unsubscribe/[token]` outside the `(app)` group, calling a new public API route
+that verifies the token (`verifyUnsubscribeToken`) and calls `recordOptOut`
+inside `runAsSystem(clinicId, …)`. One-click, no login, idempotent. Also send
+`unsubscribeUrl` on promotional email so the SMTP connector sets
+`List-Unsubscribe` headers.
 
-The Automations section is still a `NotBuiltYet` panel. It needs the template
-editor with live preview, the rule builder, and the delivery log with its
-suppression reasons — `SUPPRESSION_REASON_LABELS` in
-`packages/contracts/src/messaging.ts` already has the plain-English wording.
+### 4. Email connection test `[MSG-01]`
 
-Also needed: a public `/unsubscribe/:token` page. The token is already generated
-and verifiable (`packages/security/src/unsubscribe.ts`); nothing serves it yet.
+A Settings → Email screen calling `connectors.email.verify()`; per-clinic SMTP
+credentials stored encrypted with `encryptForClinic` rather than the global env.
 
-### 4. Phase 5 — WhatsApp shared inbox `[WA-01…09]`
+### 5. Phase 5 — WhatsApp shared inbox `[WA-01…09]`
 
-Conversation model, assignment so two staff cannot unknowingly reply to the same
-thread, and internal notes. The service window and template rules are already
-enforced by the send gate. Mock connector first; the real Cloud API and the
-coexistence pilot belong to phase 7.
+Conversation model, assignment/locking, internal notes, mock connector first.
+Inbound messages must be written to `messages` with `direction = 'inbound'` —
+that is what the automation "They reply" stop condition and the send gate's
+24-hour window both read.
 
 ---
 
@@ -218,6 +212,17 @@ coexistence pilot belong to phase 7.
    code under test will never see them. Resolve the clinic from the person.
 17. **`getEnv()` caches.** Changing an environment variable inside a test has no
    effect until `resetEnvCache()` is called.
+18. **Every new path that creates a lead or changes an appointment must call
+   `emitAutomationEvent()`** inside its transaction, or automations silently
+   never fire for it. `POST /leads` originally missed this — the tests caught it.
+19. **Background code must use `runAsSystem(clinicId, fn)`**, never
+   `withoutTenantScope` for tenant work. The worker only uses the owner
+   connection to *claim* run ids across clinics.
+20. **Don't reintroduce retired stages** (`qualified`, `nurture`, …) in seeds or
+   UI; `changeStage` refuses them and `930_simplify_pipeline.sql` deactivates
+   them on every migrate.
+21. **`next build` beside `next dev`:** use `NEXT_DIST_DIR=.next-build npx next build`
+   in `apps/web` so the running dev server's `.next` is not clobbered.
 
 ---
 
@@ -225,14 +230,12 @@ coexistence pilot belong to phase 7.
 
 | Item | Where | When |
 |---|---|---|
-| Password-reset and invite emails are logged to the console, not sent | `TODO(phase 4)` in `apps/api/src/auth/routes.ts` and `users/routes.ts` | Phase 4, with the email connector |
-| `pruneExpiredSessions()` is written but nothing calls it | `apps/api/src/auth/sessions.ts` | Phase 4, as a scheduled worker job |
-| No lint setup yet (`pnpm lint` is a no-op) | root | Add ESLint with the phase 2 work |
 | `disableRequestLogging` is deprecated in Fastify 5 | `apps/api/src/app.ts` | Swap for a `LogController` instance when upgrading to Fastify 6 |
 | No per-IP cap on the login route beyond 30/5min | `apps/api/src/auth/routes.ts` | Phase 9 hardening: consider a Redis-backed sliding window |
-| `apps/worker` does not exist yet | — | Phase 4, when the first job appears |
-| Calendar UI — the API is complete, there is no screen | `apps/web/src/app/(app)/calendar` | Next task |
-| Appointment reminders `[CAL-05]` — `TODO(phase 4)` at the reschedule handler | `apps/api/src/calendar/routes.ts` | Phase 4 |
+| Automations run once per lead per rule (dedupe key `lead:<id>`), so a "stage changed" rule does not re-fire if a lead re-enters that stage | `apps/api/src/automations/engine.ts` | Revisit if clinics ask for it |
+| The "Qualified" feedback milestone is unreachable after D-57 | `packages/contracts/src/enums.ts` | Phase 8, if Qualified-based optimisation is wanted |
+| Dead-letter/replay view for failed automation runs | runs page shows `Failed` + reason only | Phase 9 |
+| Inbox and Reports are hidden from the nav until built | `apps/web/src/components/nav.tsx` | Phases 5 and 6 |
 | `people.branchId` is stored but nothing filters on it yet | `apps/api/src/people/routes.ts` | With branch permissions |
 | Client self-service booking link `[CAL-06]` and external calendar sync `[CAL-07]` | — | P1, after MVP |
 
@@ -243,7 +246,8 @@ coexistence pilot belong to phase 7.
 None block the current work; defaults are in place. Carry these into the pilot:
 
 - Clinic specialty and advertised services → generic consultation types for now.
-- Objective criteria for a **Qualified** lead → staff-confirmed criteria per PRD 4.5a.
+- Objective criteria for a **Qualified** lead → the stage was retired at the client's
+  request (D-57); confirm whether ad optimisation on Qualified is still wanted.
 - Email and calendar provider → mock adapters until chosen.
 - Existing WhatsApp Business number eligibility for the coexistence path → must
   be validated in a pilot before any cutover. Do not promise history backfill.

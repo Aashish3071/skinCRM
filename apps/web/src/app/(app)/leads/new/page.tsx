@@ -3,26 +3,24 @@ import { Card, PageHeader } from "@/components/ui";
 import { requireCapability } from "@/lib/session";
 import { NewLeadForm } from "./form";
 
-export const metadata = { title: "New inquiry — SkinCRM" };
+export const metadata = { title: "Add lead — SkinCRM" };
 
 export default async function NewLeadPage() {
   await requireCapability("leads:write");
   return (
-    <>
+    <div className="mx-auto max-w-xl">
       <PageHeader
-        title="New inquiry"
-        description="For a walk-in or a phone call. Only a name and one way to reach them are needed — the rest can wait."
+        title="Add lead"
+        description="For a walk-in or a phone call."
         actions={
-          <Link href="/leads" className="text-sm text-brand">
+          <Link href="/leads" className="text-sm text-ink-muted hover:text-ink">
             Cancel
           </Link>
         }
       />
-      <div className="max-w-2xl">
-        <Card>
-          <NewLeadForm />
-        </Card>
-      </div>
-    </>
+      <Card>
+        <NewLeadForm />
+      </Card>
+    </div>
   );
 }

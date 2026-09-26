@@ -26,10 +26,14 @@ const text = (form: FormData, key: string): string | undefined => {
 // --- Leads ----------------------------------------------------------------
 
 export async function createLeadAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  // One "Name" box on the form; the API keeps first and last separately so
+  // messages can greet people by first name.
+  const fullName = text(form, "fullName");
+  const [first, ...rest] = (fullName ?? "").split(/\s+/);
   const payload = {
     person: {
-      firstName: text(form, "firstName"),
-      lastName: text(form, "lastName"),
+      firstName: fullName ? first : text(form, "firstName"),
+      lastName: fullName ? rest.join(" ") || undefined : text(form, "lastName"),
       phone: text(form, "phone"),
       email: text(form, "email"),
       // Set by the confirmation step after the duplicate warning is shown.
@@ -212,4 +216,22 @@ export async function mergePeopleAction(_prev: ActionState, form: FormData): Pro
   revalidatePath("/people");
   revalidatePath("/people/duplicates");
   return { status: "success", message: "Records merged. This can be undone." };
+}
+
+/**
+ * Move a lead from the board (drag and drop, or the card's "Move to" menu).
+ * Called directly rather than through a form, so it takes plain arguments.
+ */
+export async function moveLeadAction(leadId: string, stageId: string, reason?: string): Promise<ActionState> {
+  try {
+    await apiFetch(`/leads/${leadId}/stage`, {
+      method: "POST",
+      body: { stageId, reason: reason?.trim() || undefined },
+    });
+  } catch (error) {
+    return toError(error);
+  }
+  revalidatePath("/leads");
+  revalidatePath(`/leads/${leadId}`);
+  return { status: "success" };
 }

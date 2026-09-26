@@ -246,7 +246,7 @@ export async function runEnrollment(enrollmentId: string, now = new Date()): Pro
     switch (current.type) {
       case "wait": {
         const until = new Date(now.getTime() + waitMs(current.amount, current.unit));
-        record({ outcome: "done", detail: `Waiting until ${until.toISOString()}` });
+        record({ outcome: "done", detail: `Waiting ${describeStep(current).replace(/^Wait /, "")}` });
         step += 1;
         return save({ nextRunAt: until });
       }

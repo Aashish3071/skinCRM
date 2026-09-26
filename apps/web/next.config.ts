@@ -13,6 +13,9 @@ const config: NextConfig = {
     serverActions: { bodySizeLimit: "2mb" },
   },
   poweredByHeader: false,
+  // Lets a production build run beside `next dev` without clobbering its
+  // output (NEXT_DIST_DIR=.next-build pnpm build).
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   typedRoutes: false,
 };
 

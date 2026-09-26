@@ -9,7 +9,7 @@ import { Badge, Field, inputClasses } from "@/components/ui";
 import { appointmentLabels, clockTime, dayLabel, localDate, type CalendarOptions } from "@/lib/calendar-view";
 import { bookAppointment, cancelAppointment, loadAvailability, moveAppointment, searchBookingPeople, setAppointmentStatus, type Availability } from "@/lib/calendar-actions";
 
-const primary = "rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50";
+const primary = "rounded-md bg-brand px-4 py-2 text-sm font-medium text-on-brand hover:bg-brand-hover disabled:opacity-50";
 const secondary = "rounded-md border border-line-strong px-3 py-2 text-sm hover:bg-surface-muted disabled:opacity-50";
 type BookingPerson = { id: string; displayName: string; leadId?: string };
 
@@ -183,7 +183,7 @@ function AppointmentDialog({ visit, timezone, writable, onClose, onMove, onDone 
         if (result.ok) onDone("Appointment canceled. The time is available again."); else setError(result.message);
       }); }}>
         <Field label="Reason for cancellation" htmlFor="cancel-reason"><textarea id="cancel-reason" name="reason" required maxLength={500} className={inputClasses} /></Field>
-        <button disabled={pending} className="rounded bg-critical px-4 py-2 text-sm text-white">Confirm cancellation</button>
+        <button disabled={pending} className="rounded bg-critical px-4 py-2 text-sm text-on-brand">Confirm cancellation</button>
       </form>}
     </div>}
     {error && <p role="alert" className="mt-3 text-sm text-critical">{error}</p>}

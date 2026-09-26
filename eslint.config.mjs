@@ -16,6 +16,7 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/dist/**",
       "**/.next/**",
+      "**/.next-build/**",
       "**/.turbo/**",
       "**/coverage/**",
       "packages/db/drizzle/**",
