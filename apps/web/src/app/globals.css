@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+/**
+ * Design tokens.
+ *
+ * Declaring these in `@theme` makes Tailwind generate real utilities from the
+ * names: `--color-brand` gives `bg-brand` / `text-brand` / `border-brand`,
+ * `--radius-card` gives `rounded-card`. Use those, not `bg-[--color-brand]` —
+ * that bracket form is Tailwind 3 syntax and silently produces nothing here.
+ *
+ * Front-desk staff use this for hours at a time, so the palette is
+ * low-saturation with strong text contrast, and status is always carried by a
+ * label as well as a colour (PRD 6: "accessible status labels beyond colour
+ * alone").
+ */
+@theme {
+  --color-canvas: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f2f4f7;
+  --color-line: #e1e5ea;
+  --color-line-strong: #c9d0d8;
+
+  --color-ink: #12181f;
+  --color-ink-muted: #5a6472;
+  --color-ink-subtle: #737d8b;
+
+  --color-brand: #1d5fd0;
+  --color-brand-hover: #1a52b4;
+  --color-brand-soft: #eaf1fd;
+
+  --color-positive: #126b48;
+  --color-positive-soft: #e6f4ee;
+  --color-caution: #7a4f00;
+  --color-caution-soft: #fdf3e2;
+  --color-critical: #a81f18;
+  --color-critical-soft: #fdecea;
+
+  --radius-card: 10px;
+}
+
+/**
+ * Dark theme. `@theme` only works at the top level, so the variables are
+ * redefined on `:root` instead — the generated utilities reference
+ * `var(--color-*)`, so overriding the values is enough.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: #0f1318;
+    --color-surface: #171c23;
+    --color-surface-muted: #1f2630;
+    --color-line: #2a323d;
+    --color-line-strong: #3a4450;
+
+    --color-ink: #eef1f5;
+    --color-ink-muted: #a3adba;
+    --color-ink-subtle: #8891a0;
+
+    --color-brand: #6da2f5;
+    --color-brand-hover: #8ab6f8;
+    --color-brand-soft: #172943;
+
+    --color-positive: #5fc79b;
+    --color-positive-soft: #10281f;
+    --color-caution: #e0b062;
+    --color-caution-soft: #2a2113;
+    --color-critical: #f08a82;
+    --color-critical-soft: #2d1614;
+  }
+}
+
+html,
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+}
+
+body {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A visible focus ring on every interactive element: core workflows must be
+   keyboard usable (PRD 9, WCAG 2.2 AA). */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
