@@ -2,6 +2,7 @@ import { getEnv } from "@skincrm/config";
 import { closeAllConnections } from "@skincrm/db";
 import { buildApp } from "./app";
 import { logger } from "./logger";
+import { startWorker } from "./worker/loop";
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -26,6 +27,9 @@ async function main(): Promise<void> {
     "API listening",
   );
 
+  // Development convenience: one process runs the API and the worker.
+  const stopWorker = env.WORKER_IN_API ? startWorker(env.WORKER_POLL_MS) : null;
+
   // Drain in-flight requests before dropping the database pool, so a deploy does
   // not abort a transaction mid-write.
   let shuttingDown = false;
@@ -35,6 +39,7 @@ async function main(): Promise<void> {
     logger.info({ signal }, "Shutting down");
     try {
       await app.close();
+      await stopWorker?.();
       await closeAllConnections();
       process.exit(0);
     } catch (error) {

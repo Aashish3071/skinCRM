@@ -84,6 +84,7 @@ export async function changeStage(params: {
   const toStage = await stageById(params.stageId);
 
   if (lead.stageId === toStage.id) return lead;
+  if (!toStage.isActive) throw badRequest(`${toStage.name} is no longer part of the pipeline.`);
 
   const fromStage = await stageById(lead.stageId);
   const reason = params.reason?.trim() || null;
@@ -126,6 +127,15 @@ export async function changeStage(params: {
     actorUserId: context.userId,
     reason,
     occurredAt: now,
+  });
+
+  // Imported lazily: the engine itself calls changeStage for "Move lead" steps.
+  const { emitAutomationEvent } = await import("../automations/engine");
+  await emitAutomationEvent({
+    type: "stage_changed",
+    leadId: lead.id,
+    personId: lead.personId,
+    stageCategory: toStage.category,
   });
 
   if (!params.silent) {

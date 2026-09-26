@@ -61,7 +61,9 @@ declare
     -- Phase 4: messaging
     'message_templates',
     'messages',
-    'suppressions'
+    'suppressions',
+    'automation_rules',
+    'automation_enrollments'
   ];
 begin
   foreach tbl in array tenant_tables loop

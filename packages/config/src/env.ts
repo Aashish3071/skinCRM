@@ -69,6 +69,13 @@ const schema = z.object({
   CONNECTOR_CALENDAR: connectorMode,
 
   OUTBOUND_SENDING_ENABLED: booleanish.default("false"),
+  /**
+   * Run the background worker inside the API process. Convenient for local
+   * development (one `pnpm dev` runs everything); in production run the
+   * worker as its own process (`node dist/worker.js`) and leave this false.
+   */
+  WORKER_IN_API: booleanish.default("false"),
+  WORKER_POLL_MS: z.coerce.number().int().min(500).max(60_000).default(5_000),
   CONVERSION_FEEDBACK_ENABLED: booleanish.default("false"),
 
   SMTP_HOST: z.string().default("localhost"),

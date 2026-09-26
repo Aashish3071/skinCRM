@@ -55,24 +55,69 @@ export const REASON_REQUIRED_STAGE_CATEGORIES: readonly StageCategory[] = [
   "unqualified",
 ] as const;
 
-/** Default pipeline seeded for a new clinic, in display order. */
+/**
+ * Default pipeline seeded for a new clinic, in display order.
+ *
+ * Six stages, on purpose. The earlier eleven-stage pipeline asked the front
+ * desk to distinguish "attempting contact" from "connected" from "qualified"
+ * for every inquiry, and in practice they don't — they need to know who is
+ * new, who has been reached, who is booked, who came in, who paid and who is
+ * gone (D-57). The retired categories stay in the enum so history and the
+ * conversion-feedback mapping keep working; they are just not seeded or shown.
+ */
 export const DEFAULT_PIPELINE: ReadonlyArray<{
   category: StageCategory;
   name: string;
   isClosed: boolean;
 }> = [
   { category: "new", name: "New", isClosed: false },
-  { category: "attempting_contact", name: "Attempting contact", isClosed: false },
-  { category: "connected", name: "Connected", isClosed: false },
-  { category: "qualified", name: "Qualified", isClosed: false },
-  { category: "consultation_booked", name: "Consultation booked", isClosed: false },
-  { category: "consultation_attended", name: "Consultation attended", isClosed: false },
-  { category: "converted", name: "Converted", isClosed: true },
-  { category: "nurture", name: "Nurture", isClosed: false },
+  { category: "connected", name: "Contacted", isClosed: false },
+  { category: "consultation_booked", name: "Booked", isClosed: false },
+  { category: "consultation_attended", name: "Visited", isClosed: false },
+  { category: "converted", name: "Won", isClosed: true },
   { category: "lost", name: "Lost", isClosed: true },
-  { category: "unqualified", name: "Unqualified", isClosed: true },
-  { category: "duplicate", name: "Duplicate", isClosed: true },
 ];
+
+/**
+ * Categories from the original pipeline that are no longer used, and where a
+ * lead sitting in one is moved to. Applied by packages/db/sql/930_simplify_pipeline.sql.
+ */
+export const RETIRED_STAGE_CATEGORIES: Readonly<Partial<Record<StageCategory, StageCategory>>> = {
+  attempting_contact: "connected",
+  qualified: "connected",
+  nurture: "connected",
+  unqualified: "lost",
+  duplicate: "lost",
+};
+
+// --- Automations (PRD 4.4, MSG-03, MSG-06) ------------------------------
+
+/** What starts an automation. Kept to events a clinic actually thinks in. */
+export const AUTOMATION_TRIGGERS = [
+  "lead_created",
+  "stage_changed",
+  "appointment_booked",
+  "appointment_upcoming",
+  "appointment_attended",
+  "appointment_no_show",
+  "appointment_canceled",
+] as const;
+export type AutomationTrigger = (typeof AUTOMATION_TRIGGERS)[number];
+
+export const AUTOMATION_STATUSES = ["draft", "active", "paused"] as const;
+export type AutomationStatus = (typeof AUTOMATION_STATUSES)[number];
+
+/** One person's run through one automation. */
+export const ENROLLMENT_STATES = ["active", "completed", "stopped", "failed"] as const;
+export type EnrollmentState = (typeof ENROLLMENT_STATES)[number];
+
+/**
+ * Configurable reasons to stop a run early (PRD MSG-06). Opt-out is not in
+ * this list because it is not optional: the send gate blocks an opted-out
+ * contact on every send, whatever the automation says.
+ */
+export const AUTOMATION_STOP_CONDITIONS = ["replied", "booked", "converted", "closed"] as const;
+export type AutomationStopCondition = (typeof AUTOMATION_STOP_CONDITIONS)[number];
 
 // --- Sources and attribution (PRD 4.5) ------------------------------------
 

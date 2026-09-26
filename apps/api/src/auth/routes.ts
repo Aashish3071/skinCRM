@@ -11,6 +11,7 @@ import {
 import { getEnv } from "@skincrm/config";
 import { getContext } from "../context";
 import { registerRoute } from "../route";
+import { sendSystemEmail, webLink } from "../messaging/system-email";
 import { logger } from "../logger";
 import { recordAudit } from "../audit";
 import { SESSION_COOKIE, resolveSession, revokeSession, sessionCookieOptions } from "./sessions";
@@ -110,10 +111,13 @@ export function registerAuthRoutes(app: FastifyInstance): void {
     handler: async ({ body }) => {
       const issued = await requestPasswordReset(body.email);
       if (issued) {
-        // TODO(phase 4): hand the token to the email connector. Until the
-        // messaging layer exists, log it at debug so development can complete
-        // the flow. `logger` redacts `token`, so print the link explicitly and
-        // only outside production.
+        await sendSystemEmail({
+          to: body.email,
+          subject: "Reset your SkinCRM password",
+          text: `Hello,\n\nSomeone asked to reset the password for this account. If it was you, set a new one here:\n\n${webLink(`/reset-password?token=${encodeURIComponent(issued.token)}`)}\n\nThe link expires in one hour. If it wasn't you, ignore this email — your password has not changed.`,
+        });
+        // `logger` redacts `token`; the console line below is a development
+        // affordance for when the email connector is the in-memory mock.
         logger.debug({ userId: issued.userId }, "Password reset requested");
         if (process.env.NODE_ENV === "development") {
           // eslint-disable-next-line no-console -- development affordance only

@@ -1,6 +1,9 @@
 import { pgEnum } from "drizzle-orm/pg-core";
 import {
   ACTIVITY_TYPES,
+  AUTOMATION_STATUSES,
+  AUTOMATION_TRIGGERS,
+  ENROLLMENT_STATES,
   APPOINTMENT_STATUSES,
   AUDIT_ACTIONS,
   CONSENT_PURPOSES,
@@ -100,3 +103,7 @@ export const feedbackEligibilityStateEnum = pgEnum(
 );
 
 export const auditActionEnum = pgEnum("audit_action", tuple(AUDIT_ACTIONS));
+
+export const automationTriggerEnum = pgEnum("automation_trigger", tuple(AUTOMATION_TRIGGERS));
+export const automationStatusEnum = pgEnum("automation_status", tuple(AUTOMATION_STATUSES));
+export const enrollmentStateEnum = pgEnum("enrollment_state", tuple(ENROLLMENT_STATES));

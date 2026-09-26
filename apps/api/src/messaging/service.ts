@@ -17,7 +17,17 @@ export interface SendRequest {
   leadId?: string | null;
   templateKey?: string;
   /** For an ad-hoc staff message with no template behind it. */
-  adHoc?: { channel: SendableChannel; subject?: string; body: string };
+  adHoc?: {
+    channel: SendableChannel;
+    subject?: string;
+    body: string;
+    /**
+     * Defaults to operational: a staff member replying to a client. An
+     * automation writing its own copy must say which it is, because a
+     * promotional message needs promotional consent (PRD 4.4).
+     */
+    classification?: TemplateClassification;
+  };
   /** Extra variables beyond the ones resolved from the person and clinic. */
   variables?: Record<string, string | null>;
   appointmentId?: string | null;
@@ -31,6 +41,8 @@ export interface SendOutcome {
   state: "sent" | "suppressed" | "failed";
   suppressionReason?: string;
   detail?: string;
+  /** For a failure: whether trying again later could succeed. */
+  retryable?: boolean;
 }
 
 /**
@@ -51,7 +63,7 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
     : request.adHoc!.channel;
   const classification: TemplateClassification = template
     ? template.classification
-    : "operational";
+    : (request.adHoc!.classification ?? "operational");
 
   const destination = await resolveDestination(request.personId, channel);
 
@@ -278,7 +290,7 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
       "Message send failed",
     );
 
-    return { messageId, state: "failed", detail };
+    return { messageId, state: "failed", detail, retryable: connectorError?.options.retryable ?? false };
   }
 }
 
@@ -301,7 +313,7 @@ async function loadTemplate(key: string) {
  * Nothing clinical, nothing from General Notes (PRD ID-08), and no service or
  * condition (PRD 8).
  */
-async function resolveVariables(
+export async function resolveVariables(
   personId: string,
   appointmentId: string | null,
 ): Promise<Record<string, string | null>> {

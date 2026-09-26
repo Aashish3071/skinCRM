@@ -22,6 +22,7 @@ import { getContext, getTx } from "../context";
 import { badRequest, forbidden, notFound } from "../errors";
 import { diffSummary, recordAudit } from "../audit";
 import { registerRoute } from "../route";
+import { emitAutomationEvent } from "../automations/engine";
 import { createPerson, getPerson, DuplicatePersonError } from "../people/service";
 import { AppError } from "../errors";
 import { routeLead } from "./assignment";
@@ -229,6 +230,8 @@ export function registerLeadRoutes(app: FastifyInstance): void {
           assignedByRuleId: routing.ruleId,
         },
       });
+
+      await emitAutomationEvent({ type: "lead_created", leadId: lead.id, personId: lead.personId, source: body.source });
 
       return loadLeadDto(lead.id);
     },

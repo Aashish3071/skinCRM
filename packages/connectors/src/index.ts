@@ -1,10 +1,12 @@
 import { getEnv } from "@skincrm/config";
 import { MockEmailConnector } from "./email/mock";
+import { SmtpEmailConnector } from "./email/smtp";
 import { MockWhatsAppConnector } from "./whatsapp/mock";
 import type { Connectors } from "./types";
 
 export * from "./types";
 export { MockEmailConnector } from "./email/mock";
+export { SmtpEmailConnector } from "./email/smtp";
 export { MockWhatsAppConnector } from "./whatsapp/mock";
 
 let cached: Connectors | undefined;
@@ -12,8 +14,9 @@ let cached: Connectors | undefined;
 /**
  * Resolve the connectors for this process from `CONNECTOR_*`.
  *
- * Live implementations do not exist yet; a connector set to `live` fails loudly
- * at resolution rather than silently falling back to a mock. Quietly mocking in
+ * Email `live` is SMTP (any relay; Mailpit in development). WhatsApp has no
+ * live implementation yet, and set to `live` it fails loudly at resolution
+ * rather than silently falling back to a mock. Quietly mocking in
  * production would mean a clinic believing messages were sent when nothing left
  * the building.
  */
@@ -25,7 +28,12 @@ export function getConnectors(): Connectors {
     email:
       env.CONNECTOR_EMAIL === "mock"
         ? new MockEmailConnector()
-        : notImplemented("email", "phase 7"),
+        : new SmtpEmailConnector({
+            host: env.SMTP_HOST,
+            port: env.SMTP_PORT,
+            user: env.SMTP_USER,
+            password: env.SMTP_PASSWORD,
+          }),
     whatsapp:
       env.CONNECTOR_WHATSAPP === "mock"
         ? new MockWhatsAppConnector()

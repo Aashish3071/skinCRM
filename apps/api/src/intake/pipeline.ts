@@ -13,6 +13,7 @@ import { encryptForClinic, payloadFingerprint } from "@skincrm/security";
 import { getContext, getTx } from "../context";
 import { logger } from "../logger";
 import { recordAudit } from "../audit";
+import { emitAutomationEvent } from "../automations/engine";
 import { addActivity, stageByCategory } from "../leads/service";
 import { routeLead } from "../leads/assignment";
 import { buildDisplayName } from "../people/service";
@@ -306,6 +307,8 @@ export async function ingestSubmission(input: IntakeInput): Promise<IntakeOutcom
       assigned: routing.ownerUserId !== null,
     },
   });
+
+  await emitAutomationEvent({ type: "lead_created", leadId, personId, source: input.source });
 
   return { status: "created", submissionId, personId, leadId, ownerUserId: routing.ownerUserId };
 }

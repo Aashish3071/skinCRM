@@ -15,6 +15,7 @@ import { badRequest, conflict, forbidden, notFound } from "../errors";
 import { diffSummary, recordAudit } from "../audit";
 import { logger } from "../logger";
 import { registerRoute } from "../route";
+import { sendSystemEmail, webLink } from "../messaging/system-email";
 import { revokeAllSessionsForUser } from "../auth/sessions";
 import { INVITE_TTL_DAYS } from "../auth/service";
 
@@ -110,7 +111,11 @@ export function registerUserRoutes(app: FastifyInstance): void {
         changeSummary: { role: body.role, branchCount: body.branchIds.length },
       });
 
-      // TODO(phase 4): send through the email connector.
+      await sendSystemEmail({
+        to: body.email,
+        subject: "You've been invited to SkinCRM",
+        text: `Hello,\n\nYou've been invited to join your clinic's SkinCRM workspace. Set up your account here:\n\n${webLink(`/accept-invite?token=${encodeURIComponent(token)}`)}\n\nThis link expires in ${INVITE_TTL_DAYS} days. If you weren't expecting it, you can ignore this email.`,
+      });
       logger.debug({ userId: user.id }, "User invited");
       if (process.env.NODE_ENV === "development") {
         // eslint-disable-next-line no-console -- development affordance only

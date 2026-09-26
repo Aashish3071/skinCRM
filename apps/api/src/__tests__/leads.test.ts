@@ -154,9 +154,9 @@ describe("walk-in intake (PRD ID-03, J2)", () => {
 describe("stage transitions (PRD LEAD-02)", () => {
   it("records actor, time and the from/to stage", async () => {
     const lead = await createLead();
-    const moved = await moveStage(lead.id as string, "attempting_contact");
+    const moved = await moveStage(lead.id as string, "connected");
     expect(moved.statusCode).toBe(200);
-    expect(moved.json().stageCategory).toBe("attempting_contact");
+    expect(moved.json().stageCategory).toBe("connected");
 
     const { db } = getOwnerDb();
     const events = await db
@@ -182,15 +182,42 @@ describe("stage transitions (PRD LEAD-02)", () => {
     expect(withReason.json().closedAt).not.toBeNull();
   });
 
-  it("requires a reason for Unqualified too", async () => {
+  it("offers the six-stage pipeline, in order (D-57)", async () => {
+    expect(Object.keys(stages)).toEqual([
+      "new",
+      "connected",
+      "consultation_booked",
+      "consultation_attended",
+      "converted",
+      "lost",
+    ]);
+  });
+
+  it("refuses to move a lead into a retired stage", async () => {
     const lead = await createLead();
-    expect((await moveStage(lead.id as string, "unqualified")).statusCode).toBe(400);
-    expect((await moveStage(lead.id as string, "unqualified", "Wrong number")).statusCode).toBe(200);
+    const { db } = getOwnerDb();
+    const clinicId = (await db.select({ clinicId: schema.leads.clinicId }).from(schema.leads)
+      .where(eq(schema.leads.id, lead.id as string)))[0]!.clinicId;
+    const retired = await db
+      .select({ id: schema.pipelineStages.id })
+      .from(schema.pipelineStages)
+      .where(eq(schema.pipelineStages.clinicId, clinicId))
+      .then((rows) => rows.map((r) => r.id).filter((id) => !Object.values(stages).includes(id)));
+    // Seeded clinics still hold their retired rows (deactivated, for history).
+    if (retired.length === 0) return;
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/leads/${lead.id}/stage`,
+      headers: { cookie: adminCookie },
+      payload: { stageId: retired[0] },
+    });
+    expect(response.statusCode).toBe(400);
   });
 
   it("does not require a reason for ordinary forward progress", async () => {
     const lead = await createLead();
-    for (const category of ["attempting_contact", "connected", "qualified"]) {
+    for (const category of ["connected", "consultation_booked", "consultation_attended"]) {
       const response = await moveStage(lead.id as string, category);
       expect(response.statusCode, category).toBe(200);
     }
@@ -200,11 +227,10 @@ describe("stage transitions (PRD LEAD-02)", () => {
     const lead = await createLead();
     const id = lead.id as string;
 
-    await moveStage(id, "qualified");
-    const qualified = (await moveStage(id, "consultation_booked")).json();
-    expect(qualified.qualifiedAt).not.toBeNull();
-    expect(qualified.bookedAt).not.toBeNull();
-    expect(qualified.attendedAt).toBeNull();
+    await moveStage(id, "connected");
+    const booked = (await moveStage(id, "consultation_booked")).json();
+    expect(booked.bookedAt).not.toBeNull();
+    expect(booked.attendedAt).toBeNull();
 
     await moveStage(id, "consultation_attended");
     const converted = (await moveStage(id, "converted")).json();
@@ -217,24 +243,24 @@ describe("stage transitions (PRD LEAD-02)", () => {
     const lead = await createLead();
     const id = lead.id as string;
 
-    const first = (await moveStage(id, "qualified")).json();
-    const originalQualifiedAt = first.qualifiedAt as string;
-    expect(originalQualifiedAt).not.toBeNull();
+    const first = (await moveStage(id, "consultation_booked")).json();
+    const originalBookedAt = first.bookedAt as string;
+    expect(originalBookedAt).not.toBeNull();
 
     // Bounce back and forward again.
     await moveStage(id, "connected");
-    const second = (await moveStage(id, "qualified")).json();
+    const second = (await moveStage(id, "consultation_booked")).json();
 
     // The first time it genuinely happened is the truthful event time, and
     // re-stamping would make conversion feedback report it twice (PRD FB-05).
-    expect(second.qualifiedAt).toBe(originalQualifiedAt);
+    expect(second.bookedAt).toBe(originalBookedAt);
   });
 
   it("clears the closure when a closed lead is reopened, keeping its milestones", async () => {
     const lead = await createLead();
     const id = lead.id as string;
 
-    await moveStage(id, "qualified");
+    await moveStage(id, "consultation_booked");
     const lost = (await moveStage(id, "lost", "Changed their mind")).json();
     expect(lost.closedAt).not.toBeNull();
 
@@ -242,7 +268,7 @@ describe("stage transitions (PRD LEAD-02)", () => {
     expect(reopened.closedAt).toBeNull();
     expect(reopened.lossReason).toBeNull();
     // The milestone stays: it records what actually happened.
-    expect(reopened.qualifiedAt).toBe(lost.qualifiedAt);
+    expect(reopened.bookedAt).toBe(lost.bookedAt);
   });
 
   it("rejects a stage belonging to another clinic", async () => {
@@ -254,7 +280,7 @@ describe("stage transitions (PRD LEAD-02)", () => {
       headers: { cookie: otherCookie },
     });
     const foreignStageId = (otherStages.json().items as { id: string; category: string }[]).find(
-      (s) => s.category === "qualified",
+      (s) => s.category === "connected",
     )!.id;
 
     const response = await app.inject({
@@ -612,20 +638,20 @@ describe("filters and counts (PRD LEAD-01)", () => {
   it("stage counts agree with the filtered list", async () => {
     const a = await createLead();
     const b = await createLead();
-    await moveStage(a.id as string, "qualified");
-    await moveStage(b.id as string, "qualified");
+    await moveStage(a.id as string, "connected");
+    await moveStage(b.id as string, "connected");
 
     const response = await app.inject({
       method: "GET",
-      url: `/leads?stageCategory=qualified&limit=100`,
+      url: `/leads?stageCategory=connected&limit=100`,
       headers: { cookie: adminCookie },
     });
     const items = response.json().items as { id: string; stageId: string }[];
     const counts = response.json().stageCounts as Record<string, number>;
 
-    const qualifiedStageId = stages.qualified!;
-    expect(counts[qualifiedStageId]).toBe(items.length);
-    expect(items.every((l) => l.stageId === qualifiedStageId)).toBe(true);
+    const contactedStageId = stages.connected!;
+    expect(counts[contactedStageId]).toBe(items.length);
+    expect(items.every((l) => l.stageId === contactedStageId)).toBe(true);
   });
 
   it("excludes closed leads when asked", async () => {

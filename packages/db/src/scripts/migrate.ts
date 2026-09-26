@@ -63,21 +63,24 @@ async function main(): Promise<void> {
   const env = getEnv();
   console.log(`Migrating ${redactUrl(env.DATABASE_URL)}`);
 
-  console.log("1/5 extensions");
+  console.log("1/6 extensions");
   await runSqlFile("sql/010_extensions.sql");
 
-  console.log("2/5 application role");
+  console.log("2/6 application role");
   await ensureAppRole();
 
-  console.log("3/5 schema migrations");
+  console.log("3/6 schema migrations");
   const { db } = getOwnerDb();
   await migrate(db, { migrationsFolder: join(packageRoot, "drizzle") });
 
-  console.log("4/5 row-level security");
+  console.log("4/6 row-level security");
   await runSqlFile("sql/900_rls.sql");
 
-  console.log("5/5 constraints");
+  console.log("5/6 constraints");
   await runSqlFile("sql/920_constraints.sql");
+
+  console.log("6/6 data fixes");
+  await runSqlFile("sql/930_simplify_pipeline.sql");
 
   console.log("Done.");
 }

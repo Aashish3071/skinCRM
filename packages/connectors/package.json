@@ -14,9 +14,11 @@
   },
   "dependencies": {
     "@skincrm/config": "workspace:*",
-    "@skincrm/contracts": "workspace:*"
+    "@skincrm/contracts": "workspace:*",
+    "nodemailer": "^6.10.1"
   },
   "devDependencies": {
+    "@types/nodemailer": "^6.4.24",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

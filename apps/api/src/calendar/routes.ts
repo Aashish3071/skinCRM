@@ -21,6 +21,7 @@ import { getContext, getTx } from "../context";
 import { AppError, badRequest, conflict, forbidden, notFound } from "../errors";
 import { diffSummary, recordAudit } from "../audit";
 import { registerRoute } from "../route";
+import { emitAutomationEvent, stopRunsForAppointment } from "../automations/engine";
 import { addActivity, getLead, stageByCategory } from "../leads/service";
 import { getPerson } from "../people/service";
 import {
@@ -399,8 +400,16 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
         changeSummary: { rescheduledTo: replacement.id, reasonGiven: true },
       });
 
-      // TODO(phase 4): cancel the reminder jobs attached to the old row and
-      // schedule new ones (PRD CAL-05). The messaging layer does not exist yet.
+      // Stops the old appointment's pending reminders and schedules fresh
+      // ones for the new time (PRD CAL-05).
+      await stopRunsForAppointment(existing.id, "The appointment was moved");
+      await emitAutomationEvent({
+        type: "appointment_rescheduled",
+        appointmentId: replacement.id,
+        personId: replacement.personId,
+        leadId: replacement.leadId,
+        startsAt: replacement.startsAt,
+      });
       return loadAppointment(replacement.id);
     },
   });
@@ -443,6 +452,14 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
         entityType: "appointment",
         entityId: existing.id,
         changeSummary: { status: { from: existing.status, to: "canceled" } },
+      });
+
+      await emitAutomationEvent({
+        type: "appointment_canceled",
+        appointmentId: existing.id,
+        personId: existing.personId,
+        leadId: existing.leadId,
+        startsAt: existing.startsAt,
       });
 
       // Cancelling does NOT move the lead's stage. Appointment status and lead
@@ -501,6 +518,16 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
           const { changeStage } = await import("../leads/service");
           await changeStage({ leadId: lead.id, stageId: attendedStage.id, silent: true });
         }
+      }
+
+      if (body.status === "attended" || body.status === "no_show") {
+        await emitAutomationEvent({
+          type: body.status === "attended" ? "appointment_attended" : "appointment_no_show",
+          appointmentId: existing.id,
+          personId: existing.personId,
+          leadId: existing.leadId,
+          startsAt: existing.startsAt,
+        });
       }
 
       await recordAudit({
@@ -849,6 +876,8 @@ async function afterBooking(
       await changeStage({ leadId, stageId: stage.id, silent: true });
     }
   }
+
+  await emitAutomationEvent({ type: "appointment_booked", appointmentId, personId, leadId, startsAt });
 
   await recordAudit({
     action: "record_created",

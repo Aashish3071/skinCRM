@@ -8,7 +8,9 @@
     "build": "tsup",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "worker": "tsx watch --clear-screen=false src/worker/main.ts",
+    "start:worker": "node dist/worker.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
