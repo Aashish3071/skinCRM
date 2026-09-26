@@ -9,7 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { closeAllConnections, getOwnerDb, schema } from "@skincrm/db";
 import { SEED, authenticate, createTestApp, resetAuthState } from "./helpers";
 
-const { people, leads, tasks, activities, leadStageEvents, assignmentRules, sourceSubmissions, rawPayloads, consentRecords, clinics } =
+const { people, leads, tasks, activities, leadStageEvents, assignmentRules, sourceSubmissions, rawPayloads, consentRecords } =
   schema;
 
 let app: FastifyInstance;
@@ -397,14 +397,14 @@ describe("CSV import (PRD ID-04)", () => {
   });
 
   it("strips the byte-order mark Excel writes", async () => {
-    const csv = "﻿" + csvFor([`Gil,Roman ${TAG},305-555-3040,gil.${TAG}@example.test,Peel`]);
+    const csv = "\uFEFF" + csvFor([`Gil,Roman ${TAG},305-555-3040,gil.${TAG}@example.test,Peel`]);
     const preview = await app.inject({
       method: "POST",
       url: "/imports/csv/preview",
       headers: { cookie: adminCookie },
       payload: { csv },
     });
-    // Without stripping, the first header becomes "﻿First Name" and never maps.
+    // Without stripping, the first header becomes "\uFEFFFirst Name" and never maps.
     expect((preview.json().headers as string[])[0]).toBe("First Name");
     expect((preview.json().mapping as Record<string, string>).firstName).toBe("First Name");
   });

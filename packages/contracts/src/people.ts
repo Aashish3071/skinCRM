@@ -4,7 +4,6 @@ import {
   isoDateTime,
   optionalShortText,
   queryBoolean,
-  shortText,
   uuidSchema,
 } from "./common";
 import { CONSENT_PURPOSES, CONSENT_SOURCES, CONSENT_STATUSES, CONTACT_CHANNELS } from "./enums";

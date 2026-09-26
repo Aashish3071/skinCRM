@@ -183,6 +183,8 @@ export const availabilityQuerySchema = z.object({
   date: isoDate,
   staffUserId: uuidSchema,
   consultationTypeId: uuidSchema.optional(),
+  /** When moving a visit, reuse its duration/buffer and release its old slot. */
+  rescheduleAppointmentId: uuidSchema.optional(),
   /** Slot granularity in minutes. */
   step: z.coerce.number().int().min(5).max(120).default(15),
 });

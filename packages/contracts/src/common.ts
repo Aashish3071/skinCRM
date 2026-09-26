@@ -33,7 +33,11 @@ export const emailSchema = z
 export const isoDateTime = z.string().datetime({ offset: true });
 
 /** Calendar date in the clinic's timezone, `YYYY-MM-DD`. */
-export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD");
+export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD")
+  .refine((value) => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }, "Enter a valid calendar date");
 
 /** IANA timezone, e.g. `America/New_York`. Validated against the host ICU data. */
 export const timezoneSchema = z.string().refine(

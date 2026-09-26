@@ -13,6 +13,13 @@ const SETTINGS_SECTIONS = [
     requirement: "ID-01",
   },
   {
+    href: "/settings/calendar",
+    title: "Calendar",
+    description: "Consultation types, eligible staff, duration, buffer, and working hours.",
+    ready: true,
+    requirement: "CAL-01…04",
+  },
+  {
     href: null,
     title: "Clinic and branches",
     description: "Timezone, working hours, branches, service types, follow-up SLA.",

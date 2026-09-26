@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 import type { PersonDto } from "@skincrm/contracts";
-import { Badge, Card } from "@/components/ui";
+import { Card } from "@/components/ui";
 import { mergePeopleAction, type ActionState } from "@/lib/crm-actions";
 
 /**

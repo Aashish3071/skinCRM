@@ -16,6 +16,7 @@ const { people, leads, appointments, consultationTypes, workingHours, activities
 let app: FastifyInstance;
 let adminCookie: string;
 let staff: Record<string, string>;
+let savedHours: typeof workingHours.$inferSelect[] = [];
 
 const TAG = "caltest";
 const TZ = "America/New_York";
@@ -28,10 +29,13 @@ beforeAll(async () => {
   staff = Object.fromEntries(
     (response.json().items as { id: string; email: string }[]).map((u) => [u.email, u.id]),
   );
+  savedHours = await getOwnerDb().db.select().from(workingHours)
+    .where(eq(workingHours.userId, staff[SEED.practitioner]!));
 });
 
 afterAll(async () => {
   await cleanup();
+  if (savedHours.length) await getOwnerDb().db.insert(workingHours).values(savedHours);
   await app.close();
   await closeAllConnections();
 });
@@ -60,7 +64,7 @@ async function cleanup(): Promise<void> {
     await db.delete(people).where(inArray(people.id, ids));
   }
   await db.delete(consultationTypes).where(like(consultationTypes.name, `%${TAG}%`));
-  await db.delete(workingHours);
+  if (staff) await db.delete(workingHours).where(eq(workingHours.userId, staff[SEED.practitioner]!));
 }
 
 let phoneCounter = 4000;
@@ -691,5 +695,84 @@ describe("calendar permissions (PRD CAL-01)", () => {
       payload: { name: `Nope ${TAG}`, durationMinutes: 30 },
     });
     expect(response.statusCode).toBe(403);
+  });
+});
+
+describe("calendar validation and booking options", () => {
+  it("gives front desk calendar and assignment choices without staff admin access", async () => {
+    const cookie = await authenticate(app, SEED.frontDesk);
+    for (const url of ["/calendar/options", "/leads/assignees"]) {
+      const result = await app.inject({ method: "GET", url, headers: { cookie } });
+      expect(result.statusCode).toBe(200);
+      expect(JSON.stringify(result.json())).not.toContain("passwordHash");
+      expect(JSON.stringify(result.json())).not.toContain("email");
+    }
+    const doctor = await authenticate(app, SEED.practitioner);
+    const options = await app.inject({ method: "GET", url: "/calendar/options", headers: { cookie: doctor } });
+    expect(options.json().staff.map((s: { id: string }) => s.id)).toEqual([staff[SEED.practitioner]]);
+    const other = await app.inject({ method: "GET", url: `/availability?date=2027-03-16&staffUserId=${staff[SEED.frontDesk]}`, headers: { cookie: doctor } });
+    expect(other.statusCode).toBe(403);
+  });
+
+  it("rejects a booking attached to another person's inquiry", async () => {
+    const lead = await app.inject({ method: "POST", url: "/leads", headers: { cookie: adminCookie },
+      payload: { person: { firstName: `Mismatch ${TAG}`, phone: `305-555-${++phoneCounter}`, allowDuplicate: true }, source: "walk_in" } });
+    const personId = await makePerson(`Other ${TAG}`);
+    const result = await book({ personId, leadId: lead.json().id, staffUserId: staff[SEED.practitioner], startsAt: slotAt("10:00") });
+    expect(result.statusCode).toBe(400);
+    expect(result.json().error.message).toMatch(/different person/);
+  });
+
+  it("rejects foreign branches and working-hours owners", async () => {
+    const db = getOwnerDb().db;
+    const [foreign] = await db.select().from(schema.users).where(eq(schema.users.email, SEED.otherClinicAdmin));
+    const [branch] = await db.select().from(schema.branches).where(eq(schema.branches.clinicId, foreign!.clinicId));
+    const personId = await makePerson();
+    expect((await book({ personId, staffUserId: staff[SEED.practitioner], branchId: branch!.id, startsAt: slotAt("10:00") })).statusCode).toBe(400);
+    expect((await app.inject({ method: "PUT", url: "/working-hours", headers: { cookie: adminCookie }, payload: {
+      userId: foreign!.id, slots: [{ dayOfWeek: 2, startTime: "09:00", endTime: "17:00" }],
+    } })).statusCode).toBe(400);
+  });
+
+  it("does not book inactive types or move a consultation to ineligible staff", async () => {
+    const type = await app.inject({ method: "POST", url: "/consultation-types", headers: { cookie: adminCookie },
+      payload: { name: `Eligible ${TAG}`, durationMinutes: 30, eligibleStaffIds: [staff[SEED.practitioner]] } });
+    const personId = await makePerson();
+    const visit = await book({ personId, staffUserId: staff[SEED.practitioner], consultationTypeId: type.json().id, startsAt: slotAt("10:00") });
+    const move = await app.inject({ method: "POST", url: `/appointments/${visit.json().id}/reschedule`, headers: { cookie: adminCookie },
+      payload: { staffUserId: staff[SEED.frontDesk], startsAt: slotAt("11:00"), reason: "Change staff", allowOutsideWorkingHours: true } });
+    expect(move.statusCode).toBe(400);
+    await app.inject({ method: "PATCH", url: `/consultation-types/${type.json().id}`, headers: { cookie: adminCookie }, payload: { isActive: false } });
+    expect((await book({ personId, staffUserId: staff[SEED.practitioner], consultationTypeId: type.json().id, startsAt: slotAt("12:00") })).statusCode).toBe(400);
+  });
+
+  it("includes previous-day overlaps and releases only the appointment being moved", async () => {
+    await app.inject({ method: "PUT", url: "/working-hours", headers: { cookie: adminCookie }, payload: {
+      userId: staff[SEED.practitioner], slots: [{ dayOfWeek: 2, startTime: "00:00", endTime: "03:00" }],
+    } });
+    const personId = await makePerson();
+    const visit = await book({ personId, staffUserId: staff[SEED.practitioner], startsAt: slotAt("23:30", "2027-03-15"), durationMinutes: 60 });
+    const base = `/availability?date=2027-03-16&staffUserId=${staff[SEED.practitioner]}`;
+    const normal = await app.inject({ method: "GET", url: base, headers: { cookie: adminCookie } });
+    expect(normal.json().slots[0].reason).toBe("booked");
+    const moving = await app.inject({ method: "GET", url: `${base}&rescheduleAppointmentId=${visit.json().id}`, headers: { cookie: adminCookie } });
+    expect(moving.json().slots[0].available).toBe(true);
+    expect(moving.json().durationMinutes).toBe(60);
+  });
+
+  it("rejects impossible dates and backwards ranges", async () => {
+    for (const url of ["/appointments?from=2027-02-30&to=2027-03-01", "/appointments?from=2027-03-20&to=2027-03-01"]) {
+      expect((await app.inject({ method: "GET", url, headers: { cookie: adminCookie } })).statusCode).toBe(400);
+    }
+  });
+
+  it("serializes concurrent reschedules so only one replacement is created", async () => {
+    const personId = await makePerson();
+    const visit = await book({ personId, staffUserId: staff[SEED.practitioner], startsAt: slotAt("10:00") });
+    const results = await Promise.all(["11:00", "12:00"].map((time) => app.inject({
+      method: "POST", url: `/appointments/${visit.json().id}/reschedule`, headers: { cookie: adminCookie },
+      payload: { startsAt: slotAt(time), reason: "Concurrent move", allowOutsideWorkingHours: true },
+    })));
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 400]);
   });
 });

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { getLeads, getTasks, relativeTime } from "@/lib/crm";
+import { getAppointments } from "@/lib/calendar";
+import { localDate } from "@/lib/calendar-view";
 import { can, requireSession } from "@/lib/session";
 
 export const metadata = { title: "Home — SkinCRM" };
@@ -13,10 +15,13 @@ export default async function HomePage() {
   const canLeads = can(session, "leads:read");
   const canTasks = can(session, "tasks:read");
 
-  const [overdue, mine, unassigned] = await Promise.all([
+  const today = localDate(new Date(), session.clinic.timezone);
+  const canCalendar = can(session, "appointments:read");
+  const [overdue, mine, unassigned, appointments] = await Promise.all([
     canTasks ? getTasks("dueView=overdue&mine=true&limit=25") : Promise.resolve(null),
     canTasks ? getTasks("dueView=today&mine=true&limit=25") : Promise.resolve(null),
     canLeads ? getLeads("unassigned=true&includeClosed=false&limit=10") : Promise.resolve(null),
+    canCalendar ? getAppointments(`from=${today}&to=${today}`) : Promise.resolve(null),
   ]);
 
   return (
@@ -41,9 +46,7 @@ export default async function HomePage() {
           tone={unassigned && unassigned.totalCount > 0 ? "caution" : "neutral"}
           unavailable={!canLeads}
         />
-        {/* No data source until phase 3, so an em dash rather than a 0 that
-            would read as a real, reassuring count. */}
-        <Tile label="Appointments today" pending="Phase 3 · CAL-01" />
+        <Tile label="Appointments today" value={appointments?.items.length} href={`/calendar?view=day&date=${today}`} unavailable={!canCalendar} />
         <Tile label="Integration alerts" pending="Phase 7 · INT-01" />
       </div>
 

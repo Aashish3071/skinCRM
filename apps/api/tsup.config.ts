@@ -12,5 +12,9 @@ export default defineConfig({
    * than a build artifact. Everything from node_modules stays external.
    */
   noExternal: [/^@skincrm\//],
+  // Native binaries must resolve at runtime for the deployed platform.
+  external: ["@node-rs/argon2"],
+  // Bundled CommonJS dependencies (for example dotenv) still load Node builtins.
+  banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
   splitting: false,
 });

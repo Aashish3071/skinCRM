@@ -82,6 +82,9 @@ export const getStaff = () =>
     "/users",
   ).then((r) => r.items);
 
+export const getAssignees = () =>
+  apiFetch<{ items: { id: string; fullName: string }[] }>("/leads/assignees").then((r) => r.items);
+
 /** Tone for a stage badge, keyed by the stable category rather than the name. */
 export function stageTone(category: StageCategory): "neutral" | "brand" | "positive" | "caution" | "critical" {
   switch (category) {

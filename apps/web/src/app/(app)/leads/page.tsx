@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { LEAD_SOURCE_LABELS, type LeadDto } from "@skincrm/contracts";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { getLeads, getStaff, getStages, relativeTime, stageTone, type PipelineStage } from "@/lib/crm";
+import { getLeads, getAssignees, getStages, relativeTime, stageTone, type PipelineStage } from "@/lib/crm";
 import { can, requireCapability } from "@/lib/session";
 import { LeadFilters } from "./filters";
 
@@ -28,7 +28,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const [stages, data, staff] = await Promise.all([
     getStages(),
     getLeads(query.toString()),
-    can(session, "users:read") ? getStaff() : Promise.resolve([]),
+    can(session, "leads:assign") ? getAssignees() : Promise.resolve([]),
   ]);
 
   return (

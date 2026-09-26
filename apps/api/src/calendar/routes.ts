@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, asc, eq, gte, isNull, lt, ne, or } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNull, lt, ne, or } from "drizzle-orm";
 import { z } from "zod";
 import {
   ACTIVE_APPOINTMENT_STATUSES,
@@ -37,6 +37,22 @@ const { appointments, consultationTypes, workingHours, people, users } = schema;
 const EXCLUSION_VIOLATION = "23P01";
 
 export function registerCalendarRoutes(app: FastifyInstance): void {
+  // Calendar users need names and branches without access to staff administration.
+  registerRoute(app, {
+    method: "GET",
+    url: "/calendar/options",
+    auth: { capability: "appointments:read" },
+    handler: async ({ ctx }) => {
+      const tx = getTx();
+      const staff = await tx.select({ id: users.id, fullName: users.fullName }).from(users)
+        .where(and(eq(users.status, "active"), isNull(users.archivedAt),
+          ctx.capabilities.has("appointments:read_all") ? undefined : eq(users.id, ctx.userId!)))
+        .orderBy(asc(users.fullName));
+      const branches = await tx.select({ id: schema.branches.id, name: schema.branches.name })
+        .from(schema.branches).where(isNull(schema.branches.archivedAt)).orderBy(asc(schema.branches.name));
+      return { staff, branches };
+    },
+  });
   // --- Consultation types (PRD CAL-02) -----------------------------------
   registerRoute(app, {
     method: "GET",
@@ -153,6 +169,8 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
       const context = getContext();
       const tx = getTx();
       const userId = body.userId ?? null;
+      if (userId) await assertStaffBelongToClinic([userId]);
+      await assertBranch(body.branchId);
 
       for (const slot of body.slots) {
         if (slot.endTime <= slot.startTime) {
@@ -198,6 +216,7 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
     handler: async ({ query, ctx }) => {
       const tx = getTx();
       const tz = ctx.clinicTimezone ?? "UTC";
+      if (query.from > query.to) throw badRequest("The end date must be on or after the start date.");
       const { start, end } = clinicDateRangeToUtc(query.from, query.to, tz);
 
       const conditions = [gte(appointments.startsAt, start), lt(appointments.startsAt, end)];
@@ -246,11 +265,15 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
     status: 201,
     handler: async ({ body, ctx }) => {
       const context = getContext();
-      const tx = getTx();
       const tz = ctx.clinicTimezone ?? "UTC";
 
       const person = await getPerson(body.personId);
       await assertStaffBelongToClinic([body.staffUserId]);
+      assertCalendarAccess(body.staffUserId);
+      await assertBranch(body.branchId);
+      if (body.leadId && (await getLead(body.leadId)).personId !== person.id) {
+        throw badRequest("That inquiry belongs to a different person.");
+      }
 
       const { startsAt, endsAt, clientVisibleEndsAt, typeRow } = await resolveSlot(body);
 
@@ -292,7 +315,7 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
       const tx = getTx();
       const tz = ctx.clinicTimezone ?? "UTC";
 
-      const existing = await loadAppointmentRow(params.id);
+      const existing = await loadAppointmentRow(params.id, true);
       if (existing.status === "canceled") {
         throw badRequest("That appointment was cancelled. Book a new one instead.");
       }
@@ -301,7 +324,14 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
       }
 
       const staffUserId = body.staffUserId ?? existing.staffUserId;
-      if (body.staffUserId) await assertStaffBelongToClinic([body.staffUserId]);
+      await assertStaffBelongToClinic([staffUserId]);
+      assertCalendarAccess(staffUserId);
+      if (existing.consultationTypeId) {
+        const { typeRow } = await resolveSlot({ consultationTypeId: existing.consultationTypeId, startsAt: body.startsAt });
+        if (typeRow!.eligibleStaffIds.length && !typeRow!.eligibleStaffIds.includes(staffUserId)) {
+          throw badRequest("That member of staff is not eligible for this consultation type.");
+        }
+      }
 
       const durationMinutes =
         body.durationMinutes ??
@@ -384,8 +414,9 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
     body: cancelAppointmentSchema,
     handler: async ({ params, body, ctx }) => {
       const tx = getTx();
-      const existing = await loadAppointmentRow(params.id);
+      const existing = await loadAppointmentRow(params.id, true);
       if (existing.status === "canceled") return loadAppointment(params.id);
+      if (existing.status === "rescheduled") throw badRequest("Open the replacement appointment to cancel it.");
 
       await tx
         .update(appointments)
@@ -431,7 +462,7 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
     body: setAppointmentStatusSchema,
     handler: async ({ params, body, ctx }) => {
       const tx = getTx();
-      const existing = await loadAppointmentRow(params.id);
+      const existing = await loadAppointmentRow(params.id, true);
       if (existing.status === "canceled" || existing.status === "rescheduled") {
         throw badRequest("That appointment is no longer active.");
       }
@@ -494,16 +525,29 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
       const tx = getTx();
       const tz = ctx.clinicTimezone ?? "UTC";
 
+      await assertStaffBelongToClinic([query.staffUserId]);
+      assertCalendarAccess(query.staffUserId);
+      const moving = query.rescheduleAppointmentId
+        ? await loadAppointmentRow(query.rescheduleAppointmentId) : undefined;
+      if (moving && !ACTIVE_APPOINTMENT_STATUSES.includes(moving.status)) {
+        throw badRequest("That appointment is no longer active.");
+      }
       let durationMinutes = 30;
-      if (query.consultationTypeId) {
+      const typeId = moving?.consultationTypeId ?? query.consultationTypeId;
+      if (typeId) {
         const rows = await tx
           .select()
           .from(consultationTypes)
-          .where(eq(consultationTypes.id, query.consultationTypeId))
+          .where(eq(consultationTypes.id, typeId))
           .limit(1);
         if (!rows[0]) throw badRequest("No such consultation type.");
+        if (!rows[0].isActive || rows[0].archivedAt) throw badRequest("That consultation type is inactive.");
+        if (rows[0].eligibleStaffIds.length && !rows[0].eligibleStaffIds.includes(query.staffUserId)) {
+          throw badRequest("That member of staff is not eligible for this consultation type.");
+        }
         durationMinutes = rows[0].durationMinutes + rows[0].bufferMinutes;
       }
+      if (moving) durationMinutes = (moving.endsAt.getTime() - moving.startsAt.getTime()) / 60000;
 
       const hours = await workingHoursFor(query.staffUserId);
       const { start, end } = clinicDateRangeToUtc(query.date, query.date, tz);
@@ -514,8 +558,9 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
         .where(
           and(
             eq(appointments.staffUserId, query.staffUserId),
-            gte(appointments.startsAt, start),
+            gt(appointments.endsAt, start),
             lt(appointments.startsAt, end),
+            moving ? ne(appointments.id, moving.id) : undefined,
             ne(appointments.status, "canceled"),
             ne(appointments.status, "rescheduled"),
           ),
@@ -550,7 +595,9 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
         }
       }
 
-      return { date: query.date, timezone: tz, durationMinutes, slots };
+      return { date: query.date, timezone: tz, durationMinutes,
+        slots: [...new Map(slots.map((slot) => [slot.startsAt, slot])).values()]
+          .sort((a, b) => a.startsAt.localeCompare(b.startsAt)) };
     },
   });
 }
@@ -612,9 +659,10 @@ function serializeType(row: typeof consultationTypes.$inferSelect) {
   };
 }
 
-async function loadAppointmentRow(id: string) {
+async function loadAppointmentRow(id: string, lock = false) {
   const tx = getTx();
-  const rows = await tx.select().from(appointments).where(eq(appointments.id, id)).limit(1);
+  const query = tx.select().from(appointments).where(eq(appointments.id, id)).limit(1);
+  const rows = await (lock ? query.for("update") : query);
   const row = rows[0];
   if (!row) throw notFound("No such appointment.");
 
@@ -657,6 +705,7 @@ async function resolveSlot(body: {
       .limit(1);
     typeRow = rows[0];
     if (!typeRow) throw badRequest("That consultation type does not belong to this clinic.");
+    if (!typeRow.isActive || typeRow.archivedAt) throw badRequest("That consultation type is inactive.");
   }
 
   const durationMinutes = body.durationMinutes ?? typeRow?.durationMinutes ?? 30;
@@ -728,6 +777,7 @@ async function assertWithinWorkingHours(
 
   const fits = hours.some(
     (h) =>
+      clinicLocalDate(startsAt, timeZone) === clinicLocalDate(endsAt, timeZone) &&
       h.isActive &&
       h.dayOfWeek === day &&
       startLocal >= h.startTime.slice(0, 5) &&
@@ -749,12 +799,27 @@ async function assertStaffBelongToClinic(staffIds: readonly string[]): Promise<v
   const tx = getTx();
   // RLS hides another clinic's users, so this turns a silent no-op into a clear
   // validation error.
-  const found = await tx.select({ id: users.id }).from(users).where(isNull(users.archivedAt));
+  const found = await tx.select({ id: users.id }).from(users)
+    .where(and(isNull(users.archivedAt), eq(users.status, "active")));
   const valid = new Set(found.map((u) => u.id));
   const unknown = staffIds.filter((id) => !valid.has(id));
   if (unknown.length > 0) {
     throw badRequest("One or more of those people are not active staff at this clinic.");
   }
+}
+
+function assertCalendarAccess(staffUserId: string): void {
+  const ctx = getContext();
+  if (!ctx.capabilities.has("appointments:read_all") && staffUserId !== ctx.userId) {
+    throw forbidden("You can only use your own calendar.");
+  }
+}
+
+async function assertBranch(id?: string | null): Promise<void> {
+  if (!id) return;
+  const rows = await getTx().select({ id: schema.branches.id }).from(schema.branches)
+    .where(and(eq(schema.branches.id, id), isNull(schema.branches.archivedAt)));
+  if (!rows.length) throw badRequest("That branch does not belong to this clinic.");
 }
 
 /** Timeline entry, and advance the lead to Consultation booked. */

@@ -24,7 +24,7 @@ export const NAV_SECTIONS: NavSection[] = [
   { href: "/inbox", label: "Inbox", capability: "conversations:read", pending: true },
   { href: "/leads", label: "Leads", capability: "leads:read" },
   { href: "/people", label: "People", capability: "people:read" },
-  { href: "/calendar", label: "Calendar", capability: "appointments:read", pending: true },
+  { href: "/calendar", label: "Calendar", capability: "appointments:read" },
   { href: "/automations", label: "Automations", capability: "automations:read", pending: true },
   { href: "/reports", label: "Reports", capability: "reports:read", pending: true },
   { href: "/settings", label: "Settings", capability: "settings:read" },

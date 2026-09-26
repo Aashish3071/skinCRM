@@ -45,7 +45,7 @@ export interface ParsedCsv {
 export function parseCsv(content: string): ParsedCsv {
   // Excel writes a UTF-8 BOM, which would otherwise become part of the first
   // header name and break every mapping.
-  const withoutBom = content.replace(/^﻿/, "");
+  const withoutBom = content.replace(/^\uFEFF/, "");
 
   const records = parse(withoutBom, {
     columns: true,

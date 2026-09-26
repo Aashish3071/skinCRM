@@ -158,7 +158,6 @@ export async function assignLead(params: {
   ownerUserId: string | null;
   note?: string | null;
 }): Promise<LeadRow> {
-  const context = getContext();
   const tx = getTx();
   const lead = await getLead(params.leadId);
 

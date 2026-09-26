@@ -7,7 +7,6 @@
     "build": "next build",
     "start": "next start --port ${WEB_PORT:-3000}",
     "typecheck": "tsc --noEmit",
-    "lint": "next lint",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

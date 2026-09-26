@@ -7,7 +7,7 @@ import {
   getLeadTasks,
   getLeadTimeline,
   getPersonNotes,
-  getStaff,
+  getAssignees,
   getStages,
   relativeTime,
   stageTone,
@@ -29,7 +29,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     // General Notes belong to the person and follow them across every inquiry,
     // which is exactly why they are shown here and not only on the profile.
     can(session, "notes:read") ? getPersonNotes(lead.personId) : Promise.resolve([]),
-    can(session, "users:read") ? getStaff() : Promise.resolve([]),
+    can(session, "leads:assign") ? getAssignees() : Promise.resolve([]),
   ]);
 
   const tz = session.clinic.timezone;
@@ -41,9 +41,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         title={lead.personName}
         description={`${LEAD_SOURCE_LABELS[lead.source]} · created ${relativeTime(lead.createdAt)}`}
         actions={
-          <Link href="/leads" className="text-sm text-brand">
-            Back to leads
-          </Link>
+          <div className="flex items-center gap-4">
+            {can(session, "appointments:write") && <Link href={`/calendar?leadId=${lead.id}`} className="rounded-md bg-brand px-3 py-2 text-sm text-white">Book appointment</Link>}
+            <Link href="/leads" className="text-sm text-brand">Back to leads</Link>
+          </div>
         }
       />
 

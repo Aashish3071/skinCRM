@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   addLeadNoteSchema,
@@ -32,12 +32,20 @@ import {
   getLead,
   loadStages,
   stageByCategory,
-  stageById,
 } from "./service";
 
 const { leads, pipelineStages, people, users, tasks, activities, leadStageEvents, clinics } = schema;
 
 export function registerLeadRoutes(app: FastifyInstance): void {
+  registerRoute(app, {
+    method: "GET",
+    url: "/leads/assignees",
+    auth: { capability: "leads:assign" },
+    handler: async () => ({ items: await getTx()
+      .select({ id: users.id, fullName: users.fullName }).from(users)
+      .where(and(isNull(users.archivedAt), eq(users.status, "active")))
+      .orderBy(asc(users.fullName)) }),
+  });
   // --- Pipeline -----------------------------------------------------------
   registerRoute(app, {
     method: "GET",
