@@ -17,6 +17,7 @@
     "@fastify/rate-limit": "^10.2.2",
     "@node-rs/argon2": "^2.2.1",
     "@skincrm/config": "workspace:*",
+    "@skincrm/connectors": "workspace:*",
     "@skincrm/contracts": "workspace:*",
     "@skincrm/db": "workspace:*",
     "@skincrm/security": "workspace:*",

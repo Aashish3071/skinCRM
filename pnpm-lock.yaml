@@ -56,6 +56,9 @@ importers:
       '@skincrm/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@skincrm/connectors':
+        specifier: workspace:*
+        version: link:../../packages/connectors
       '@skincrm/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -148,6 +151,22 @@ importers:
       zod:
         specifier: ^3.24.1
         version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.4)(lightningcss@1.32.0)(supports-color@7.2.0)
+
+  packages/connectors:
+    dependencies:
+      '@skincrm/config':
+        specifier: workspace:*
+        version: link:../config
+      '@skincrm/contracts':
+        specifier: workspace:*
+        version: link:../contracts
     devDependencies:
       typescript:
         specifier: ^5.7.2

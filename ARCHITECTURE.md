@@ -185,6 +185,14 @@ without application help.
 same reason: deterministic evaluation order is a requirement, so the database
 enforces it rather than a convention.
 
+### Built (phase 4 — messaging)
+
+| Table | Notes |
+|---|---|
+| `message_templates` | `classification` is the load-bearing field: operational and promotional have different legal bases, consent and content requirements. `version` bumps on every copy change so a sent message can still be explained against the text it came from. Editing a WhatsApp template returns it to `draft`, because the edit invalidates Meta's approval. |
+| `messages` | The delivery log. Every outcome including `suppressed`, with the reason. Unique on `(clinic_id, idempotency_key)`. |
+| `suppressions` | Hard blocks — bounce, complaint, unsubscribe. Separate from the consent ledger: consent is what they agreed to, this is what happened afterwards. |
+
 ### Planned
 | `templates` | 4 | Channel, classification (operational/promotional), approved variables, version. |
 | `automation_rules`, `enrollments`, `jobs` | 4 | Trigger, conditions, schedule, stop conditions, idempotency key. |
@@ -232,30 +240,35 @@ Rules:
 
 ## 6. Send safety
 
-Any outbound message obeys all of this, checked **immediately before send** by
-the worker, not when the job was scheduled:
+**Implemented in `apps/api/src/messaging/send-gate.ts` as a single
+`evaluateSend` function.** Every send path goes through it, and it runs
+**immediately before sending**, never when the message was scheduled — consent,
+lead stage, template approval and the service window can all change in between.
 
-1. Global `OUTBOUND_SENDING_ENABLED` is on.
-2. Consent exists for that (channel, purpose). Operational and promotional are
-   separate; email and WhatsApp are separate.
-3. For promotional: the clinic has `promotional_sending_approved`, and the
-   template carries sender identity, postal address and an unsubscribe
-   mechanism.
-4. No opt-out or suppression for that channel.
-5. Lead stage, appointment state and rule status are re-read — a lead that
-   booked, replied, converted, opted out or closed stops the send.
-6. Quiet hours and per-contact frequency cap allow it.
-7. For WhatsApp: either inside the 24-hour service window (free-form allowed) or
-   using a currently **approved** template. A paused or rejected template can
-   never be sent.
-8. The idempotency key `(person, rule, trigger event, schedule instance,
-   channel)` has not been used. It is a unique index.
+In order:
 
-Anything blocked is **recorded with a `suppression_reason`**, never dropped
-silently. The delivery log shows scheduled, queued, sent, delivered, bounced,
-failed, canceled and suppressed states with reasons.
+1. `OUTBOUND_SENDING_ENABLED` — the global kill switch, checked first so
+   nothing below can override it.
+2. A destination exists for that channel.
+3. The idempotency key is unused. The unique index is the real guard; this
+   turns a would-be constraint violation into a recorded outcome.
+4. Promotional only: the clinic has `promotional_sending_approved`, and for
+   email a postal address on file.
+5. No hard suppression on the destination.
+6. Consent for that exact (channel, purpose). Operational may proceed on an
+   unrecorded consent; promotional requires an explicit `granted`.
+7. Lead state — a closed lead receives no promotional contact.
+8. The template is active, and for a Meta template, still `approved`.
+9. WhatsApp: inside the 24-hour service window, unless sending an approved
+   Meta template. Keyed on the provider template name, not on whether a CRM
+   template row exists — a row with no provider name is free-form copy.
+10. Quiet hours, in the clinic's timezone, handling a window crossing midnight.
+11. Per-contact frequency cap over 24 hours.
 
----
+Anything blocked returns a `SuppressionReason` and is **written to the delivery
+log with that reason**, never dropped. The message row is inserted *before* the
+provider is called, so the idempotency key is already claimed if the process
+dies mid-send.
 
 ## 7. Conversion feedback (CRM → ad platform)
 
@@ -407,8 +420,12 @@ Consequences to know about:
 | CSV import and website endpoint `[ID-04, ID-05, ID-07]` | ✅ Built |
 | Phase 2 UI — leads, Kanban, lead detail, people, duplicates | ✅ Built |
 | Calendar API — types, hours, booking, reschedule, availability `[CAL-01…04]` | ✅ Built, 25 tests |
-| Calendar UI | 🔜 Next |
-| Appointment reminders `[CAL-05]` | ⬜ Phase 4, needs the messaging layer |
+| Calendar UI — day/week views, booking, settings | ✅ Built |
+| Connectors package with email and WhatsApp mocks | ✅ Built |
+| Templates, send gate, delivery log `[MSG-02, 04, 05, 06, 07]` | ✅ Built, 31 tests |
+| Automation engine `[MSG-03]` | 🔜 Next |
+| `apps/worker` and appointment reminders `[CAL-05]` | 🔜 Next |
+| Messaging UI — template editor, delivery log | 🔜 Next |
 | Calendar `[CAL-01…05]` | ⬜ Phase 3 |
 | Templates, consent ledger, automations `[MSG-01…07]` | ⬜ Phase 4 |
 | WhatsApp shared inbox `[WA-01…09]` | ⬜ Phase 5 |

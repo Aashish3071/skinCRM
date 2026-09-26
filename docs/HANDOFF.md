@@ -1,8 +1,8 @@
 # Handoff — resume point
 
 **Updated:** 2026-09-26
-**Phase:** 3 of 9 (Calendar) — API complete; calendar UI and reminders outstanding
-**Overall:** ~45% of the build
+**Phase:** 4 of 9 (Messaging core) — send gate, templates and delivery log done; automation engine and worker outstanding
+**Overall:** ~55% of the build
 
 Read [README.md](../README.md) to run it and [ARCHITECTURE.md](../ARCHITECTURE.md)
 for the rules that must not be broken. This file says only what to do next.
@@ -19,10 +19,11 @@ docker compose up -d
 pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
-pnpm test                     # expect 183 passing
+pnpm lint                     # clean
+pnpm test                     # expect 237 passing
 ```
 
-If those 183 tests pass, the foundation is intact and you can build on it.
+If those 237 tests pass, the foundation is intact and you can build on it.
 
 To drive the API by hand:
 
@@ -49,13 +50,17 @@ curl -s -c /tmp/c.txt -X POST http://localhost:4000/auth/login -H 'content-type:
 - **`security`** — Argon2id with transparent rehash and timing-equalized failure,
   SHA-256 opaque token handling, per-clinic AES-256-GCM envelope encryption with
   the clinic id as AAD, TOTP with replay rejection, recovery codes, the outbound
-  idempotency-key builder. **24 unit tests.**
-- **`db`** — 23 tables across five migrations. RLS policies in `sql/900_rls.sql`,
+  idempotency-key builder, and stateless signed unsubscribe tokens.
+  **24 unit tests.**
+- **`connectors`** — adapter interfaces plus email and WhatsApp mocks. A
+  connector set to `live` with no implementation throws at resolution rather
+  than falling back to a mock.
+- **`db`** — 26 tables across six migrations. RLS policies in `sql/900_rls.sql`,
   re-applied on every migrate. **14 isolation tests**, including one that
   discovers every `clinic_id` table from the catalog and fails if any is
   unprotected. Idempotent seed: two clinics, 11 stages each, 7 users.
 
-### `apps/api` (Fastify) — 145 integration tests
+### `apps/api` (Fastify) — 194 integration tests
 
 - `src/route.ts` — the route contract. Correlation id, request context, Zod
   validation, session resolution, capability check, tenant transaction and
@@ -69,7 +74,10 @@ curl -s -c /tmp/c.txt -X POST http://localhost:4000/auth/login -H 'content-type:
   and RLS.
 - `src/audit.ts`, `src/logger.ts` — append-only audit written inside the caller's
   transaction, with a redaction list applied to both logs and change summaries.
-- `src/auth/`, `src/users/`, `src/people/`, `src/leads/`, `src/intake/`, `src/calendar/`.
+- `src/auth/`, `src/users/`, `src/people/`, `src/leads/`, `src/intake/`, `src/calendar/`,
+  `src/messaging/`.
+- `src/messaging/send-gate.ts` — **the only place** that decides whether a
+  message may go out. Read it before touching any send path.
 - `src/calendar/timezone.ts` — clinic-local conversions through the IANA database.
   Use these rather than hand-rolling an offset.
 
@@ -87,6 +95,7 @@ Routes live today:
 | Tasks | `GET|POST /tasks`, `POST /tasks/:id/complete`, `POST /tasks/:id/snooze`, `GET /leads/:id/tasks` |
 | Routing | `GET|POST /assignment-rules`, `PATCH|DELETE /assignment-rules/:id`, `POST /assignment-rules/preview` |
 | Intake | `POST /imports/csv/preview`, `POST /imports/csv`, `POST /settings/website-form-key`, `POST /webhooks/website` (public) |
+| Messaging | `GET /templates/variables`, `GET|POST /templates`, `PATCH /templates/:id`, `POST /templates/:id/preview`, `GET|POST /messages`, `POST /messages/opt-out`, `GET /suppressions`, `GET /integrations/messaging/health` |
 | Calendar | `GET|POST /consultation-types`, `PATCH /consultation-types/:id`, `GET|PUT /working-hours`, `GET|POST /appointments`, `GET /appointments/:id`, `POST /appointments/:id/reschedule|cancel|status`, `GET /availability` |
 
 ### `apps/web` (Next.js)
@@ -107,54 +116,55 @@ Nothing is half-finished. No failing tests, no temporary workarounds beyond the
 
 ## Do this next, in order
 
-### 1. Calendar UI `[CAL-01]`
+### 1. Automation engine `[MSG-03, MSG-06]`
 
-The API is complete and tested; there is no calendar screen yet. `/calendar`
-currently renders a `NotBuiltYet` panel.
+The send path exists and is safe; nothing triggers it automatically yet.
 
-- Day and week views by staff and branch, rendered in the clinic timezone. Use
-  `GET /appointments?from=YYYY-MM-DD&to=YYYY-MM-DD`, which returns the timezone
-  alongside the rows.
-- A booking dialog driven by `GET /availability?date=&staffUserId=&consultationTypeId=`,
-  which already marks each slot `booked`, `outside_hours` or `in_past`.
-- Reschedule and cancel, both of which require a reason the UI must capture.
-- Settings screens for consultation types and working hours (`PUT /working-hours`
-  replaces the whole set for one person, deliberately).
-- A 409 from booking means the slot went while the user was looking at it. Show
-  the message and refresh availability rather than retrying.
+- New tables: `automation_rules` (trigger, conditions, template, delay, quiet
+  hours, active) and `automation_enrollments` (rule, person, lead, state, next
+  run, stop reason). **Add both to `tenant_tables` in
+  `packages/db/sql/900_rls.sql`.**
+- Triggers to cover the five templates named in PRD 4.4: new-inquiry
+  acknowledgement, first-follow-up task when no contact inside the clinic SLA,
+  consultation confirmation, 24-hour appointment reminder, post-no-show task.
+- **Stop conditions are the subtle part** (MSG-06): a rule stops on reply,
+  booking, conversion, opt-out or closure, and a scheduled job must re-check
+  them before sending. `evaluateSend` already covers consent, suppression and
+  lead closure; the enrollment needs to handle "they replied" and "they booked".
+- Each rule can pick email or WhatsApp independently.
+- Keep promotional nurture disabled until the clinic approves audience, copy
+  and legal basis.
 
-### 2. Phase 4 — messaging core `[MSG-01…07]`
+### 2. `apps/worker`
 
-This is the largest remaining phase and it unblocks several loose ends.
+Does not exist yet. Create it with tsup + tsx like `apps/api`.
 
-- `packages/connectors`: adapter interfaces plus **mock** implementations for
-  email and WhatsApp. The app must stay fully demoable with no credentials.
-- `apps/worker`: the first BullMQ processors. Create the app here.
-- Templates with an operational/promotional classification, approved variables,
-  preview, and stored rendered content with its template version.
-- The automation engine: triggers, conditions, delays, quiet hours, enrollment,
-  and stop conditions (reply, booking, conversion, opt-out, closure).
-- **Send safety is the hard part.** Re-read consent, lead stage, appointment
-  state, rule status, frequency cap and the WhatsApp service window
-  *immediately before sending*, never at schedule time. The idempotency key
-  builder already exists: `buildIdempotencyKey` in `@skincrm/security`. Anything
-  blocked is recorded with a `suppression_reason`, never dropped silently.
-  ARCHITECTURE.md section 6 is the checklist.
-- Delivery log covering scheduled, queued, sent, delivered, bounced, failed,
-  canceled and suppressed.
+- BullMQ queues: scheduled sends, automation evaluation, maintenance.
+- Appointment reminders `[CAL-05]`: schedule on booking, and **cancel pending
+  jobs when the appointment is rescheduled or cancelled**. There is a
+  `TODO(phase 4)` at the reschedule handler in `apps/api/src/calendar/routes.ts`.
+- Deliver the invite and password-reset emails, which are still printed to the
+  API console (`TODO(phase 4)` in `auth/routes.ts` and `users/routes.ts`).
+- Call `pruneExpiredSessions()`, written in `auth/sessions.ts` and never
+  scheduled.
+- Bounded retry and a dead-letter view an admin can replay.
 
-Phase 4 also closes three things already marked TODO:
-- invite and password-reset emails (currently printed to the API console),
-- appointment confirmation and reminder jobs `[CAL-05]`, including cancelling
-  pending reminders when an appointment is rescheduled or cancelled — there is a
-  `TODO(phase 4)` at the reschedule handler in `apps/api/src/calendar/routes.ts`,
-- `pruneExpiredSessions()`, which is written but never scheduled.
+### 3. Messaging UI
 
-### 3. Phase 5 — WhatsApp shared inbox `[WA-01…09]`
+The Automations section is still a `NotBuiltYet` panel. It needs the template
+editor with live preview, the rule builder, and the delivery log with its
+suppression reasons — `SUPPRESSION_REASON_LABELS` in
+`packages/contracts/src/messaging.ts` already has the plain-English wording.
+
+Also needed: a public `/unsubscribe/:token` page. The token is already generated
+and verifiable (`packages/security/src/unsubscribe.ts`); nothing serves it yet.
+
+### 4. Phase 5 — WhatsApp shared inbox `[WA-01…09]`
 
 Conversation model, assignment so two staff cannot unknowingly reply to the same
-thread, the 24-hour service window, and approved templates. Mock connector
-first; the real Cloud API and the coexistence pilot belong to phase 7.
+thread, and internal notes. The service window and template rules are already
+enforced by the send gate. Mock connector first; the real Cloud API and the
+coexistence pilot belong to phase 7.
 
 ---
 
@@ -198,6 +208,16 @@ first; the real Cloud API and the coexistence pilot belong to phase 7.
 13. **`next build` and `next dev` share `.next`.** Running the build while the
    dev server is up leaves it serving a broken tree; stop dev first, then
    `rm -rf apps/web/.next` if it happens.
+14. **Every send must go through `evaluateSend`.** Do not add a second send
+   path that calls a connector directly — the gate is the only thing enforcing
+   consent, suppression, the service window and the frequency cap (D-47).
+15. **Never write a message row after calling the provider.** The row claims the
+   idempotency key; writing it afterwards risks a silent double send (D-49).
+16. **In tests, never pick a clinic with `select().from(clinics).limit(1)`.** It
+   can return the isolation-control tenant, and fixture rows then land where the
+   code under test will never see them. Resolve the clinic from the person.
+17. **`getEnv()` caches.** Changing an environment variable inside a test has no
+   effect until `resetEnvCache()` is called.
 
 ---
 

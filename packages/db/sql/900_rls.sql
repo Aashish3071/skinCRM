@@ -57,7 +57,11 @@ declare
     -- Phase 3: calendar
     'consultation_types',
     'working_hours',
-    'appointments'
+    'appointments',
+    -- Phase 4: messaging
+    'message_templates',
+    'messages',
+    'suppressions'
   ];
 begin
   foreach tbl in array tenant_tables loop

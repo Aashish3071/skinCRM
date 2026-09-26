@@ -1,0 +1,396 @@
+import { eq } from "drizzle-orm";
+import type { SendableChannel, TemplateClassification } from "@skincrm/contracts";
+import { schema } from "@skincrm/db";
+import { ConnectorError, getConnectors } from "@skincrm/connectors";
+import { unsubscribeUrl } from "@skincrm/security";
+import { getContext, getTx } from "../context";
+import { logger } from "../logger";
+import { recordAudit } from "../audit";
+import { addActivity } from "../leads/service";
+import { evaluateSend, resolveDestination } from "./send-gate";
+import { renderTemplate } from "./render";
+
+const { messages, messageTemplates, people, clinics, appointments, users, suppressions } = schema;
+
+export interface SendRequest {
+  personId: string;
+  leadId?: string | null;
+  templateKey?: string;
+  /** For an ad-hoc staff message with no template behind it. */
+  adHoc?: { channel: SendableChannel; subject?: string; body: string };
+  /** Extra variables beyond the ones resolved from the person and clinic. */
+  variables?: Record<string, string | null>;
+  appointmentId?: string | null;
+  idempotencyKey: string;
+  ruleId?: string | null;
+  ignoreQuietHours?: boolean;
+}
+
+export interface SendOutcome {
+  messageId: string;
+  state: "sent" | "suppressed" | "failed";
+  suppressionReason?: string;
+  detail?: string;
+}
+
+/**
+ * Send one message, or record exactly why it was not sent.
+ *
+ * Always writes a row to the delivery log, whatever the outcome (PRD MSG-07).
+ * A message that never went out is a fact the clinic needs; silently dropping
+ * it makes "why did my client not get the reminder" unanswerable.
+ */
+export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
+  const context = getContext();
+  const tx = getTx();
+  const clinicId = context.clinicId!;
+
+  const template = request.templateKey ? await loadTemplate(request.templateKey) : null;
+  const channel: SendableChannel = template
+    ? (template.channel as SendableChannel)
+    : request.adHoc!.channel;
+  const classification: TemplateClassification = template
+    ? template.classification
+    : "operational";
+
+  const destination = await resolveDestination(request.personId, channel);
+
+  // --- The gate. Evaluated now, not when this was scheduled. ---------------
+  const decision = await evaluateSend({
+    clinicId,
+    personId: request.personId,
+    leadId: request.leadId ?? null,
+    channel,
+    classification,
+    templateId: template?.id ?? null,
+    whatsappTemplateName: template?.whatsappTemplateName ?? null,
+    destination,
+    idempotencyKey: request.idempotencyKey,
+    ignoreQuietHours: request.ignoreQuietHours ?? false,
+  });
+
+  if (!decision.allowed) {
+    // A duplicate key means an equivalent row already exists, so writing
+    // another would violate the unique index we are relying on.
+    if (decision.reason === "duplicate_idempotency_key") {
+      logger.info(
+        { correlationId: context.correlationId, reason: decision.reason },
+        "Send skipped as duplicate",
+      );
+      return { messageId: "", state: "suppressed", suppressionReason: decision.reason, detail: decision.detail };
+    }
+
+    const suppressed = await tx
+      .insert(messages)
+      .values({
+        clinicId,
+        personId: request.personId,
+        leadId: request.leadId ?? null,
+        channel,
+        direction: "outbound",
+        classification,
+        templateId: template?.id ?? null,
+        templateVersion: template?.version ?? null,
+        recipient: destination,
+        state: "suppressed",
+        suppressionReason: decision.reason,
+        failureDetail: decision.detail,
+        idempotencyKey: request.idempotencyKey,
+        ruleId: request.ruleId ?? null,
+        triggeredByUserId: context.userId,
+      })
+      .returning({ id: messages.id });
+
+    return {
+      messageId: suppressed[0]!.id,
+      state: "suppressed",
+      suppressionReason: decision.reason,
+      detail: decision.detail,
+    };
+  }
+
+  // --- Render --------------------------------------------------------------
+  const variables = {
+    ...(await resolveVariables(request.personId, request.appointmentId ?? null)),
+    // Every promotional email must carry a working opt-out, so the link is
+    // generated here rather than left for a template author to remember.
+    "link.unsubscribe": unsubscribeUrl({
+      clinicId,
+      personId: request.personId,
+      channel,
+    }),
+    ...(request.variables ?? {}),
+  };
+
+  const bodySource = template?.body ?? request.adHoc!.body;
+  const subjectSource = template?.subject ?? request.adHoc?.subject ?? null;
+
+  const renderedBody = renderTemplate(bodySource, variables);
+  const renderedSubject = subjectSource ? renderTemplate(subjectSource, variables) : null;
+
+  if (renderedBody.missing.length > 0) {
+    // Refuse rather than send a message with a visible gap in it (PRD MSG-02).
+    const row = await tx
+      .insert(messages)
+      .values({
+        clinicId,
+        personId: request.personId,
+        leadId: request.leadId ?? null,
+        channel,
+        direction: "outbound",
+        classification,
+        templateId: template?.id ?? null,
+        templateVersion: template?.version ?? null,
+        recipient: destination,
+        state: "failed",
+        failureDetail: `Missing template variables: ${renderedBody.missing.join(", ")}`,
+        idempotencyKey: request.idempotencyKey,
+        ruleId: request.ruleId ?? null,
+        failedAt: new Date(),
+      })
+      .returning({ id: messages.id });
+    return {
+      messageId: row[0]!.id,
+      state: "failed",
+      detail: `Missing template variables: ${renderedBody.missing.join(", ")}`,
+    };
+  }
+
+  // --- Record before sending ----------------------------------------------
+  // The row exists first so the unique index has already claimed this
+  // idempotency key by the time the provider is called. A crash between the
+  // two leaves a `sending` row to reconcile, not a silent double send.
+  const inserted = await tx
+    .insert(messages)
+    .values({
+      clinicId,
+      personId: request.personId,
+      leadId: request.leadId ?? null,
+      channel,
+      direction: "outbound",
+      classification,
+      templateId: template?.id ?? null,
+      templateVersion: template?.version ?? null,
+      recipient: destination,
+      renderedSubject: renderedSubject?.text ?? null,
+      renderedBody: renderedBody.text,
+      state: "sending",
+      attempts: 1,
+      idempotencyKey: request.idempotencyKey,
+      ruleId: request.ruleId ?? null,
+      triggeredByUserId: context.userId,
+    })
+    .returning({ id: messages.id });
+
+  const messageId = inserted[0]!.id;
+  const connectors = getConnectors();
+
+  try {
+    const clinicRow = (
+      await tx
+        .select({ name: clinics.name, sendingDomain: clinics.sendingDomain })
+        .from(clinics)
+        .limit(1)
+    )[0];
+
+    const result =
+      channel === "email"
+        ? await connectors.email.send({
+            to: destination!,
+            subject: renderedSubject?.text ?? "",
+            text: renderedBody.text,
+            fromAddress: `noreply@${clinicRow?.sendingDomain ?? "example-clinic.test"}`,
+            fromName: clinicRow?.name ?? "Clinic",
+            idempotencyKey: request.idempotencyKey,
+          })
+        : await connectors.whatsapp.send(
+            template?.whatsappTemplateName
+              ? {
+                  kind: "template",
+                  toWaId: destination!,
+                  templateName: template.whatsappTemplateName,
+                  languageCode: template.whatsappLanguageCode ?? "en",
+                  variables: Object.values(variables).filter((v): v is string => v !== null),
+                  idempotencyKey: request.idempotencyKey,
+                }
+              : {
+                  kind: "text",
+                  toWaId: destination!,
+                  body: renderedBody.text,
+                  idempotencyKey: request.idempotencyKey,
+                },
+          );
+
+    await tx
+      .update(messages)
+      .set({
+        state: "sent",
+        sentAt: result.acceptedAt,
+        providerMessageId: result.providerMessageId,
+        updatedAt: new Date(),
+      })
+      .where(eq(messages.id, messageId));
+
+    await addActivity({
+      personId: request.personId,
+      leadId: request.leadId ?? null,
+      type: channel === "email" ? "email_sent" : "whatsapp_sent",
+      summary: template ? `Sent "${template.name}"` : "Message sent",
+      entityType: "message",
+      entityId: messageId,
+    });
+
+    return { messageId, state: "sent" };
+  } catch (error) {
+    const connectorError = error instanceof ConnectorError ? error : null;
+    const detail = connectorError?.message ?? "Provider rejected the message";
+
+    await tx
+      .update(messages)
+      .set({
+        state: "failed",
+        failedAt: new Date(),
+        // Provider detail only. Never the body.
+        failureDetail: detail,
+        updatedAt: new Date(),
+      })
+      .where(eq(messages.id, messageId));
+
+    // A hard bounce means this address must not be tried again.
+    if (connectorError?.options.permanentSuppression && destination) {
+      await tx
+        .insert(suppressions)
+        .values({
+          clinicId,
+          personId: request.personId,
+          channel,
+          destination,
+          reason: "opted_out",
+          detail: `Provider reported: ${detail}`,
+        })
+        .onConflictDoNothing({
+          target: [suppressions.clinicId, suppressions.channel, suppressions.destination],
+        });
+    }
+
+    logger.warn(
+      { correlationId: context.correlationId, messageId, retryable: connectorError?.options.retryable },
+      "Message send failed",
+    );
+
+    return { messageId, state: "failed", detail };
+  }
+}
+
+async function loadTemplate(key: string) {
+  const tx = getTx();
+  const rows = await tx
+    .select()
+    .from(messageTemplates)
+    .where(eq(messageTemplates.key, key))
+    .limit(1);
+  const template = rows[0];
+  if (!template) throw new Error(`No template with key "${key}" at this clinic`);
+  return template;
+}
+
+/**
+ * Values for the template variables.
+ *
+ * Deliberately narrow: person name, clinic details and appointment timing.
+ * Nothing clinical, nothing from General Notes (PRD ID-08), and no service or
+ * condition (PRD 8).
+ */
+async function resolveVariables(
+  personId: string,
+  appointmentId: string | null,
+): Promise<Record<string, string | null>> {
+  const tx = getTx();
+
+  const personRows = await tx
+    .select({ firstName: people.firstName, displayName: people.displayName })
+    .from(people)
+    .where(eq(people.id, personId))
+    .limit(1);
+  const person = personRows[0];
+
+  const clinicRows = await tx
+    .select({
+      name: clinics.name,
+      postalAddress: clinics.postalAddress,
+      timezone: clinics.timezone,
+      supportEmail: clinics.supportEmail,
+    })
+    .from(clinics)
+    .limit(1);
+  const clinic = clinicRows[0];
+
+  const variables: Record<string, string | null> = {
+    "person.firstName": person?.firstName ?? person?.displayName?.split(" ")[0] ?? null,
+    "person.fullName": person?.displayName ?? null,
+    "clinic.name": clinic?.name ?? null,
+    "clinic.phone": clinic?.supportEmail ?? null,
+    "clinic.address": clinic?.postalAddress ?? null,
+    "appointment.date": null,
+    "appointment.time": null,
+    "appointment.staffName": null,
+    "link.unsubscribe": null,
+    "link.reschedule": null,
+  };
+
+  if (appointmentId) {
+    const rows = await tx
+      .select({ startsAt: appointments.startsAt, staffName: users.fullName })
+      .from(appointments)
+      .innerJoin(users, eq(users.id, appointments.staffUserId))
+      .where(eq(appointments.id, appointmentId))
+      .limit(1);
+    const appointment = rows[0];
+    if (appointment && clinic) {
+      // Always shown in the clinic's timezone, never the server's.
+      variables["appointment.date"] = new Intl.DateTimeFormat("en-US", {
+        timeZone: clinic.timezone,
+        dateStyle: "full",
+      }).format(appointment.startsAt);
+      variables["appointment.time"] = new Intl.DateTimeFormat("en-US", {
+        timeZone: clinic.timezone,
+        timeStyle: "short",
+      }).format(appointment.startsAt);
+      variables["appointment.staffName"] = appointment.staffName;
+    }
+  }
+
+  return variables;
+}
+
+/** Record an opt-out. Blocks every future promotional send immediately. */
+export async function recordOptOut(params: {
+  personId: string;
+  channel: SendableChannel;
+  destination: string;
+  detail?: string;
+}): Promise<void> {
+  const context = getContext();
+  const tx = getTx();
+
+  await tx
+    .insert(suppressions)
+    .values({
+      clinicId: context.clinicId!,
+      personId: params.personId,
+      channel: params.channel,
+      destination: params.destination,
+      reason: "opted_out",
+      detail: params.detail ?? "Unsubscribed",
+    })
+    .onConflictDoNothing({
+      target: [suppressions.clinicId, suppressions.channel, suppressions.destination],
+    });
+
+  await recordAudit({
+    action: "consent_changed",
+    entityType: "person",
+    entityId: params.personId,
+    changeSummary: { optedOut: true, channel: params.channel },
+  });
+}
