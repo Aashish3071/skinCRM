@@ -32,6 +32,61 @@ afterAll(async () => {
   await closeAllConnections();
 });
 
+describe("no tenant table can be left unprotected", () => {
+  /**
+   * The safety net for the single most dangerous mistake in this codebase:
+   * adding a table with a `clinic_id` and forgetting to list it in
+   * `sql/900_rls.sql`. That table would behave perfectly in development and leak
+   * across clinics in production.
+   *
+   * This test discovers tables from the database itself rather than from a
+   * hand-maintained list, so it fails the moment a new one appears unprotected.
+   */
+  it("every table with a clinic_id has RLS enabled, forced, and a policy", async () => {
+    const { sql: appSql } = getDb();
+    const rows = await appSql<
+      { table_name: string; relrowsecurity: boolean; relforcerowsecurity: boolean; policy_count: number }[]
+    >`
+      select
+        c.relname as table_name,
+        c.relrowsecurity,
+        c.relforcerowsecurity,
+        (select count(*) from pg_policy p where p.polrelid = c.oid)::int as policy_count
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      join information_schema.columns col
+        on col.table_schema = n.nspname
+       and col.table_name = c.relname
+       and col.column_name = 'clinic_id'
+      where n.nspname = 'public' and c.relkind = 'r'
+      order by c.relname
+    `;
+
+    expect(rows.length, "expected tenant tables to exist").toBeGreaterThan(8);
+
+    const unprotected = rows.filter(
+      (r) => !r.relrowsecurity || !r.relforcerowsecurity || r.policy_count === 0,
+    );
+    expect(
+      unprotected.map((r) => r.table_name),
+      "these tables have a clinic_id but no enforced RLS policy — add them to the tenant_tables array in packages/db/sql/900_rls.sql",
+    ).toEqual([]);
+  });
+
+  it("the clinics table itself is protected", async () => {
+    const { sql: appSql } = getDb();
+    const [row] = await appSql<{ relrowsecurity: boolean; relforcerowsecurity: boolean; n: number }[]>`
+      select c.relrowsecurity, c.relforcerowsecurity,
+             (select count(*) from pg_policy p where p.polrelid = c.oid)::int as n
+      from pg_class c join pg_namespace ns on ns.oid = c.relnamespace
+      where ns.nspname = 'public' and c.relname = 'clinics'
+    `;
+    expect(row!.relrowsecurity).toBe(true);
+    expect(row!.relforcerowsecurity).toBe(true);
+    expect(row!.n).toBeGreaterThan(0);
+  });
+});
+
 describe("the application role is subject to RLS", () => {
   it("is not a superuser and cannot bypass row-level security", async () => {
     const { sql: appSql } = getDb();

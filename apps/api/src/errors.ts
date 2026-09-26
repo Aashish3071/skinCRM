@@ -17,6 +17,13 @@ export class AppError extends Error {
     readonly code: string,
     message: string,
     readonly details?: Record<string, string[]>,
+    /**
+     * Extra top-level keys merged into the response alongside `error`. Used
+     * where the client needs data to act on the failure — for example the
+     * duplicate candidates that come back with a 409 from person creation, so
+     * the UI can offer "use this record" instead of making the user search.
+     */
+    readonly extra?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "AppError";
@@ -69,6 +76,7 @@ export function registerErrorHandler(app: FastifyInstance): void {
         error.message,
       );
       return reply.status(error.statusCode).send({
+        ...(error.extra ?? {}),
         error: {
           code: error.code,
           message: error.message,

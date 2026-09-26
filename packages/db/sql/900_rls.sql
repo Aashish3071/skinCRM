@@ -41,7 +41,18 @@ declare
     'auth_tokens',
     'mfa_recovery_codes',
     'pipeline_stages',
-    'audit_events'
+    'audit_events',
+    -- Phase 2: core CRM
+    'people',
+    'general_notes',
+    'consent_records',
+    'person_merges',
+    'source_submissions',
+    'raw_payloads',
+    'leads',
+    'lead_stage_events',
+    'activities',
+    'tasks'
   ];
 begin
   foreach tbl in array tenant_tables loop
