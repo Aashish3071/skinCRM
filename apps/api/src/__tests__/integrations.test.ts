@@ -22,6 +22,10 @@ import { processDueInboundEvents } from "../integrations/processor";
 
 const { people, leads, leadStageEvents, activities, messages, conversations, consentRecords, sourceSubmissions, integrationConnections, inboundEvents, clinics, rawPayloads } = schema;
 
+/** Account ids these tests use; cleanup touches nothing else (the dev database is shared). */
+const TEST_ACCOUNT_IDS = ["123456789", "11112222", "555"];
+const createdGoogle: string[] = [];
+
 let app: FastifyInstance;
 let admin: string;
 let email: MockEmailConnector;
@@ -50,8 +54,18 @@ afterEach(() => {
 
 async function cleanup() {
   const { db } = getOwnerDb();
-  await db.delete(inboundEvents);
-  await db.delete(integrationConnections);
+  // Only what these tests create: the test page and number ids, and Google
+  // keys connected by the seeded admin during a test run.
+  const testConnections = await db
+    .select({ id: integrationConnections.id })
+    .from(integrationConnections)
+    .where(or(inArray(integrationConnections.externalAccountId, TEST_ACCOUNT_IDS), inArray(integrationConnections.id, createdGoogle)));
+  const connIds = testConnections.map((c) => c.id);
+  if (connIds.length) {
+    await db.delete(inboundEvents).where(inArray(inboundEvents.connectionId, connIds));
+    await db.delete(integrationConnections).where(inArray(integrationConnections.id, connIds));
+  }
+  createdGoogle.length = 0;
   const ids = (await db.select({ id: people.id }).from(people).where(or(like(people.displayName, "%Test Lead%"), like(people.phoneRaw, "+1305559%")))).map((r) => r.id);
   if (!ids.length) return;
   await db.delete(messages).where(inArray(messages.personId, ids));
@@ -130,7 +144,7 @@ describe("Meta Lead Ads", () => {
   it("ignores pages no clinic has connected", async () => {
     const res = await app.inject({ method: "POST", url: "/webhooks/meta", payload: leadgenBody("9990003", "555") });
     expect(res.statusCode).toBe(200);
-    expect(await getOwnerDb().db.select().from(inboundEvents)).toHaveLength(0);
+    expect(await getOwnerDb().db.select().from(inboundEvents).where(eq(inboundEvents.externalId, "9990003"))).toHaveLength(0);
   });
 
   it("sends a test lead end to end from Settings", async () => {
@@ -138,7 +152,7 @@ describe("Meta Lead Ads", () => {
     const res = await app.inject({ method: "POST", url: "/integrations/meta/test-lead", headers: { cookie: admin } });
     expect(res.statusCode).toBe(200);
     await processDueInboundEvents();
-    const events = await getOwnerDb().db.select().from(inboundEvents);
+    const events = await getOwnerDb().db.select().from(inboundEvents).where(eq(inboundEvents.type, "meta_leadgen"));
     expect(events[0]!.state).toBe("processed");
     expect(events[0]!.result).toMatch(/^lead:/);
   });
@@ -154,7 +168,7 @@ describe("Meta Lead Ads", () => {
     await app.inject({ method: "POST", url: "/webhooks/meta", payload: leadgenBody("9990004") });
     await processDueInboundEvents();
     setMetaLeadsConnector(undefined);
-    const event = (await getOwnerDb().db.select().from(inboundEvents))[0]!;
+    const event = (await getOwnerDb().db.select().from(inboundEvents).where(eq(inboundEvents.externalId, "9990004")))[0]!;
     expect(event.state).toBe("pending");
     expect(event.attempts).toBe(1);
     expect(event.lastError).toBe("Meta is down");
@@ -165,6 +179,7 @@ describe("Google Ads lead forms", () => {
   it("accepts a lead with the clinic's key and rejects an unknown key", async () => {
     const created = await app.inject({ method: "POST", url: "/integrations/google/key", headers: { cookie: admin } });
     const key = created.json().key as string;
+    createdGoogle.push(created.json().id as string);
     expect(key.length).toBeGreaterThan(20);
 
     const bad = await app.inject({ method: "POST", url: "/webhooks/google/lead-form", payload: { lead_id: "g1", google_key: "wrong" } });

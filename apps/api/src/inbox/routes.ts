@@ -47,6 +47,7 @@ export function registerInboxRoutes(app: FastifyInstance): void {
       else where.push(ne(conversations.status, "resolved"));
       if (query.view === "mine") where.push(eq(conversations.assignedUserId, context.userId!));
       if (query.view === "unassigned") where.push(isNull(conversations.assignedUserId));
+      if (query.view === "unread") where.push(sql`${conversations.unreadCount} > 0`);
       if (query.search) {
         const term = `%${query.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
         where.push(or(ilike(people.displayName, term), ilike(people.phoneE164, term))!);

@@ -1,8 +1,8 @@
 # Handoff — resume point
 
 **Updated:** 2026-09-26
-**Phase:** 5 of 9 — messaging complete; WhatsApp inbox done on the mock connector. Next: phase 6 reporting.
-**Overall:** ~70% of the build
+**Phase:** 7 of 9 — integrations built against fakes; reporting parked; inbox redesigned.
+**Overall:** ~78% of the build
 
 Read [README.md](../README.md) to run it and [ARCHITECTURE.md](../ARCHITECTURE.md)
 for the rules that must not be broken. This file says only what to do next.
@@ -20,7 +20,7 @@ pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
 pnpm lint                     # clean
-pnpm test                     # expect 289 passing
+pnpm test                     # expect ~289 passing
 ```
 
 If those 289 tests pass, the foundation is intact and you can build on it.
@@ -120,23 +120,33 @@ Nothing is half-finished. No failing tests, no temporary workarounds beyond the
 
 ## Do this next, in order
 
-Landed (third session): forward-only stages (D-69), WhatsApp → lead always
-(D-70), Meta Lead Ads + Google lead forms + WhatsApp Cloud webhooks, queue and
-live connectors (D-71), Settings → Lead sources & messaging, test-lead buttons,
-source/test badges on lead cards. Reporting built but **parked** (D-72).
+Session stopped at a usage limit. Everything below is committed and pushed.
 
-### 1. WhatsApp-style inbox redesign — in progress
-Make `/inbox` look and feel like WhatsApp (green header, chat wallpaper,
-bubble tails, ticks for sent/delivered/read, pill composer).
+### 0. Where it stopped (half-done)
+- **WhatsApp-style inbox redesign is written and compiles** (`apps/web/src/app/(app)/inbox/shell.tsx`,
+  `[id]/thread.tsx`, `--wa-*` tokens and `.wa-wallpaper` / `.wa-tail-*` in
+  `globals.css`) but was **not yet reviewed in the browser**. Open `/inbox`,
+  press "+ Test message" to create a chat, add a team note and a reply, and
+  check light + dark and 390px width. Look for: bubble tails, time/ticks not
+  overlapping text, the "⋮" menu on mobile.
+- The earlier demo chat ("Demo Patient") was deleted by an over-broad test
+  cleanup, now fixed. Recreate demo data with "+ Test message" if wanted.
+- Full `pnpm test` was last run before the inbox redesign and the test-cleanup
+  narrowing (289 passing then); `integrations` + `inbox` suites were rerun
+  after (28 passing). Run the full suite first.
 
-### 2. Switch sending on and prove it
-The client has signed off. Set `OUTBOUND_SENDING_ENABLED=true` and
-`CONNECTOR_EMAIL=live` (Mailpit locally), tick "Marketing messages are
-approved" in Settings, and verify an automation email lands in Mailpit
-(http://localhost:8025). For real WhatsApp: `CONNECTOR_WHATSAPP=live`, connect
-the number in Settings, set `META_APP_SECRET`, and subscribe the webhooks.
+### 1. Switch sending on and prove it (client has signed off)
+`.env`: `OUTBOUND_SENDING_ENABLED=true`, `CONNECTOR_EMAIL=live`. Restart,
+Settings → Lead sources & messaging → "Send yourself a test" → check Mailpit
+(http://localhost:8025). Then turn on an automation and add a lead with an email.
+Real WhatsApp/Meta: `CONNECTOR_WHATSAPP=live`, `CONNECTOR_META=live`,
+`META_APP_SECRET`, public HTTPS `PUBLIC_API_URL`, connect accounts in Settings,
+subscribe the webhooks (URLs + verify tokens shown under "Technical details").
 
-### 3. Unpark Reporting when asked (D-72)
+### 2. Unpark Reporting when the client asks (D-72)
+Add `{ href: "/reports", ... }` back to `NAV_SECTIONS` in `apps/web/src/components/nav.tsx`.
+
+### 3. Phase 8 — conversion feedback, then phase 9 hardening
 
 ---
 
@@ -204,6 +214,11 @@ the number in Settings, set `META_APP_SECRET`, and subscribe the webhooks.
    breaks the Next build ("Server Actions must be async functions").
 23. **Grid children need `min-w-0`** or a long truncated line stretches the whole
    page on a phone (the automation builder did exactly this).
+25. **Tests share the dev database.** Cleanups must delete only rows the test
+   created (see `TEST_ACCOUNT_IDS` in `integrations.test.ts`). The Google key
+   test replaces the clinic's Google connection — don't run it against a dev
+   database with a real Google connection you care about.
+26. **Literal U+FEFF in source fails lint** — write `"\uFEFF"`.
 24. **Stop the dev API before `pnpm test`** — its in-process worker claims the
    automation runs the tests create.
 21. **`next build` beside `next dev`:** use `NEXT_DIST_DIR=.next-build npx next build`

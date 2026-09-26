@@ -136,9 +136,9 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 | 2 | Core CRM — people, General Notes, leads, pipeline, tasks, intake, CSV `[ID-02…08, LEAD-01…06]` | ✅ Complete |
 | 3 | Calendar — types, booking, conflict prevention, statuses `[CAL-01…05]` | ✅ Complete (reminders via automations) |
 | 4 | Messaging core — templates, consent ledger, automations, delivery log `[MSG-01…07]` | ✅ Complete (email connection-test screen outstanding) |
-| 5 | WhatsApp shared inbox `[WA-01…09]` | 🟡 Inbox, assignment, notes, reply lock, window rules done on the mock connector; live Cloud API is phase 7 |
-| 6 | Reporting and exports `[REP-01…04]` | ⬜ Not started |
-| 7 | Real integrations — Meta, Google, WhatsApp Cloud, email `[INT-01…09]` | ⬜ Not started |
+| 5 | WhatsApp shared inbox `[WA-01…09]` | ✅ WhatsApp-style inbox, assignment, notes, reply lock, window rules, live Cloud API sender + webhooks |
+| 6 | Reporting and exports `[REP-01…04]` | 🅿️ Built and tested, parked (not in nav) at client request — D-72 |
+| 7 | Real integrations — Meta, Google, WhatsApp Cloud, email `[INT-01…09]` | 🟡 Meta Lead Ads, Google lead forms, WhatsApp Cloud and SMTP built and tested against fakes; needs real accounts to go live |
 | 8 | Conversion feedback — outbox, eligibility gate, adapters `[FB-01…10]` | ⬜ Not started |
 | 9 | Hardening, backups, monitoring, deployment guide, 15 UAT scenarios | ⬜ Not started |
 
@@ -147,7 +147,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 ```bash
 pnpm typecheck    # clean
 pnpm lint         # clean
-pnpm test         # 268 tests: 14 RLS isolation, 24 security, 225 API, 5 web
+pnpm test         # 289 tests: 14 RLS isolation, 24 security, 246 API, 5 web
 ```
 
 ### Done and verified in phase 1
@@ -295,14 +295,34 @@ http://localhost:8025. Put both back before pointing at a real relay.
 - **Mobile pass** — every screen checked at 390px: tab bar with "More" sheet,
   stacked tables, inbox one-pane-at-a-time, builder settings as a bottom sheet.
 
+### Done in the third session
+
+- **Leads move forward only** (D-69) — earlier stages are greyed out; Won/Lost anytime.
+- **Every WhatsApp inquiry becomes a lead** (D-70), with source badges on cards.
+- **Ad lead ingestion** (D-71) — Facebook/Instagram Lead Ads and Google Ads lead
+  forms via webhooks → encrypted queue → worker → normal intake, with retries.
+  Settings → **Lead sources & messaging**: connect accounts (tokens stored
+  encrypted, never shown), "Send a test lead", recent activity, webhook URLs.
+- **Outbound messaging** — live WhatsApp Cloud API sender per clinic, WhatsApp
+  delivery/read webhooks, marketing approval switch, postal address, sending
+  domain, "Send yourself a test".
+- **WhatsApp-style inbox** — chat list with All/Unread/Mine/Unassigned/Done,
+  WhatsApp colours and wallpaper, bubble tails, ✓ / ✓✓ / blue ✓✓ ticks,
+  Enter-to-send pill composer, team notes as notices.
+- **Reporting** — funnel, sources, campaigns, trend, front-desk numbers, CSV
+  export. Parked: not in the nav (D-72).
+
+### Turning sending on (client has signed off)
+
+In the root `.env`: `OUTBOUND_SENDING_ENABLED=true`, `CONNECTOR_EMAIL=live`
+(SMTP; Mailpit at http://localhost:8025 locally). For real WhatsApp and ads:
+`CONNECTOR_WHATSAPP=live`, `CONNECTOR_META=live`, `META_APP_SECRET`,
+`PUBLIC_API_URL` (public HTTPS), then connect accounts in Settings and tick
+"Marketing messages are approved".
+
 ### Next up
 
-1. **Phase 6 — Reporting `[REP-01…04]`**: funnel (New → Contacted → Qualified →
-   Visited → Won), source/campaign table, operations dashboard, role-masked CSV export.
-2. **Phase 7 — real integrations**: WhatsApp Cloud API webhook calling
-   `receiveInboundWhatsApp()` (`apps/api/src/inbox/service.ts`) with signature
-   verification; Meta Lead Ads; Google lead forms; email connection test screen.
-3. **Phase 8 — conversion feedback**, then **phase 9 hardening**.
+See [docs/HANDOFF.md](docs/HANDOFF.md) — resume point and ordered next steps.
 
 ---
 

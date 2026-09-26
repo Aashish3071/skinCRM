@@ -46,7 +46,7 @@ afterEach(() => {
 
 async function cleanup() {
   const { db } = getOwnerDb();
-  const rows = await db.select({ id: people.id }).from(people).where(or(like(people.displayName, `%${TAG}%`), like(people.phoneRaw, "+1305555%")));
+  const rows = await db.select({ id: people.id }).from(people).where(or(like(people.displayName, `%${TAG}%`), like(people.phoneRaw, "+13055558%")));
   const ids = rows.map((r) => r.id).filter(Boolean);
   if (!ids.length) return;
   await db.delete(messages).where(inArray(messages.personId, ids));

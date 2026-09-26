@@ -4,7 +4,7 @@ import { CONVERSATION_STATUSES, SUPPRESSION_REASONS } from "./enums";
 
 /** Shared inbox (PRD WA-01…09). */
 
-export const INBOX_VIEWS = ["open", "mine", "unassigned", "done"] as const;
+export const INBOX_VIEWS = ["open", "unread", "mine", "unassigned", "done"] as const;
 export type InboxView = (typeof INBOX_VIEWS)[number];
 
 export const listConversationsQuerySchema = z.object({

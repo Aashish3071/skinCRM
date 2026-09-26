@@ -323,6 +323,32 @@ contracts `packages/contracts/src/automations.ts`, UI `apps/web/src/app/(app)/au
 
 ---
 
+## 6c. Integrations (ad leads, WhatsApp Cloud) and reporting
+
+- **Connections** (`integration_connections`, RLS): one row per connected
+  account; `external_account_id` (page id / phone-number id / SHA-256 of the
+  Google key) is globally unique per provider and is how a webhook finds its
+  clinic. Secrets encrypted with `encryptForClinic`, never serialized.
+- **Webhooks** (`apps/api/src/integrations/webhooks.ts`): `/webhooks/meta`,
+  `/webhooks/whatsapp` (GET handshake + POST), `/webhooks/google/lead-form`.
+  Meta signature = HMAC-SHA256 of the raw body with `META_APP_SECRET` (the JSON
+  parser in `app.ts` keeps `request.rawBody`). Unsigned calls are accepted only
+  outside production when no secret is set.
+- **Queue** (`inbound_events`, encrypted payload, idempotent per provider id):
+  `processDueInboundEvents()` in the worker loop, before automations. Meta leads
+  are fetched with the page token (`LiveMetaLeadsConnector`), answers mapped by
+  `personFromAnswers()`, then `ingestSubmission()`. Exponential backoff, 6 tries.
+- **WhatsApp sending** is per clinic: `whatsappConnector()` in
+  `integrations/connections.ts` returns the mock, or a `WhatsAppCloudConnector`
+  built from the clinic's connection. Template parameters are the variables in
+  the order the body uses them.
+- **Reporting** (`apps/api/src/reports/routes.ts`): funnel from each lead's
+  furthest stage in history plus write-once milestones; excludes test leads;
+  CSV export audited, personal columns only with `people:read`. Page at
+  `/reports` exists but is not linked (D-72).
+
+---
+
 ## 7. Conversion feedback (CRM → ad platform)
 
 The highest-risk feature in the product. Architecture reflects that.
@@ -487,8 +513,10 @@ Consequences to know about:
 | Notes and Activity sections | ✅ Built |
 | Calendar time grid, staff day view, phone agenda | ✅ Built |
 | Mobile layout across every screen | ✅ Built |
-| WhatsApp Cloud API live adapter and webhook `[WA-07…09, INT-*]` | ⬜ Phase 7 |
-| Reports and exports `[REP-01…04]` | ⬜ Phase 6 |
-| Meta / Google / WhatsApp adapters `[INT-01…09]` | ⬜ Phase 7 |
+| WhatsApp Cloud API live sender, inbound + status webhooks | ✅ Built (tested with fakes) |
+| Meta Lead Ads + Google lead-form ingestion, queue, Settings screen `[INT-01…05]` | ✅ Built, 16 tests |
+| Forward-only stages (D-69) | ✅ Built |
+| WhatsApp-style inbox | ✅ Built (visual check incomplete — see HANDOFF) |
+| Reporting `[REP-01…04]` | 🅿️ Built, 4 tests, parked (D-72) |
 | Conversion feedback outbox and gate `[FB-01…10]` | ⬜ Phase 8 |
 | Backups, monitoring, deployment guide, UAT | ⬜ Phase 9 |

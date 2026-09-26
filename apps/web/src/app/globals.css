@@ -158,3 +158,80 @@ body {
     display: none;
   }
 }
+
+/*
+ * WhatsApp-style inbox. WhatsApp's own palette, so staff who live in WhatsApp
+ * on their phones feel at home. Text colours are nudged where WhatsApp's fall
+ * below WCAG AA (e.g. dark text on the green unread badge, not white).
+ */
+:root {
+  --wa-panel: #f0f2f5;
+  --wa-list: #ffffff;
+  --wa-list-hover: #f5f6f6;
+  --wa-list-active: #f0f2f5;
+  --wa-wallpaper: #efeae2;
+  --wa-doodle: rgb(0 0 0 / 0.045);
+  --wa-in: #ffffff;
+  --wa-out: #d9fdd3;
+  --wa-text: #111b21;
+  --wa-meta: #667781;
+  --wa-green: #008069;
+  --wa-green-bright: #25d366;
+  --wa-send: #00a884;
+  --wa-tick-read: #027eb5;
+  --wa-chip: #ffffff;
+  --wa-input: #ffffff;
+  --wa-note: #fff4cc;
+  --wa-note-text: #5c4400;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wa-panel: #202c33;
+    --wa-list: #111b21;
+    --wa-list-hover: #202c33;
+    --wa-list-active: #2a3942;
+    --wa-wallpaper: #0b141a;
+    --wa-doodle: rgb(255 255 255 / 0.035);
+    --wa-in: #202c33;
+    --wa-out: #005c4b;
+    --wa-text: #e9edef;
+    --wa-meta: #8696a0;
+    --wa-green: #00a884;
+    --wa-green-bright: #25d366;
+    --wa-send: #00a884;
+    --wa-tick-read: #53bdeb;
+    --wa-chip: #182229;
+    --wa-input: #2a3942;
+    --wa-note: #3a2f12;
+    --wa-note-text: #f3dfa0;
+  }
+}
+
+/* The faint doodle wallpaper behind a chat. */
+.wa-wallpaper {
+  background-color: var(--wa-wallpaper);
+  background-image:
+    radial-gradient(circle at 12px 12px, var(--wa-doodle) 2px, transparent 2.5px),
+    radial-gradient(circle at 38px 30px, var(--wa-doodle) 1.5px, transparent 2px),
+    radial-gradient(circle at 26px 48px, var(--wa-doodle) 2.5px, transparent 3px);
+  background-size: 56px 56px;
+}
+
+/* Bubble tails, drawn with a clipped square so they take the bubble colour. */
+.wa-tail-in::before,
+.wa-tail-out::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 12px;
+  background: inherit;
+}
+.wa-tail-in::before {
+  left: -8px;
+  clip-path: polygon(100% 0, 0 0, 100% 100%);
+}
+.wa-tail-out::before {
+  right: -8px;
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}

@@ -17,8 +17,9 @@ export function SimulateButton() {
 
   return (
     <>
-      <button type="button" onClick={() => ref.current?.showModal()} className={buttonClasses("ghost", "sm")}>
-        Test message
+      <button type="button" onClick={() => ref.current?.showModal()}
+        className="h-8 rounded-full px-3 text-[13px] font-medium text-[var(--wa-green)] hover:bg-black/5 dark:hover:bg-white/5">
+        + Test message
       </button>
       <dialog ref={ref} className="m-auto w-[min(420px,calc(100vw-2rem))] rounded-card border border-line bg-surface p-0 text-ink shadow-[var(--shadow-pop)] backdrop:bg-black/30">
         <form
