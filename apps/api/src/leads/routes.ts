@@ -24,6 +24,7 @@ import { diffSummary, recordAudit } from "../audit";
 import { registerRoute } from "../route";
 import { createPerson, getPerson, DuplicatePersonError } from "../people/service";
 import { AppError } from "../errors";
+import { routeLead } from "./assignment";
 import {
   addActivity,
   assignLead,
@@ -151,6 +152,20 @@ export function registerLeadRoutes(app: FastifyInstance): void {
 
       const newStage = await stageByCategory("new");
 
+      /**
+       * An explicit owner always wins — the person creating the lead knows
+       * something the rules do not. Otherwise routing decides, and no match
+       * means the unassigned queue (PRD LEAD-03).
+       */
+      const routing =
+        body.ownerUserId === undefined || body.ownerUserId === null
+          ? await routeLead({
+              source: body.source,
+              serviceInterest: body.serviceInterest ?? null,
+              branchId: body.branchId ?? null,
+            })
+          : { ownerUserId: body.ownerUserId, ruleId: null, ruleName: null };
+
       const inserted = await tx
         .insert(leads)
         .values({
@@ -158,7 +173,7 @@ export function registerLeadRoutes(app: FastifyInstance): void {
           personId: personId!,
           source: body.source,
           stageId: newStage.id,
-          ownerUserId: body.ownerUserId ?? null,
+          ownerUserId: routing.ownerUserId,
           branchId: body.branchId ?? null,
           serviceInterest: body.serviceInterest ?? null,
           inquiryNote: body.inquiryNote ?? null,
@@ -184,11 +199,27 @@ export function registerLeadRoutes(app: FastifyInstance): void {
         body: body.inquiryNote ?? null,
       });
 
+      if (routing.ruleId) {
+        // Say which rule decided, so a surprising assignment is traceable
+        // without reading the rule table.
+        await addActivity({
+          personId: lead.personId,
+          leadId: lead.id,
+          type: "assignment_change",
+          summary: `Assigned by rule "${routing.ruleName}"`,
+          metadata: { ruleId: routing.ruleId, to: routing.ownerUserId },
+        });
+      }
+
       await recordAudit({
         action: "record_created",
         entityType: "lead",
         entityId: lead.id,
-        changeSummary: { source: body.source, assigned: Boolean(body.ownerUserId) },
+        changeSummary: {
+          source: body.source,
+          assigned: routing.ownerUserId !== null,
+          assignedByRuleId: routing.ruleId,
+        },
       });
 
       return loadLeadDto(lead.id);

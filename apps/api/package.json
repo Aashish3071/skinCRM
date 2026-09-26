@@ -19,6 +19,7 @@
     "@skincrm/contracts": "workspace:*",
     "@skincrm/db": "workspace:*",
     "@skincrm/security": "workspace:*",
+    "csv-parse": "^7.0.2",
     "drizzle-orm": "^0.38.3",
     "fastify": "^5.2.1",
     "pino": "^9.6.0",

@@ -52,7 +52,8 @@ declare
     'leads',
     'lead_stage_events',
     'activities',
-    'tasks'
+    'tasks',
+    'assignment_rules'
   ];
 begin
   foreach tbl in array tenant_tables loop

@@ -15,6 +15,20 @@
       "when": 1790395398706,
       "tag": "0001_reflective_impossible_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790411513628,
+      "tag": "0002_oval_wither",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790411720433,
+      "tag": "0003_next_dreadnoughts",
+      "breakpoints": true
     }
   ]
 }

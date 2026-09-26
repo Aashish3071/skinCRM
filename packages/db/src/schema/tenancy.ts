@@ -34,6 +34,12 @@ export const clinics = pgTable(
     supportEmail: text("support_email"),
     /** Verified sending domain for this clinic's email (PRD MSG-01). */
     sendingDomain: text("sending_domain"),
+    /**
+     * Key for the public website lead endpoint (PRD ID-05), stored as a SHA-256
+     * digest like every other credential here — the plaintext is shown once
+     * when generated and never again.
+     */
+    websiteFormKeyHash: text("website_form_key_hash"),
     /** Minutes a new lead may sit uncontacted before a follow-up task is due. */
     firstContactSlaMinutes: integer("first_contact_sla_minutes").notNull().default(60),
     /** Quiet hours in clinic-local time; automated sends wait until the window ends. */
@@ -54,7 +60,10 @@ export const clinics = pgTable(
     ...timestamps(),
     archivedAt: archivedAt(),
   },
-  (t) => [uniqueIndex("clinics_slug_key").on(t.slug)],
+  (t) => [
+    uniqueIndex("clinics_slug_key").on(t.slug),
+    uniqueIndex("clinics_website_form_key_idx").on(t.websiteFormKeyHash),
+  ],
 );
 
 export const branches = pgTable(

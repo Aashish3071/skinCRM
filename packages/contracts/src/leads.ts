@@ -230,3 +230,85 @@ export const FEEDBACK_ELIGIBLE_CATEGORIES: readonly StageCategory[] = [
   "consultation_attended",
   "converted",
 ];
+
+// --- Assignment rules (PRD LEAD-03) ---------------------------------------
+
+export const ASSIGN_MODES = ["user", "round_robin"] as const;
+export type AssignMode = (typeof ASSIGN_MODES)[number];
+
+export const assignmentRuleSchema = z.object({
+  id: uuidSchema,
+  name: z.string(),
+  priority: z.number().int(),
+  isActive: z.boolean(),
+  matchSource: z.enum(LEAD_SOURCES).nullable(),
+  matchServiceInterest: z.string().nullable(),
+  matchBranchId: uuidSchema.nullable(),
+  assignMode: z.enum(ASSIGN_MODES),
+  assignUserId: uuidSchema.nullable(),
+  poolUserIds: z.array(uuidSchema),
+  lastAssignedUserId: uuidSchema.nullable(),
+  matchCount: z.number().int(),
+  lastMatchedAt: isoDateTime.nullable(),
+});
+export type AssignmentRuleDto = z.infer<typeof assignmentRuleSchema>;
+
+const assignmentRuleBase = {
+  name: shortText(120),
+  /** Lower runs first. Unique per clinic, so evaluation order is deterministic. */
+  priority: z.coerce.number().int().min(0).max(10_000),
+  isActive: z.boolean().default(true),
+  matchSource: z.enum(LEAD_SOURCES).nullish(),
+  /** Case-insensitive substring of the lead's service interest. */
+  matchServiceInterest: optionalShortText(200),
+  matchBranchId: uuidSchema.nullish(),
+  assignMode: z.enum(ASSIGN_MODES).default("user"),
+  assignUserId: uuidSchema.nullish(),
+  poolUserIds: z.array(uuidSchema).default([]),
+};
+
+/**
+ * A rule must be able to name someone: `user` mode needs a user, `round_robin`
+ * needs a non-empty pool. Without this a rule silently matches and assigns
+ * nobody, which looks like the routing is broken.
+ */
+const assignableRefinement = (value: {
+  assignMode: AssignMode;
+  assignUserId?: string | null;
+  poolUserIds?: string[];
+}) =>
+  value.assignMode === "user"
+    ? Boolean(value.assignUserId)
+    : (value.poolUserIds?.length ?? 0) > 0;
+
+export const createAssignmentRuleSchema = z.object(assignmentRuleBase).refine(assignableRefinement, {
+  message: "Choose someone to assign to, or add at least one person to the pool",
+  path: ["assignUserId"],
+});
+export type CreateAssignmentRule = z.infer<typeof createAssignmentRuleSchema>;
+
+export const updateAssignmentRuleSchema = z
+  .object({
+    name: shortText(120).optional(),
+    priority: z.coerce.number().int().min(0).max(10_000).optional(),
+    isActive: z.boolean().optional(),
+    matchSource: z.enum(LEAD_SOURCES).nullish(),
+    matchServiceInterest: optionalShortText(200),
+    matchBranchId: uuidSchema.nullish(),
+    assignMode: z.enum(ASSIGN_MODES).optional(),
+    assignUserId: uuidSchema.nullish(),
+    poolUserIds: z.array(uuidSchema).optional(),
+  })
+  .refine(
+    (value) =>
+      // Only enforced when the mode is being set; a partial update that leaves
+      // the mode alone is validated against the stored row in the service.
+      value.assignMode === undefined ||
+      assignableRefinement({
+        assignMode: value.assignMode,
+        assignUserId: value.assignUserId,
+        poolUserIds: value.poolUserIds,
+      }),
+    { message: "Choose someone to assign to, or add at least one person to the pool", path: ["assignUserId"] },
+  );
+export type UpdateAssignmentRule = z.infer<typeof updateAssignmentRuleSchema>;
