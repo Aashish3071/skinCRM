@@ -211,3 +211,67 @@ ambiguity by verifying the password against every match and, if more than one
 matches, returning `clinic_selection_required` with the clinic names — disclosed
 only after the password is proven, so it tells an attacker nothing they did not
 already have.
+
+---
+
+## Core CRM (phase 2)
+
+**D-30. Matching keys are indexed but not unique.**
+A unique index on normalized phone would reject the second inquiry outright.
+PRD ID-06 wants the opposite: detect, present the candidates, and let a human
+decide. So duplicates are possible by construction and surfaced through a 409
+carrying the candidate records, plus a review queue. Creating one anyway needs
+an explicit `allowDuplicate`.
+
+**D-31. Milestone timestamps are written once and never moved.**
+`qualifiedAt`, `bookedAt`, `attendedAt` and `convertedAt` are stamped the first
+time a lead reaches that stage category and are not re-stamped if it bounces
+back and forward. Two reasons: the first occurrence is the truthful "when did
+this happen", and conversion feedback reports event time — re-stamping would let
+one outcome be reported twice with different times, which is exactly what
+PRD FB-05 forbids.
+
+**D-32. Reopening a closed lead clears the closure but keeps the milestones.**
+`closedAt` and `lossReason` are cleared so it stops counting as closed;
+`qualifiedAt` and friends stay, because they record things that genuinely
+happened.
+
+**D-33. A lead's `source` is immutable; corrections go in `reporting_source`.**
+BRD 7 makes the source and external submission id immutable after ingestion. A
+staff correction is additive and audited, so the evidence of what the provider
+actually sent is never edited away.
+
+**D-34. Inquiry notes and General Notes are different things and stay separate.**
+An inquiry note is a timeline activity on one lead. A General Note belongs to
+the person and follows them across every inquiry. PRD LEAD-06 asks for both, and
+conflating them would either lose per-inquiry context or spray one inquiry's
+detail across unrelated ones. There is a test asserting a lead note does not
+appear as a General Note.
+
+**D-35. Lead visibility is narrowed in SQL, not after fetching.**
+A practitioner has `leads:read` but not `leads:read_all`, so their list query
+gets `owner = me OR owner IS NULL` pushed into the WHERE clause. Filtering after
+the fact would make the total count disagree with the rows, which is visible and
+confusing; it would also leak counts of records they cannot see.
+
+**D-36. Query-string booleans use a dedicated parser, never `z.coerce.boolean()`.**
+`z.coerce.boolean()` applies `Boolean(value)`, and `Boolean("false")` is `true`.
+Every `?includeClosed=false` silently meant the opposite. `queryBoolean()` in
+`packages/contracts/src/common.ts` parses true/false/1/0/yes/no properly.
+*Rule:* never use `z.coerce.boolean()` on a query parameter in this codebase.
+
+**D-37. POST returns 200 by default; only genuine creations declare 201.**
+The route helper originally answered 201 for any POST that returned a body, which
+is wrong for the many action endpoints here — change a stage, complete a task,
+assign a lead. Creations state `status: 201` explicitly.
+
+**D-38. A foreign record answers 404 even for actions, and a foreign *reference*
+answers 400.**
+Fetching another clinic's lead is a 404 (RLS hides it). Passing another clinic's
+stage id or user id into a request body is a 400 with a clear message, because
+without the check RLS would make it a silent no-op that looks like success.
+
+**D-39. "Due today" is computed in the clinic's timezone.**
+The task views resolve the end of the clinic-local day and convert to a UTC
+instant. Using the server's timezone puts the boundary in the wrong place, which
+front-desk staff notice every evening.

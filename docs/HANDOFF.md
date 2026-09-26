@@ -1,8 +1,8 @@
 # Handoff — resume point
 
 **Updated:** 2026-09-26
-**Phase:** 1 of 9 (Foundation) — data layer and API complete, web app not started
-**Overall:** ~15% of the build
+**Phase:** 2 of 9 (Core CRM) — People and Leads APIs complete; intake and UI outstanding
+**Overall:** ~30% of the build
 
 Read [README.md](../README.md) to run it and [ARCHITECTURE.md](../ARCHITECTURE.md)
 for the rules that must not be broken. This file says only what to do next.
@@ -19,10 +19,10 @@ docker compose up -d
 pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
-pnpm test                     # expect 70 passing
+pnpm test                     # expect 127 passing
 ```
 
-If those 70 tests pass, the foundation is intact and you can build on it.
+If those 127 tests pass, the foundation is intact and you can build on it.
 
 To drive the API by hand:
 
@@ -43,117 +43,111 @@ curl -s -c /tmp/c.txt -X POST http://localhost:4000/auth/login -H 'content-type:
 - **`config`** — environment parsed and validated once, with a production gate
   that refuses dev placeholders, a local crypto provider, or a missing
   `DATABASE_APP_URL`.
-- **`contracts`** — all domain enums (the source of truth for the Postgres
-  enums), the RBAC capability matrix with per-role field masking, phone/email
-  normalization and masking, shared primitives, auth request/response schemas.
+- **`contracts`** — domain enums (the source of truth for the Postgres enums),
+  the RBAC capability matrix with per-role field masking, phone/email
+  normalization and masking, and the Zod schemas for auth, people and leads.
 - **`security`** — Argon2id with transparent rehash and timing-equalized failure,
   SHA-256 opaque token handling, per-clinic AES-256-GCM envelope encryption with
   the clinic id as AAD, TOTP with replay rejection, recovery codes, the outbound
   idempotency-key builder. **24 unit tests.**
-- **`db`** — Drizzle schema for `clinics`, `branches`, `users`, `user_branches`,
-  `sessions`, `auth_tokens`, `mfa_recovery_codes`, `pipeline_stages`,
-  `audit_events`. Migration `drizzle/0000_tidy_network.sql` applied. RLS policies
-  in `sql/900_rls.sql`, re-applied on every migrate. **12 isolation tests** — the
-  load-bearing suite. Idempotent seed: two clinics, 11 stages each, 7 users.
+- **`db`** — 19 tables across two migrations. RLS policies in `sql/900_rls.sql`,
+  re-applied on every migrate. **14 isolation tests**, including one that
+  discovers every `clinic_id` table from the catalog and fails if any is
+  unprotected. Idempotent seed: two clinics, 11 stages each, 7 users.
 
-### `apps/api` (Fastify)
+### `apps/api` (Fastify) — 89 integration tests
 
 - `src/route.ts` — the route contract. Correlation id, request context, Zod
   validation, session resolution, capability check, tenant transaction and
-  request logging, all in one place. **Read ARCHITECTURE.md section 8a before
-  adding an endpoint.**
-- `src/context.ts` — `AsyncLocalStorage` request context. `getTx()` is the only
-  way to reach the database inside a request.
-- `src/errors.ts` — one error envelope, `{ error: { code, message, details?,
-  correlationId } }`. No stack traces or driver messages reach the client.
-- `src/logger.ts` — pino with a redaction list, plus `redactForAudit`.
-- `src/audit.ts` — `recordAudit` writes inside the caller's transaction so an
-  audited change and its audit row commit together. `diffSummary` records which
-  fields changed without duplicating their values.
-- `src/auth/` — sessions (opaque token stored as a hash, sliding idle expiry,
-  epoch-based mass revocation) and the full auth service.
-- `src/users/` — invite, list, update, archive, branch assignment.
+  request logging in one place. **Read ARCHITECTURE.md section 8a before adding
+  an endpoint.**
+- `src/context.ts` — `AsyncLocalStorage`. `getTx()` is the only way to reach the
+  database inside a request.
+- `src/errors.ts` — one envelope; `AppError.extra` carries payload a client needs
+  to act on a failure (the duplicate candidates on a 409).
+- `src/serialize.ts` — per-role field masking, the third layer after capability
+  and RLS.
+- `src/audit.ts`, `src/logger.ts` — append-only audit written inside the caller's
+  transaction, with a redaction list applied to both logs and change summaries.
+- `src/auth/`, `src/users/`, `src/people/`, `src/leads/`.
 
 Routes live today:
 
-| Route | Notes |
+| Area | Routes |
 |---|---|
-| `GET /health`, `GET /health/ready` | Ready means the database answered |
-| `POST /auth/login` | MFA challenge, recovery codes, clinic selection, lockout |
-| `POST /auth/logout` | Public by design so a dead session can still clear its cookie |
-| `GET /auth/session` | Returns `SessionUser` |
-| `POST /auth/password-reset` + `/confirm` | Identical response whether or not the address exists |
-| `POST /auth/change-password` | Revokes all sessions |
-| `POST /auth/mfa/enroll` / `confirm` / `disable` | Admins cannot remove their own second factor |
-| `POST /auth/accept-invite` | |
-| `GET /users`, `POST /users`, `PATCH /users/:id`, `DELETE /users/:id` | Admin only |
-| `GET /branches` | |
+| Health | `GET /health`, `GET /health/ready` |
+| Auth | `POST /auth/login` (MFA, recovery code, clinic selection, lockout), `/auth/logout`, `GET /auth/session`, `/auth/password-reset` + `/confirm`, `/auth/change-password`, `/auth/mfa/enroll|confirm|disable`, `/auth/accept-invite` |
+| Users | `GET|POST /users`, `PATCH|DELETE /users/:id`, `GET /branches` |
+| People | `GET|POST /people`, `POST /people/check-duplicates`, `GET|PATCH /people/:id`, `GET /people/duplicates`, `POST /people/:id/merge`, `GET /people/merges`, `POST /people/merges/:id/revert`, `GET /people/:id/leads` |
+| Notes | `GET|POST /people/:id/notes`, `PATCH|DELETE /notes/:noteId` |
+| Consent | `GET|POST /people/:id/consent` |
+| Leads | `GET /pipeline/stages`, `GET|POST /leads`, `GET|PATCH /leads/:id`, `POST /leads/:id/stage`, `POST /leads/:id/assign`, `GET /leads/:id/timeline`, `POST /leads/:id/contact-attempts`, `POST /leads/:id/notes` |
+| Tasks | `GET|POST /tasks`, `POST /tasks/:id/complete`, `POST /tasks/:id/snooze`, `GET /leads/:id/tasks` |
 
-**34 API integration tests**, covering the permission half of PRD UAT scenario 9,
-cross-tenant attempts over real HTTP, lockout isolation, MFA end to end, and the
-audit trail containing no personal data.
+### `apps/web` (Next.js)
 
-Nothing is half-finished. There are no known failing tests and no temporary
-workarounds, apart from the two `TODO(phase 4)` markers noted below.
+Sign-in with all three login branches, authenticated shell with capability-driven
+navigation, Settings → Staff wired to the users API, and honest `NotBuiltYet`
+panels for sections still to come. The browser never calls the API directly:
+reads go through server components and writes through Server Actions, both
+forwarding the session cookie.
+
+Nothing is half-finished. No failing tests, no temporary workarounds beyond the
+`TODO(phase 4)` markers listed under known gaps.
 
 ---
 
 ## Do this next, in order
 
-### 1. `apps/web` — Next.js shell
+### 1. Assignment rules `[LEAD-03]`
 
-New app at `apps/web`. `transpilePackages: ["@skincrm/contracts", "@skincrm/config"]`
-because those packages ship TypeScript source.
+Manual assignment and the unassigned queue work. The rule engine does not exist.
 
-1. **Typed API client** that forwards the session cookie (`credentials:
-   "include"`), sends `x-correlation-id`, and narrows errors to the shared
-   envelope. Import request/response types from `@skincrm/contracts` — do not
-   restate shapes.
-2. **Sign-in page** handling all three `LoginResponse` branches:
-   `authenticated`, `mfa_required` (show a code field, accept a recovery code
-   too), and `clinic_selection_required` (let the user pick, resubmit with
-   `clinicId`).
-3. **Authenticated layout** with the nine sections from PRD section 6: Home,
-   Inbox, Leads, Lead detail, People, Calendar, Automations, Reports, Settings.
-   Render navigation from `session.capabilities` so a marketing analyst never
-   sees a People link. The API already enforces this; the UI should match it.
-4. **Settings → Staff** against the existing `/users` routes, so phase 1 has a
-   visible surface end to end.
-5. Keyboard-usable forms and labelled controls from the start. WCAG 2.2 AA is a
-   release gate (PRD 9), not a later pass.
+- New table `assignment_rules`: clinic, priority (integer, deterministic order),
+  match conditions (source, service interest, branch), target user or round-robin
+  pool, active flag. **Add it to `tenant_tables` in
+  `packages/db/sql/900_rls.sql`.**
+- Evaluate on lead creation, in priority order, first match wins; no match leaves
+  `ownerUserId` null so it lands in the queue.
+- Admin can reassign — that already works via `POST /leads/:id/assign`.
 
-### 2. Phase 2 — People and General Notes `[ID-02, ID-08]`
+### 2. Remaining intake `[ID-04, ID-05, ID-07]`
 
-- `people`: `phone_e164` plus the original string, normalized email, preferred
-  contact method, communication preferences. Use `normalizePhone` from
-  `@skincrm/contracts` — do not write another parser.
-- `general_notes`: belongs to the **person**, not the lead, so it stays visible
-  across every lead for that person. Pinnable, archivable, fully audited.
-  **Never** exported to an ad platform, inserted into an automated message, or
-  logged.
-- Duplicate detection on normalized phone and email, with a review queue and a
-  reversible merge that preserves all submissions, notes, tasks and appointments.
+- **CSV import**: upload, preview with field mapping, per-row validation,
+  reporting invalid rows without aborting the batch. Re-importing the same file
+  must not duplicate: write a `source_submissions` row per CSV line with
+  `platform: "csv"` and a deterministic `external_id` (file fingerprint + row
+  index), and let the unique index do the work.
+- **Website lead endpoint**: public `POST /webhooks/website`, rate limited and
+  abuse controlled, recording consent text and version plus UTM attribution,
+  returning a clear success or failure.
+- Both flow through `source_submissions` → person match → lead, which is the
+  same pipeline the ad adapters will use in phase 7. Build the shared normalize/
+  match/create path now rather than duplicating it later.
 
-### 3. Phase 2 — Leads, pipeline, tasks `[LEAD-01…06]`
+### 3. Phase 2 UI
 
-`leads`, `lead_stage_events`, `activities`, `tasks`, assignment rules, the
-unassigned queue. `pipeline_stages` already exists and is seeded.
+Leads list and Kanban with the filters the API already supports, lead detail with
+the timeline, tasks and the General Notes panel, People search and profile, the
+duplicate review and merge screen, and the Home work queue wired to real counts
+(the tiles currently show an em dash on purpose).
 
-### 4. Phase 2 — Intake `[ID-03…05]`
+### 4. Phase 3 — Calendar `[CAL-01…05]`
 
-Walk-in form, CSV import with preview and field mapping, website lead endpoint.
-`source_submissions` with its unique `(platform, external_id)` index is the
-idempotency backbone for phase 7 — build it now, even though the ad adapters come
-later.
+Consultation types with duration and buffer, working hours, day/week calendar,
+and booking that **cannot** double-book. Use a Postgres exclusion constraint on
+`(staff_id, tstzrange(start, end))` — `btree_gist` is already installed — rather
+than a read-then-write check, which races.
 
 ---
 
 ## Traps to avoid
 
 1. **A new tenant table not listed in `packages/db/sql/900_rls.sql` has no RLS
-   policy.** It will work perfectly in development and leak across clinics in
-   production. This is the easiest way to cause a breach here. Add the table
-   name to the `tenant_tables` array and extend the isolation suite.
+   policy.** It would work perfectly in development and leak across clinics in
+   production. The RLS suite now catches this automatically — it discovers every
+   table with a `clinic_id` from the catalog — but the fix is still yours: add
+   the name to the `tenant_tables` array and re-run `pnpm db:migrate`.
 2. **Do not add `.js` extensions to relative imports.** Decision D-08.
 3. **Do not call `getDb()` or `getOwnerDb()` from request-handling code.** Use
    `getTx()`. For genuinely cross-tenant work use
@@ -170,9 +164,16 @@ later.
    control tenant, and tests assert against it.
 8. **Adding an enum value** means editing `packages/contracts/src/enums.ts` and
    running `pnpm db:generate` — the Postgres enum is derived from it.
-9. **Tests share the seeded database.** They reset the state they touch
-   (`resetAuthState` in `apps/api/src/__tests__/helpers.ts`). Keep that habit, or
-   run `pnpm db:reset` if a suite leaves things dirty.
+9. **Tests share the seeded database.** Each suite tags the rows it creates and
+   deletes them in `beforeEach`/`afterAll` (see the `TAG` constant in
+   `people.test.ts` and `leads.test.ts`). Keep that habit, or run `pnpm db:reset`
+   if a suite leaves things dirty.
+10. **Never use `z.coerce.boolean()` on a query parameter.** `Boolean("false")`
+   is `true`, so `?includeClosed=false` silently means the opposite. Use
+   `queryBoolean()` from `@skincrm/contracts` (decision D-36).
+11. **Milestone timestamps are write-once.** Do not re-stamp `qualifiedAt` and
+   friends when a lead re-enters a stage; conversion feedback depends on the
+   original event time (decision D-31).
 
 ---
 
@@ -186,6 +187,10 @@ later.
 | `disableRequestLogging` is deprecated in Fastify 5 | `apps/api/src/app.ts` | Swap for a `LogController` instance when upgrading to Fastify 6 |
 | No per-IP cap on the login route beyond 30/5min | `apps/api/src/auth/routes.ts` | Phase 9 hardening: consider a Redis-backed sliding window |
 | `apps/worker` does not exist yet | — | Phase 4, when the first job appears |
+| Assignment rules `[LEAD-03]` — manual assignment works, no rule engine | `apps/api/src/leads/` | Next task |
+| CSV import `[ID-04]` and website endpoint `[ID-05]` | — | Next task |
+| Phase 2 UI: leads, people, timeline screens | `apps/web` | Next task |
+| `people.branchId` is stored but nothing filters on it yet | `apps/api/src/people/routes.ts` | Phase 3, with branch permissions |
 
 ---
 

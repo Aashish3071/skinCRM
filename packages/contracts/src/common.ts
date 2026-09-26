@@ -48,6 +48,26 @@ export const timezoneSchema = z.string().refine(
   { message: "Unknown IANA timezone" },
 );
 
+/**
+ * A boolean from a query string.
+ *
+ * `z.coerce.boolean()` is wrong here and dangerously so: it applies
+ * `Boolean(value)`, and `Boolean("false")` is `true`. Every `?include=false`
+ * would silently mean the opposite of what the caller asked for.
+ */
+export const queryBoolean = (defaultValue: boolean) =>
+  z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform((value) => {
+      if (value === undefined || value === "") return defaultValue;
+      if (typeof value === "boolean") return value;
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes", "on"].includes(normalized)) return true;
+      if (["false", "0", "no", "off"].includes(normalized)) return false;
+      return defaultValue;
+    });
+
 export const paginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   cursor: z.string().max(500).optional(),

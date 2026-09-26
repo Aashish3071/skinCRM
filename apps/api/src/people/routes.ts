@@ -6,6 +6,7 @@ import {
   createPersonSchema,
   listPeopleQuerySchema,
   mergePeopleSchema,
+  queryBoolean,
   recordConsentSchema,
   updateNoteSchema,
   updatePersonSchema,
@@ -163,7 +164,7 @@ export function registerPeopleRoutes(app: FastifyInstance): void {
     url: "/people/:id/notes",
     auth: { capability: "notes:read" },
     params: z.object({ id: uuidSchema }),
-    query: z.object({ includeArchived: z.coerce.boolean().default(false) }),
+    query: z.object({ includeArchived: queryBoolean(false) }),
     handler: async ({ params, query }) => {
       const tx = getTx();
       await getPerson(params.id);

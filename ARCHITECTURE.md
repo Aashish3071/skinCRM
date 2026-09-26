@@ -106,6 +106,11 @@ dangerous mistake becomes an obvious empty list instead of a silent breach.
   `pnpm db:migrate`, so a new table cannot be left unprotected — but only if you
   add it to the list. **This is the single easiest way to introduce a data
   breach in this codebase.**
+
+  You do not have to rely on remembering. The RLS suite discovers every table
+  with a `clinic_id` from the Postgres catalog and fails if any lacks enforced
+  RLS and a policy, naming the table and the file to fix. It was verified by
+  creating an unprotected table and watching it fail.
 - `clinics` is keyed by `id`, not `clinic_id`, and has its own policy.
 
 ### Privilege restrictions beyond RLS
@@ -124,7 +129,7 @@ Tests: `packages/db/src/__tests__/rls.test.ts`.
 Logical entities from PRD section 5. Built tables are marked; the rest are
 planned in the phase noted.
 
-### Built (phase 1)
+### Built (phase 1 — tenancy and auth)
 
 | Table | Notes |
 |---|---|
@@ -138,19 +143,22 @@ planned in the phase noted.
 | `pipeline_stages` | Per-clinic renameable stages, each pinned to a stable `stage_category`. |
 | `audit_events` | Append-only. Redacted change summary only. |
 
-### Planned
+### Built (phase 2 — core CRM)
 
-| Entity | Phase | Key points |
-|---|---|---|
-| `people` | 2 | Normalized `phone_e164` + original, normalized email, preferred contact, communication preferences. |
-| `general_notes` | 2 | Belongs to the **person**, visible across all their leads, pinnable, archivable, fully audited. **Never** exported to an ad platform or inserted into an automated message (PRD ID-08). |
-| `consent_records` | 2/4 | One row per (person, channel, purpose) change, with source, timestamp, notice version, evidence reference. Append-only history; current state derived. |
-| `source_submissions` | 2 | Every inbound submission preserved separately from person and lead. Unique `(platform, external_id)` — this is the idempotency backbone. |
-| `raw_payloads` | 2 | Encrypted third-party payloads, restricted access, separate retention. Kept out of ordinary queries. |
-| `leads` | 2 | Person, source submission, service interest, stage, owner, branch, outcome/loss reason. One person may have many. |
-| `lead_stage_events` | 2 | Old/new stage, actor, timestamp, reason. |
-| `activities` | 2 | Unified timeline rows. |
-| `tasks` | 2 | Due time, owner, priority, required outcome on completion. |
+| Table | Notes |
+|---|---|
+| `people` | `phone_e164` + the original string, normalized email, preferred contact, restricted demographic fields. Matching keys are indexed but **not** unique: a possible duplicate goes to review rather than being rejected. |
+| `general_notes` | Belongs to the **person**, so it follows them across every inquiry. Pinnable, archived not deleted, author denormalized so it reads correctly after that account is archived. |
+| `consent_records` | Append-only. Current state is the newest row per (person, channel, purpose), computed on read. |
+| `person_merges` | Snapshot of exactly what each merge moved, so it can be reversed. |
+| `source_submissions` | Every inbound submission, with full attribution columns. Partial unique index on `(clinic_id, platform, external_id)` where the external id is not null — the idempotency backbone for phase 7. |
+| `raw_payloads` | Encrypted provider payloads with their own retention column, kept out of ordinary queries. |
+| `leads` | Person, submission, source (immutable) plus an optional corrected `reporting_source`, stage, owner, branch, and write-once milestone timestamps. |
+| `lead_stage_events` | Every transition with actor, time and reason. |
+| `activities` | The unified timeline. |
+| `tasks` | Due time, owner, priority, mandatory completion outcome, `snoozed_from`. |
+
+### Planned
 | `appointments` | 3 | UTC start/end, status independent of lead stage, change reason. Overlap prevented by an exclusion constraint. |
 | `consultation_types` | 3 | Duration, buffer, eligible staff. |
 | `templates` | 4 | Channel, classification (operational/promotional), approved variables, version. |
@@ -366,10 +374,13 @@ Consequences to know about:
 | `apps/api` — Fastify bootstrap, route contract, audit service, logging | ✅ Built |
 | Auth routes, MFA, lockout, sessions `[ID-01]` | ✅ Built, 34 tests |
 | User administration and branch assignment | ✅ Built |
-| `apps/web` — shell and sign-in | 🔜 Next |
-| People, General Notes `[ID-02, ID-08]` | ⬜ Phase 2 |
-| Leads, pipeline, tasks `[LEAD-01…06]` | ⬜ Phase 2 |
-| Intake: walk-in, CSV, website endpoint `[ID-03…05]` | ⬜ Phase 2 |
+| `apps/web` — shell, sign-in, role-aware nav, staff admin | ✅ Built |
+| People, duplicates, merge, General Notes, consent `[ID-02, ID-06, ID-08, MSG-04]` | ✅ Built, 26 tests |
+| Leads, pipeline, timeline, tasks `[LEAD-01, 02, 04, 05, 06]` | ✅ Built, 29 tests |
+| Walk-in / manual intake `[ID-03]` | ✅ Built |
+| Assignment rules `[LEAD-03]` | 🔜 Next (manual assignment works; rule engine outstanding) |
+| CSV import and website endpoint `[ID-04, ID-05]` | 🔜 Next |
+| Phase 2 UI — leads, people, timeline | 🔜 Next |
 | Calendar `[CAL-01…05]` | ⬜ Phase 3 |
 | Templates, consent ledger, automations `[MSG-01…07]` | ⬜ Phase 4 |
 | WhatsApp shared inbox `[WA-01…09]` | ⬜ Phase 5 |

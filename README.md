@@ -132,8 +132,8 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 
 | # | Phase | State |
 |---|---|---|
-| 1 | Foundation — monorepo, DB, tenancy, auth, RBAC, audit, seed `[ID-01, AUD-01, SET-01]` | 🟡 API done; web shell outstanding |
-| 2 | Core CRM — people, General Notes, leads, pipeline, tasks, intake, CSV `[ID-02…08, LEAD-01…06]` | ⬜ Not started |
+| 1 | Foundation — monorepo, DB, tenancy, auth, RBAC, audit, seed `[ID-01, AUD-01, SET-01]` | ✅ Complete |
+| 2 | Core CRM — people, General Notes, leads, pipeline, tasks, intake, CSV `[ID-02…08, LEAD-01…06]` | 🟡 API done; CSV/website intake and UI outstanding |
 | 3 | Calendar — types, booking, conflict prevention, statuses `[CAL-01…05]` | ⬜ Not started |
 | 4 | Messaging core — templates, consent ledger, automations, delivery log `[MSG-01…07]` | ⬜ Not started |
 | 5 | WhatsApp shared inbox `[WA-01…09]` | ⬜ Not started |
@@ -146,7 +146,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 
 ```bash
 pnpm typecheck    # 5 packages, clean
-pnpm test         # 70 tests: 12 RLS isolation, 24 security, 34 API integration
+pnpm test         # 127 tests: 14 RLS isolation, 24 security, 89 API integration
 ```
 
 ### Done and verified in phase 1
@@ -183,18 +183,37 @@ pnpm test         # 70 tests: 12 RLS isolation, 24 security, 34 API integration
 - **34 API integration tests**, including the permission half of PRD UAT
   scenario 9 and cross-tenant attempts over real HTTP.
 
+### Done in phase 2 so far
+
+- **Core CRM schema** — `people`, `general_notes`, `consent_records`,
+  `person_merges`, `source_submissions`, `raw_payloads`, `leads`,
+  `lead_stage_events`, `activities`, `tasks`. All RLS-protected.
+- **People `[ID-02, ID-06]`** — E.164 normalization with the original always
+  kept, duplicate detection answering 409 with candidates, a review queue, and a
+  reversible merge that re-points leads, notes, tasks, consent and activities.
+- **General Notes `[ID-08]`** — person-level, pinnable, archived not deleted,
+  and provably absent from the audit trail.
+- **Consent ledger `[MSG-04]`** — append-only per (channel, purpose).
+- **Leads and pipeline `[LEAD-01…06]`** — walk-in intake creating person and
+  lead in one call, stage machine with required exit reasons and write-once
+  milestones, assignment and the unassigned queue, unified timeline, contact
+  attempts, tasks with mandatory completion outcomes and future-dated snoozes.
+- **Role-scoped lead visibility** — a practitioner's list is filtered in SQL to
+  their own leads plus the unassigned queue, so counts and rows always agree.
+
 ### Next up
 
-1. `apps/web` — Next.js shell, sign-in page (with the MFA and clinic-selection
-   branches), authenticated layout covering the nine sections from PRD 6, a typed
-   API client, and role-aware navigation.
-2. Phase 2 `[ID-02, ID-08]` — `people` and `general_notes`: normalized phone and
-   email, duplicate detection and merge, person-level notes that stay visible
-   across all of that person's leads.
-3. Phase 2 `[LEAD-01…06]` — leads, pipeline, stage history, assignment rules,
-   tasks, activity timeline.
-4. Phase 2 `[ID-03…05]` — walk-in intake, CSV import with preview, website lead
-   endpoint.
+1. **Assignment rules `[LEAD-03]`** — a deterministic rule table (source,
+   service, branch) with a fallback to the unassigned queue.
+2. **Remaining intake `[ID-04, ID-05, ID-07]`** — CSV import with preview and
+   field mapping, and the website lead endpoint with abuse controls and consent
+   capture. Both write `source_submissions`, which already has the unique
+   `(clinic, platform, external_id)` index that makes ingestion idempotent.
+3. **Phase 2 UI** — Leads list and Kanban, lead detail with the timeline and
+   General Notes panel, People search and profile, the duplicate review screen,
+   and the Home work queue wired to real counts.
+4. **Phase 3 — Calendar `[CAL-01…05]`**, starting with consultation types and
+   booking with an exclusion constraint to prevent double-booking.
 
 ---
 

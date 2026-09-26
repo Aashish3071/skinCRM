@@ -9,6 +9,7 @@ import { registerAuthRoutes } from "./auth/routes";
 import { registerErrorHandler } from "./errors";
 import { logger } from "./logger";
 import { registerRoute } from "./route";
+import { registerLeadRoutes } from "./leads/routes";
 import { registerPeopleRoutes } from "./people/routes";
 import { registerUserRoutes } from "./users/routes";
 
@@ -95,6 +96,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerAuthRoutes(app);
   registerUserRoutes(app);
   registerPeopleRoutes(app);
+  registerLeadRoutes(app);
 
   return app;
 }

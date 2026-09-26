@@ -142,7 +142,13 @@ export function registerRoute<
 function send(reply: FastifyReply, definition: { method: HTTPMethods; status?: number }, result: unknown) {
   // A handler that wrote to the reply itself (redirect, file) has already sent.
   if (reply.sent) return reply;
-  const status = definition.status ?? (definition.method === "POST" && result !== undefined ? 201 : 200);
+  /**
+   * 200 by default, including for POST. Most POSTs here are actions on an
+   * existing resource — change a stage, complete a task, assign a lead — and
+   * answering 201 Created for those is simply wrong. Routes that genuinely
+   * create a resource declare `status: 201`.
+   */
+  const status = definition.status ?? 200;
   if (result === undefined || result === null) return reply.status(204).send();
   return reply.status(status).send(result);
 }

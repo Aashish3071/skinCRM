@@ -122,7 +122,19 @@ export class DuplicatePersonError extends Error {
   }
 }
 
-export async function createPerson(input: CreatePerson, clinicCountry: string): Promise<PersonDto> {
+/**
+ * Looser than `CreatePerson` so the inline person on a lead-intake request can
+ * be passed straight through. Walk-in intake supplies name and a contact detail
+ * and nothing else, and should not have to send nulls for every profile field
+ * to satisfy a type.
+ */
+export type CreatePersonInput = Partial<CreatePerson> &
+  Pick<CreatePerson, "allowDuplicate"> & { phone?: string | null; email?: string | null };
+
+export async function createPerson(
+  input: CreatePersonInput,
+  clinicCountry: string,
+): Promise<PersonDto> {
   const context = getContext();
   const tx = getTx();
 

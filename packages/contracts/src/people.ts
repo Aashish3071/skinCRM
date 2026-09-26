@@ -1,5 +1,12 @@
 import { z } from "zod";
-import { isoDate, isoDateTime, optionalShortText, shortText, uuidSchema } from "./common";
+import {
+  isoDate,
+  isoDateTime,
+  optionalShortText,
+  queryBoolean,
+  shortText,
+  uuidSchema,
+} from "./common";
 import { CONSENT_PURPOSES, CONSENT_SOURCES, CONSENT_STATUSES, CONTACT_CHANNELS } from "./enums";
 
 /**
@@ -90,7 +97,7 @@ export const listPeopleQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(25),
   offset: z.coerce.number().int().min(0).default(0),
   /** Include records that were merged away. Off by default. */
-  includeMerged: z.coerce.boolean().default(false),
+  includeMerged: queryBoolean(false),
 });
 export type ListPeopleQuery = z.infer<typeof listPeopleQuerySchema>;
 
