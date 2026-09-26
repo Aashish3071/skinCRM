@@ -19,23 +19,8 @@ export default async function LoginPage() {
       </div>
 
       <div className="rounded-card border border-line bg-surface p-6">
-        <LoginForm />
+        <LoginForm showDevAccounts={process.env.NODE_ENV === "development"} />
       </div>
-
-      {process.env.NODE_ENV === "development" && (
-        <div className="mt-6 rounded-md border border-dashed border-line-strong px-4 py-3 text-xs text-ink-muted">
-          <p className="font-medium text-ink">Development accounts</p>
-          <p className="mt-1.5">
-            Password <code className="font-mono">ChangeMe-Dev-2026!</code> for all of:
-          </p>
-          <ul className="mt-1.5 flex flex-col gap-0.5 font-mono">
-            <li>admin@sunshine-skin.test — admin</li>
-            <li>frontdesk@sunshine-skin.test — front desk</li>
-            <li>doctor@sunshine-skin.test — practitioner</li>
-            <li>marketing@sunshine-skin.test — marketing analyst</li>
-          </ul>
-        </div>
-      )}
     </main>
   );
 }
