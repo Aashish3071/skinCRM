@@ -1,8 +1,8 @@
 # Handoff — resume point
 
 **Updated:** 2026-09-26
-**Phase:** 4 of 9 (Messaging core) — engine, worker, canvas and SMTP done; template editor, delivery-log screen and unsubscribe page outstanding
-**Overall:** ~62% of the build
+**Phase:** 5 of 9 — messaging complete; WhatsApp inbox done on the mock connector. Next: phase 6 reporting.
+**Overall:** ~70% of the build
 
 Read [README.md](../README.md) to run it and [ARCHITECTURE.md](../ARCHITECTURE.md)
 for the rules that must not be broken. This file says only what to do next.
@@ -20,10 +20,10 @@ pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
 pnpm lint                     # clean
-pnpm test                     # expect 256 passing
+pnpm test                     # expect 268 passing
 ```
 
-If those 256 tests pass, the foundation is intact and you can build on it.
+If those 268 tests pass, the foundation is intact and you can build on it.
 
 To run everything (the API also runs the background worker when
 `WORKER_IN_API=true`, the development default):
@@ -64,7 +64,7 @@ curl -s -c /tmp/c.txt -X POST http://localhost:4000/auth/login -H 'content-type:
   discovers every `clinic_id` table from the catalog and fails if any is
   unprotected. Idempotent seed: two clinics, 11 stages each, 7 users.
 
-### `apps/api` (Fastify) — 213 integration tests
+### `apps/api` (Fastify) — 225 integration tests
 
 - `src/route.ts` — the route contract. Correlation id, request context, Zod
   validation, session resolution, capability check, tenant transaction and
@@ -120,45 +120,37 @@ Nothing is half-finished. No failing tests, no temporary workarounds beyond the
 
 ## Do this next, in order
 
-The automation engine, worker, canvas builder, SMTP connector and the UI
-simplification landed on 2026-09-26 — see README "Done in phase 4, second
-slice" and ARCHITECTURE §6a. The pipeline is now six stages (D-57).
+Landed on 2026-09-26 (second session): Templates tab, Sent messages log, public
+unsubscribe page, WhatsApp inbox, Notes and Activity sections, Qualified = booked
+(D-63), calendar time grid, and a mobile pass over every screen. See README
+"Done in phase 4 (final slice) and phase 5" and decisions D-63…D-68.
 
-### 1. Templates tab `[MSG-02]`
+### 1. Phase 6 — Reporting `[REP-01…04]`
 
-API is complete (`GET/POST/PATCH /templates`, `POST /templates/:id/preview`,
-`GET /templates/variables`). Add a Templates tab under `/automations` with an
-editor, the operational/promotional choice, variable insert chips (reuse
-`friendlyVariable` and the insert logic in
-`apps/web/src/app/(app)/automations/builder/inspector.tsx`) and a live preview.
-The canvas already offers saved templates in its send steps once any exist.
+Replace the Reports placeholder (currently hidden from the nav in
+`apps/web/src/components/nav.tsx` — add it back when built).
+- Funnel on the six stages using the write-once milestone timestamps
+  (`createdAt → firstContactedAt → bookedAt/qualifiedAt → attendedAt → convertedAt`),
+  never the current stage — a lead that moved back still counted.
+- Source and campaign table from `source_submissions`; exclude `is_test`.
+- Operations: response time to first contact, no-show rate, unassigned count.
+- CSV export with per-role field masking (`maskPeopleFields`) and an audit row
+  (`export_generated`). Marketing analysts see aggregates only.
 
-### 2. Delivery log tab `[MSG-07]`
+### 2. Phase 7 — WhatsApp Cloud API
 
-`GET /messages` exists. Show each message with state and, for suppressed ones,
-the reason in plain English (`SUPPRESSION_REASON_LABELS` in
-`packages/contracts/src/messaging.ts`). Link each row to its lead and, when
-`ruleId` is set, to the automation.
+- `POST /webhooks/whatsapp`: verify `X-Hub-Signature-256` with the app secret,
+  resolve the clinic from the phone-number id, then `runAsSystem(clinicId, () =>
+  receiveInboundWhatsApp(...))` for each message. Status callbacks update
+  `messages.state` (delivered/read/failed) by `provider_message_id`.
+- A live `WhatsAppConnector` beside the mock in `packages/connectors`; per-clinic
+  tokens encrypted with `encryptForClinic`.
+- Template sync from Meta so `whatsapp_status` is real, not typed in.
 
-### 3. Public unsubscribe page
+### 3. Email connection test `[MSG-01]`
 
-`/unsubscribe/[token]` outside the `(app)` group, calling a new public API route
-that verifies the token (`verifyUnsubscribeToken`) and calls `recordOptOut`
-inside `runAsSystem(clinicId, …)`. One-click, no login, idempotent. Also send
-`unsubscribeUrl` on promotional email so the SMTP connector sets
-`List-Unsubscribe` headers.
-
-### 4. Email connection test `[MSG-01]`
-
-A Settings → Email screen calling `connectors.email.verify()`; per-clinic SMTP
-credentials stored encrypted with `encryptForClinic` rather than the global env.
-
-### 5. Phase 5 — WhatsApp shared inbox `[WA-01…09]`
-
-Conversation model, assignment/locking, internal notes, mock connector first.
-Inbound messages must be written to `messages` with `direction = 'inbound'` —
-that is what the automation "They reply" stop condition and the send gate's
-24-hour window both read.
+Settings → Email: call `connectors.email.verify()`, per-clinic SMTP credentials
+encrypted rather than global env.
 
 ---
 
@@ -221,6 +213,13 @@ that is what the automation "They reply" stop condition and the send gate's
 20. **Don't reintroduce retired stages** (`qualified`, `nurture`, …) in seeds or
    UI; `changeStage` refuses them and `930_simplify_pipeline.sql` deactivates
    them on every migrate.
+22. **Server actions must be `export async function`.** An arrow-function
+   `export const x = () => …` in a `"use server"` file compiles in `tsc` but
+   breaks the Next build ("Server Actions must be async functions").
+23. **Grid children need `min-w-0`** or a long truncated line stretches the whole
+   page on a phone (the automation builder did exactly this).
+24. **Stop the dev API before `pnpm test`** — its in-process worker claims the
+   automation runs the tests create.
 21. **`next build` beside `next dev`:** use `NEXT_DIST_DIR=.next-build npx next build`
    in `apps/web` so the running dev server's `.next` is not clobbered. It rewrites
    `apps/web/tsconfig.json` and `next-env.d.ts` to point at `.next-build` —

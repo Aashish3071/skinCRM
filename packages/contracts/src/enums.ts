@@ -72,11 +72,26 @@ export const DEFAULT_PIPELINE: ReadonlyArray<{
 }> = [
   { category: "new", name: "New", isClosed: false },
   { category: "connected", name: "Contacted", isClosed: false },
-  { category: "consultation_booked", name: "Booked", isClosed: false },
+  { category: "consultation_booked", name: "Qualified", isClosed: false },
   { category: "consultation_attended", name: "Visited", isClosed: false },
   { category: "converted", name: "Won", isClosed: true },
   { category: "lost", name: "Lost", isClosed: true },
 ];
+
+/**
+ * One-line explanation shown under each stage name, so nobody has to guess
+ * what a stage means. "Qualified" in particular: at this clinic a lead counts
+ * as qualified when they book (D-63), which is also the moment the CRM reports
+ * a qualified lead back to the ad platforms.
+ */
+export const STAGE_HINTS: Partial<Record<StageCategory, string>> = {
+  new: "Just came in",
+  connected: "You've spoken to them",
+  consultation_booked: "Booked an appointment",
+  consultation_attended: "Came to their appointment",
+  converted: "Became a paying client",
+  lost: "Not going ahead",
+};
 
 /**
  * Categories from the original pipeline that are no longer used, and where a

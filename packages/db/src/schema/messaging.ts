@@ -127,6 +127,9 @@ export const messages = pgTable(
      */
     idempotencyKey: text("idempotency_key").notNull(),
 
+    /** The inbox thread it belongs to (WhatsApp). Plain uuid: avoids a schema import cycle. */
+    conversationId: uuid("conversation_id"),
+
     /** Which automation produced it, when it was not a person clicking send. */
     ruleId: uuid("rule_id"),
     triggeredByUserId: uuid("triggered_by_user_id").references(() => users.id, {
@@ -140,6 +143,7 @@ export const messages = pgTable(
     index("messages_clinic_state_idx").on(t.clinicId, t.state),
     index("messages_scheduled_idx").on(t.scheduledFor),
     index("messages_provider_idx").on(t.providerMessageId),
+    index("messages_conversation_idx").on(t.conversationId, t.createdAt),
   ],
 );
 

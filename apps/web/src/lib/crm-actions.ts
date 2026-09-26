@@ -173,6 +173,7 @@ export async function addNoteAction(_prev: ActionState, form: FormData): Promise
     return toError(error);
   }
   revalidatePath(`/people/${personId}`);
+  revalidatePath("/notes");
   return { status: "success", message: "Note saved." };
 }
 
@@ -234,4 +235,20 @@ export async function moveLeadAction(leadId: string, stageId: string, reason?: s
   revalidatePath("/leads");
   revalidatePath(`/leads/${leadId}`);
   return { status: "success" };
+}
+
+/** Typeahead for the patient picker. Returns only what the picker shows. */
+export async function searchPeopleAction(
+  query: string,
+): Promise<{ id: string; name: string; contact: string | null }[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  try {
+    const result = await apiFetch<{ items: { id: string; displayName: string; phone: string | null; email: string | null }[] }>(
+      `/people?${new URLSearchParams({ search: q, limit: "8" })}`,
+    );
+    return result.items.map((p) => ({ id: p.id, name: p.displayName, contact: p.phone ?? p.email }));
+  } catch {
+    return [];
+  }
 }

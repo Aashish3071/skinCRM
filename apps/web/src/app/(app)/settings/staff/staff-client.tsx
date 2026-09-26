@@ -60,8 +60,8 @@ export function InviteStaffForm() {
 export function StaffTable({ members, currentUserId }: { members: StaffMember[]; currentUserId: string }) {
   return (
     <Card title="Staff" description={`${members.length} ${members.length === 1 ? "account" : "accounts"}`}>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="sm:overflow-x-auto">
+        <table className="stack-table w-full text-sm">
           <caption className="sr-only">Staff accounts at this clinic</caption>
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-subtle">
@@ -102,7 +102,7 @@ function StaffRow({ member, isSelf }: { member: StaffMember; isSelf: boolean }) 
           <div className="text-xs text-ink-muted">{member.email}</div>
         </td>
 
-        <td className="py-3 pr-4">
+        <td data-label="Role" className="py-3 pr-4">
           {isSelf ? (
             // The API refuses a self role change, so don't offer the control.
             <span className="text-ink-muted">{USER_ROLE_LABELS[member.role]}</span>
@@ -129,7 +129,7 @@ function StaffRow({ member, isSelf }: { member: StaffMember; isSelf: boolean }) 
           )}
         </td>
 
-        <td className="py-3 pr-4">
+        <td data-label="Status" className="py-3 pr-4">
           <Badge
             tone={
               member.status === "active" ? "positive" : member.status === "invited" ? "caution" : "neutral"
@@ -143,7 +143,7 @@ function StaffRow({ member, isSelf }: { member: StaffMember; isSelf: boolean }) 
           </Badge>
         </td>
 
-        <td className="py-3 pr-4">
+        <td data-label="Two-factor" className="py-3 pr-4">
           {member.mfaEnabled ? (
             <Badge tone="positive">On</Badge>
           ) : (
@@ -151,7 +151,7 @@ function StaffRow({ member, isSelf }: { member: StaffMember; isSelf: boolean }) 
           )}
         </td>
 
-        <td className="py-3 pr-4 text-ink-muted">
+        <td data-label="Last sign-in" className="py-3 pr-4 text-ink-muted">
           {member.lastLoginAt ? new Date(member.lastLoginAt).toLocaleString() : "Never"}
         </td>
 

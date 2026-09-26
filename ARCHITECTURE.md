@@ -304,6 +304,25 @@ contracts `packages/contracts/src/automations.ts`, UI `apps/web/src/app/(app)/au
 
 ---
 
+## 6b. Shared inbox, Notes and Activity
+
+- **Inbox** (`apps/api/src/inbox/`): `conversations` (one per person per
+  channel) + `conversation_notes`; messages stay in `messages` with
+  `conversation_id` (D-64). `sendMessage()` attaches every WhatsApp send to the
+  thread via `ensureConversation()`; `touchConversation()` maintains preview,
+  unread count and `last_inbound_at` (the 24-hour window).
+  `receiveInboundWhatsApp()` is the single entry for inbound messages —
+  idempotent on the provider id, unknown numbers go through intake. Today it is
+  called by `POST /inbox/simulate` (mock connector only); phase 7 wires the Meta
+  webhook to it.
+- **Notes / Activity** (`apps/api/src/workspace/routes.ts`): read-only feeds over
+  `general_notes` and `activities`, joined to people; see D-67 for visibility.
+- **Unsubscribe** (`apps/api/src/messaging/unsubscribe-routes.ts`): public, token
+  is the authority, uses `runAsSystem`. Fastify `maxParamLength` is raised to
+  600 because the tokens are ~160 characters.
+
+---
+
 ## 7. Conversion feedback (CRM → ad platform)
 
 The highest-risk feature in the product. Architecture reflects that.
@@ -463,8 +482,12 @@ Consequences to know about:
 | Automation canvas, recipes, dry run, run history | ✅ Built |
 | SMTP email connector; invite and reset emails `[MSG-01]` | ✅ Built (connection-test screen not yet) |
 | UI simplification — shell, Add lead, board, stepper | ✅ Built |
-| Messaging UI — template editor, delivery log, unsubscribe page | 🔜 Next |
-| WhatsApp shared inbox `[WA-01…09]` | ⬜ Phase 5 |
+| Template editor, sent-messages log, public unsubscribe page `[MSG-02, 04, 07]` | ✅ Built |
+| Shared WhatsApp inbox on the mock connector `[WA-01…06]` | ✅ Built, 12 tests (with feeds + unsubscribe) |
+| Notes and Activity sections | ✅ Built |
+| Calendar time grid, staff day view, phone agenda | ✅ Built |
+| Mobile layout across every screen | ✅ Built |
+| WhatsApp Cloud API live adapter and webhook `[WA-07…09, INT-*]` | ⬜ Phase 7 |
 | Reports and exports `[REP-01…04]` | ⬜ Phase 6 |
 | Meta / Google / WhatsApp adapters `[INT-01…09]` | ⬜ Phase 7 |
 | Conversion feedback outbox and gate `[FB-01…10]` | ⬜ Phase 8 |

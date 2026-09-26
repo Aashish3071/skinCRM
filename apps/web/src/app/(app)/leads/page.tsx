@@ -69,8 +69,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 function LeadTable({ leads }: { leads: LeadDto[] }) {
   return (
     <Card>
-      <div className="-mx-5 -my-4 overflow-x-auto">
-        <table className="w-full text-sm">
+      <div className="-my-4 sm:-mx-5 sm:overflow-x-auto">
+        <table className="stack-table w-full text-sm">
           <caption className="sr-only">Leads</caption>
           <thead>
             <tr className="border-b border-line text-left text-xs text-ink-subtle">
@@ -90,14 +90,14 @@ function LeadTable({ leads }: { leads: LeadDto[] }) {
                   </Link>
                   <div className="text-xs text-ink-muted">{lead.personPhone ?? lead.personEmail ?? "—"}</div>
                 </td>
-                <td className="px-3 py-3">
+                <td data-label="Stage" className="px-3 py-3">
                   <Badge tone={stageTone(lead.stageCategory)}>{lead.stageName}</Badge>
                 </td>
                 <td className="hidden px-3 py-3 text-ink-muted sm:table-cell">{LEAD_SOURCE_LABELS[lead.source]}</td>
                 <td className="hidden px-3 py-3 md:table-cell">
                   {lead.ownerName ?? <span className="text-caution">Unassigned</span>}
                 </td>
-                <td className="px-5 py-3 text-right text-ink-muted">{relativeTime(lead.createdAt)}</td>
+                <td data-label="Added" className="px-5 py-3 text-right text-ink-muted">{relativeTime(lead.createdAt)}</td>
               </tr>
             ))}
           </tbody>

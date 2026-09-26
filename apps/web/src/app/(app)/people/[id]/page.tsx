@@ -3,9 +3,10 @@ import { redirect } from "next/navigation";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { clinicTime, getPerson, getPersonLeads, getPersonNotes, relativeTime } from "@/lib/crm";
 import { can, requireCapability } from "@/lib/session";
+import { WhatsAppButton } from "@/components/whatsapp-button";
 import { NotesPanel } from "./notes";
 
-export const metadata = { title: "Person — SkinCRM" };
+export const metadata = { title: "Patient — SkinCRM" };
 
 export default async function PersonPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireCapability("people:read");
@@ -32,9 +33,12 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         title={person.displayName}
         description={`Added ${relativeTime(person.createdAt)}`}
         actions={
-          <Link href="/people" className="text-sm text-brand">
-            Back to people
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            {can(session, "conversations:read") && person.phoneE164 && <WhatsAppButton personId={person.id} />}
+            <Link href="/people" className="text-sm text-ink-muted hover:text-ink">
+              Back to patients
+            </Link>
+          </div>
         }
       />
 

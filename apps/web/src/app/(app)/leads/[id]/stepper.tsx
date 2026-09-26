@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useOptimistic, useRef, useState, useTransition } from "react";
+import { STAGE_HINTS, type StageCategory } from "@skincrm/contracts";
 import { buttonClasses, inputClasses } from "@/components/ui";
 import { assignLeadAction, moveLeadAction } from "@/lib/crm-actions";
 import type { BoardStage } from "../board";
@@ -55,19 +56,20 @@ export function StageStepper({
 
   return (
     <div aria-busy={pending}>
-      <div className="flex flex-wrap items-center gap-2">
-        <ol className="flex flex-1 flex-wrap gap-1.5" aria-label="Stage">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+        <ol className="grid flex-1 grid-cols-2 gap-1.5 sm:flex" aria-label="Stage">
           {open.map((stage, index) => {
             const isCurrent = stage.id === current;
             const done = currentIndex >= 0 && index < currentIndex;
             return (
-              <li key={stage.id} className="min-w-[88px] flex-1">
+              <li key={stage.id} className="min-w-0 sm:flex-1">
                 <button
                   type="button"
                   disabled={!canMove}
                   aria-current={isCurrent ? "step" : undefined}
                   onClick={() => move(stage)}
-                  className={`flex min-h-10 w-full items-center justify-center rounded-lg px-3 text-sm transition-colors ${
+                  title={STAGE_HINTS[stage.category as StageCategory]}
+                  className={`flex min-h-12 w-full flex-col items-center justify-center rounded-lg px-3 py-1 text-sm leading-tight transition-colors ${
                     isCurrent
                       ? "bg-brand font-medium text-on-brand"
                       : done
@@ -75,14 +77,21 @@ export function StageStepper({
                         : "border border-line-strong text-ink-muted hover:bg-surface-muted"
                   }`}
                 >
-                  {done && <span aria-hidden="true" className="mr-1">✓</span>}
-                  {stage.name}
+                  <span>
+                    {done && <span aria-hidden="true" className="mr-1">✓</span>}
+                    {stage.name}
+                  </span>
+                  {STAGE_HINTS[stage.category as StageCategory] && (
+                    <span className={`text-[11px] font-normal ${isCurrent ? "opacity-80" : "text-ink-subtle"}`}>
+                      {STAGE_HINTS[stage.category as StageCategory]}
+                    </span>
+                  )}
                 </button>
               </li>
             );
           })}
         </ol>
-        <div className="flex gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5 lg:flex">
           {closed.map((stage) => {
             const isCurrent = stage.id === current;
             const won = stage.category === "converted";
@@ -93,7 +102,8 @@ export function StageStepper({
                 disabled={!canMove}
                 aria-pressed={isCurrent}
                 onClick={() => move(stage)}
-                className={`min-h-10 rounded-lg border px-4 text-sm font-medium transition-colors ${
+                title={STAGE_HINTS[stage.category as StageCategory]}
+                className={`min-h-12 rounded-lg border px-4 text-sm font-medium transition-colors ${
                   isCurrent
                     ? won
                       ? "border-positive bg-positive-soft text-positive"

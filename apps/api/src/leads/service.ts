@@ -104,6 +104,12 @@ export async function changeStage(params: {
     updates[milestoneField] = now;
     if (toStage.category === "qualified") updates.qualifiedByUserId = context.userId;
   }
+  // Booking is what "qualified" means here (D-63): stamp it too, once, so the
+  // qualified-lead signal for ad platforms (PRD 4.5a) still exists.
+  if (toStage.category === "consultation_booked" && lead.qualifiedAt == null) {
+    updates.qualifiedAt = now;
+    updates.qualifiedByUserId = context.userId;
+  }
 
   if (toStage.isClosed) {
     updates.closedAt = lead.closedAt ?? now;

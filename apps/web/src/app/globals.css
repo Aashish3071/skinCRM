@@ -113,3 +113,48 @@ body {
     color: #0e1215;
   }
 }
+
+/*
+ * Tables that become stacked cards on phones. Each <td data-label="…"> shows
+ * its column name beside the value, so nothing needs sideways scrolling.
+ */
+@media (max-width: 639px) {
+  .stack-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .stack-table,
+  .stack-table tbody,
+  .stack-table tr,
+  .stack-table td {
+    display: block;
+    width: 100%;
+  }
+  .stack-table tr {
+    padding: 0.75rem 0;
+  }
+  .stack-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.25rem 0 !important;
+    text-align: right;
+  }
+  .stack-table td:first-child {
+    display: block;
+    text-align: left;
+  }
+  .stack-table td[data-label]::before {
+    content: attr(data-label);
+    font-size: 0.75rem;
+    color: var(--color-ink-subtle);
+    text-align: left;
+  }
+  .stack-table td:empty {
+    display: none;
+  }
+}

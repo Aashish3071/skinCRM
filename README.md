@@ -135,8 +135,8 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 | 1 | Foundation — monorepo, DB, tenancy, auth, RBAC, audit, seed `[ID-01, AUD-01, SET-01]` | ✅ Complete |
 | 2 | Core CRM — people, General Notes, leads, pipeline, tasks, intake, CSV `[ID-02…08, LEAD-01…06]` | ✅ Complete |
 | 3 | Calendar — types, booking, conflict prevention, statuses `[CAL-01…05]` | ✅ Complete (reminders via automations) |
-| 4 | Messaging core — templates, consent ledger, automations, delivery log `[MSG-01…07]` | 🟡 Engine, worker, canvas builder and SMTP done; template editor + delivery-log screens outstanding |
-| 5 | WhatsApp shared inbox `[WA-01…09]` | ⬜ Not started |
+| 4 | Messaging core — templates, consent ledger, automations, delivery log `[MSG-01…07]` | ✅ Complete (email connection-test screen outstanding) |
+| 5 | WhatsApp shared inbox `[WA-01…09]` | 🟡 Inbox, assignment, notes, reply lock, window rules done on the mock connector; live Cloud API is phase 7 |
 | 6 | Reporting and exports `[REP-01…04]` | ⬜ Not started |
 | 7 | Real integrations — Meta, Google, WhatsApp Cloud, email `[INT-01…09]` | ⬜ Not started |
 | 8 | Conversion feedback — outbox, eligibility gate, adapters `[FB-01…10]` | ⬜ Not started |
@@ -147,7 +147,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 ```bash
 pnpm typecheck    # clean
 pnpm lint         # clean
-pnpm test         # 256 tests: 14 RLS isolation, 24 security, 213 API, 5 web
+pnpm test         # 268 tests: 14 RLS isolation, 24 security, 225 API, 5 web
 ```
 
 ### Done and verified in phase 1
@@ -269,15 +269,40 @@ Everything stays on your machine. In the root `.env` set
 turn on an automation, add a lead with an email address, and open Mailpit at
 http://localhost:8025. Put both back before pointing at a real relay.
 
+### Done in phase 4 (final slice) and phase 5
+
+- **Message templates** (`/automations/templates`) — editor with a live
+  preview, insert-a-detail buttons, Service/Marketing choice, and the legally
+  required marketing footer added automatically.
+- **Sent messages** (`/automations/messages`) — every message with its status
+  and, when one didn't go, the reason in plain English. Links to the person, the
+  lead and the automation that sent it.
+- **Public unsubscribe page** `/unsubscribe/[token]` — withdraws marketing only
+  (D-66). Promotional email now carries `List-Unsubscribe` headers.
+- **WhatsApp inbox** (`/inbox`) — shared threads with Open / Mine / Unassigned /
+  Done, assignment, "Mark done", internal notes, "… is replying" lock (D-65),
+  the 24-hour window explained in words with an approved-template picker after
+  it closes, and blocked messages shown with the reason. A **Test message**
+  button (mock connector only) lets you try it before WhatsApp is connected.
+  "WhatsApp" buttons on lead and patient pages open the thread.
+- **Notes** (`/notes`) and **Activity** (`/activity`) — clinic-wide feeds by day,
+  with search and one-tap filters (D-67).
+- **Qualified = booked** — the third stage is named Qualified with the hint
+  "Booked an appointment", and stamps the qualified milestone (D-63).
+- **Calendar redesign** — time grid with a "now" line, compact appointment
+  blocks, click an empty hour to book it, per-staff columns in day view, and a
+  day strip plus agenda list on phones.
+- **Mobile pass** — every screen checked at 390px: tab bar with "More" sheet,
+  stacked tables, inbox one-pane-at-a-time, builder settings as a bottom sheet.
+
 ### Next up
 
-1. **Template editor and delivery log screens** — the API exists
-   (`/templates`, `/messages`); the Automations area needs a Templates tab with
-   preview and a Messages tab showing each send and its suppression reason `[MSG-02, MSG-07]`.
-2. **Public unsubscribe page** `/unsubscribe/[token]` — tokens are generated
-   (`packages/security/src/unsubscribe.ts`) but nothing serves them yet.
-3. **Phase 5 — WhatsApp shared inbox `[WA-01…09]`** on the mock connector.
-   Inbound messages will also make the "They reply" stop condition fire.
+1. **Phase 6 — Reporting `[REP-01…04]`**: funnel (New → Contacted → Qualified →
+   Visited → Won), source/campaign table, operations dashboard, role-masked CSV export.
+2. **Phase 7 — real integrations**: WhatsApp Cloud API webhook calling
+   `receiveInboundWhatsApp()` (`apps/api/src/inbox/service.ts`) with signature
+   verification; Meta Lead Ads; Google lead forms; email connection test screen.
+3. **Phase 8 — conversion feedback**, then **phase 9 hardening**.
 
 ---
 

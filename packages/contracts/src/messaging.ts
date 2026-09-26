@@ -87,6 +87,9 @@ export const messageSchema = z.object({
   direction: z.string(),
   classification: z.enum(TEMPLATE_CLASSIFICATIONS),
   templateName: z.string().nullable(),
+  /** The automation that sent it, when it was not a person. */
+  ruleId: uuidSchema.nullable(),
+  ruleName: z.string().nullable(),
   templateVersion: z.number().int().nullable(),
   recipient: z.string().nullable(),
   renderedSubject: z.string().nullable(),
@@ -106,6 +109,7 @@ export const listMessagesQuerySchema = z.object({
   leadId: uuidSchema.optional(),
   state: z.enum(MESSAGE_DELIVERY_STATES).optional(),
   channel: z.enum(SENDABLE_CHANNELS).optional(),
+  direction: z.enum(["inbound", "outbound"]).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });

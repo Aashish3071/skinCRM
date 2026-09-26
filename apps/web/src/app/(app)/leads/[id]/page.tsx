@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LEAD_SOURCE_LABELS } from "@skincrm/contracts";
 import { CalendarIcon, MailIcon, PhoneIcon } from "@/components/icons";
 import { Badge, Card, EmptyState, buttonClasses } from "@/components/ui";
+import { WhatsAppButton } from "@/components/whatsapp-button";
 import {
   clinicTime,
   getAssignees,
@@ -63,11 +64,14 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             </span>
           </div>
         </div>
-        {can(session, "appointments:write") && (
-          <Link href={`/calendar?leadId=${lead.id}`} className={buttonClasses("primary")}>
-            <CalendarIcon size={16} /> Book appointment
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {can(session, "conversations:read") && lead.personPhone && <WhatsAppButton personId={lead.personId} />}
+          {can(session, "appointments:write") && (
+            <Link href={`/calendar?leadId=${lead.id}`} className={buttonClasses("primary")}>
+              <CalendarIcon size={16} /> Book appointment
+            </Link>
+          )}
+        </div>
       </div>
 
       <Card>

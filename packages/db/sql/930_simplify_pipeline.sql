@@ -55,7 +55,8 @@ begin
   from (values
     ('new',                   'New',                   'New',       0),
     ('connected',             'Connected',             'Contacted', 1),
-    ('consultation_booked',   'Consultation booked',   'Booked',    2),
+    ('consultation_booked',   'Consultation booked',   'Qualified', 2),
+    ('consultation_booked',   'Booked',                'Qualified', 2),
     ('consultation_attended', 'Consultation attended', 'Visited',   3),
     ('converted',             'Converted',             'Won',       4),
     ('lost',                  'Lost',                  'Lost',      5)
@@ -63,5 +64,9 @@ begin
   where s.category::text = v.category
     and s.name = v.old_name
     and (s.name <> v.new_name or s.position <> v.pos);
+
+  -- Booked means qualified (D-63). Backfill leads booked before that rule.
+  update leads set qualified_at = booked_at
+  where qualified_at is null and booked_at is not null;
 end
 $$;

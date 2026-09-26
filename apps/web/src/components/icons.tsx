@@ -100,3 +100,24 @@ export const ChevronRightIcon = (p: IconProps) => (
 export const SparkIcon = (p: IconProps) => (
   <Svg {...p}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" /></Svg>
 );
+export const NotesIcon = (p: IconProps) => (
+  <Svg {...p}><path d="M6 3h9l4 4v14H6Z" /><path d="M14 3v5h5M9 13h7M9 17h5" /></Svg>
+);
+export const ActivityIcon = (p: IconProps) => (
+  <Svg {...p}><path d="M3 12h4l3-8 4 16 3-8h4" /></Svg>
+);
+export const InboxIcon = (p: IconProps) => (
+  <Svg {...p}><path d="M3 13h5l1.5 3h5L16 13h5" /><path d="M5 5h14l2 8v6H3v-6Z" /></Svg>
+);
+export const MoreIcon = (p: IconProps) => (
+  <Svg {...p}><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></Svg>
+);
+export const SendIcon = (p: IconProps) => (
+  <Svg {...p}><path d="M21 3 10 14M21 3l-7 18-4-7-7-4Z" /></Svg>
+);
+export const LockIcon = (p: IconProps) => (
+  <Svg {...p}><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></Svg>
+);
+export const ChevronLeftIcon = (p: IconProps) => (
+  <Svg {...p}><path d="m15 6-6 6 6 6" /></Svg>
+);

@@ -38,3 +38,44 @@ export function validDate(value: string | undefined, fallback: string): string {
 export function dayLabel(date: string): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00Z`));
 }
+
+/** Minutes since local midnight in the clinic's timezone. */
+export function minutesOfDay(instant: string | Date, timezone: string): number {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    .formatToParts(new Date(instant));
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
+export function hourLabel(hour: number): string {
+  const h = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h} ${hour < 12 ? "AM" : "PM"}`;
+}
+
+/**
+ * Side-by-side columns for overlapping appointments, so two people booked at
+ * 10:00 with different staff are both readable rather than stacked.
+ */
+export function layoutOverlaps<T extends { start: number; end: number }>(items: T[]): (T & { col: number; cols: number })[] {
+  const sorted = [...items].sort((a, b) => a.start - b.start || b.end - a.end);
+  const out: (T & { col: number; cols: number })[] = [];
+  let cluster: (T & { col: number; cols: number })[] = [];
+  let clusterEnd = -1;
+  const flush = () => {
+    const cols = Math.max(1, ...cluster.map((c) => c.col + 1));
+    for (const c of cluster) c.cols = cols;
+    out.push(...cluster);
+    cluster = [];
+  };
+  for (const item of sorted) {
+    if (item.start >= clusterEnd && cluster.length) flush();
+    const used = new Set(cluster.filter((c) => c.end > item.start).map((c) => c.col));
+    let col = 0;
+    while (used.has(col)) col += 1;
+    cluster.push({ ...item, col, cols: 1 });
+    clusterEnd = Math.max(clusterEnd, item.end);
+  }
+  if (cluster.length) flush();
+  return out;
+}

@@ -37,3 +37,41 @@ export function clinicTime(iso: string, timezone: string): string {
     timeStyle: "short",
   });
 }
+
+/** "Today", "Yesterday", or a date — in the clinic's timezone. */
+export function dayLabel(iso: string, timeZone: string): string {
+  const key = (d: Date) => d.toLocaleDateString("en-CA", { timeZone });
+  const day = key(new Date(iso));
+  const today = key(new Date());
+  const yesterday = key(new Date(Date.now() - 86_400_000));
+  if (day === today) return "Today";
+  if (day === yesterday) return "Yesterday";
+  return new Date(iso).toLocaleDateString("en-US", { timeZone, weekday: "long", month: "long", day: "numeric" });
+}
+
+/** Group items under day headings, preserving order. */
+export function groupByDay<T>(items: T[], at: (item: T) => string, timeZone: string): { day: string; items: T[] }[] {
+  const groups: { day: string; items: T[] }[] = [];
+  for (const item of items) {
+    const day = dayLabel(at(item), timeZone);
+    const last = groups.at(-1);
+    if (last && last.day === day) last.items.push(item);
+    else groups.push({ day, items: [item] });
+  }
+  return groups;
+}
+
+/** Time of day in the clinic's timezone, e.g. "2:30 PM". */
+export function clinicClock(iso: string, timeZone: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", { timeZone, hour: "numeric", minute: "2-digit" });
+}
+
+export function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}

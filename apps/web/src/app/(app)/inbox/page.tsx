@@ -1,26 +1,21 @@
-import { NotBuiltYet, PageHeader } from "@/components/ui";
-import { requireSession } from "@/lib/session";
+import { InboxIcon } from "@/components/icons";
+import { loadList, type Search } from "./load";
+import { requireCapability } from "@/lib/session";
+import { InboxShell } from "./shell";
 
 export const metadata = { title: "Inbox — SkinCRM" };
 
-export default async function InboxPage() {
-  await requireSession();
+
+export default async function InboxPage({ searchParams }: { searchParams: Promise<Search> }) {
+  await requireCapability("conversations:read");
+  const { view, search, list } = await loadList(await searchParams);
   return (
-    <>
-      <PageHeader title="Inbox" />
-      <NotBuiltYet
-        phase="Phase 5"
-        requirements={[
-    "WA-01",
-    "WA-02",
-    "WA-03",
-    "WA-04",
-    "WA-05",
-    "WA-06",
-    "WA-07",
-        ]}
-        summary="Shared WhatsApp inbox: unassigned, mine and all views, assignment so two staff cannot unknowingly reply to the same conversation, internal notes, and reply from the CRM within the 24-hour service window or with an approved template."
-      />
-    </>
+    <InboxShell list={list} view={view} search={search} selectedId={null}>
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-ink-muted">
+        <InboxIcon size={32} />
+        <p className="font-medium text-ink">Pick a conversation</p>
+        <p className="max-w-xs text-sm">WhatsApp messages from patients arrive here. Anyone on the team can answer; the thread shows who is handling it.</p>
+      </div>
+    </InboxShell>
   );
 }

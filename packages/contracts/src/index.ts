@@ -8,3 +8,5 @@ export * from "./leads";
 export * from "./calendar";
 export * from "./messaging";
 export * from "./automations";
+export * from "./workspace";
+export * from "./inbox";

@@ -228,16 +228,19 @@ export function registerMessagingRoutes(app: FastifyInstance): void {
       if (query.leadId) conditions.push(eq(messages.leadId, query.leadId));
       if (query.state) conditions.push(eq(messages.state, query.state));
       if (query.channel) conditions.push(eq(messages.channel, query.channel));
+      if (query.direction) conditions.push(eq(messages.direction, query.direction));
 
       const rows = await tx
         .select({
           message: messages,
           personName: people.displayName,
           templateName: messageTemplates.name,
+          ruleName: schema.automationRules.name,
         })
         .from(messages)
         .leftJoin(people, eq(people.id, messages.personId))
         .leftJoin(messageTemplates, eq(messageTemplates.id, messages.templateId))
+        .leftJoin(schema.automationRules, eq(schema.automationRules.id, messages.ruleId))
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(desc(messages.createdAt))
         .limit(query.limit)
@@ -428,6 +431,7 @@ function serializeMessage(row: {
   message: typeof messages.$inferSelect;
   personName: string | null;
   templateName: string | null;
+  ruleName?: string | null;
 }): MessageDto {
   const m = row.message;
   return {
@@ -439,6 +443,8 @@ function serializeMessage(row: {
     direction: m.direction,
     classification: m.classification,
     templateName: row.templateName,
+    ruleId: m.ruleId,
+    ruleName: row.ruleName ?? null,
     templateVersion: m.templateVersion,
     recipient: m.recipient,
     renderedSubject: m.renderedSubject,

@@ -12,11 +12,14 @@ import { registerRoute } from "./route";
 import { registerAssignmentRuleRoutes } from "./leads/assignment-routes";
 import { registerAutomationRoutes } from "./automations/routes";
 import { registerCalendarRoutes } from "./calendar/routes";
+import { registerInboxRoutes } from "./inbox/routes";
 import { registerIntakeRoutes } from "./intake/routes";
 import { registerLeadRoutes } from "./leads/routes";
 import { registerMessagingRoutes } from "./messaging/routes";
+import { registerUnsubscribeRoutes } from "./messaging/unsubscribe-routes";
 import { registerPeopleRoutes } from "./people/routes";
 import { registerUserRoutes } from "./users/routes";
+import { registerWorkspaceRoutes } from "./workspace/routes";
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = getEnv();
@@ -38,6 +41,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     // Cap request bodies. CSV import uses its own streaming endpoint (phase 2)
     // rather than raising this for every route.
     bodyLimit: 1_048_576,
+    // Signed tokens in the path (unsubscribe links) run to ~160 characters;
+    // Fastify's default of 100 answers them with 414.
+    maxParamLength: 600,
     /**
      * The route helper emits exactly one structured line per request, so
      * Fastify's own request/response pair would just be noise.
@@ -107,6 +113,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerCalendarRoutes(app);
   registerMessagingRoutes(app);
   registerAutomationRoutes(app);
+  registerUnsubscribeRoutes(app);
+  registerWorkspaceRoutes(app);
+  registerInboxRoutes(app);
 
   return app;
 }

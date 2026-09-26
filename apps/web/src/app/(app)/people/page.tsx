@@ -4,7 +4,7 @@ import { getPeople, relativeTime } from "@/lib/crm";
 import { can, requireCapability } from "@/lib/session";
 import { PeopleSearch } from "./search";
 
-export const metadata = { title: "People — SkinCRM" };
+export const metadata = { title: "Patients — SkinCRM" };
 
 export default async function PeoplePage({
   searchParams,
@@ -23,7 +23,7 @@ export default async function PeoplePage({
   return (
     <>
       <PageHeader
-        title="People"
+        title="Patients"
         description={`${totalCount} ${totalCount === 1 ? "person" : "people"}. One person can have many inquiries over time.`}
         actions={
           can(session, "people:merge") ? (
@@ -42,7 +42,7 @@ export default async function PeoplePage({
             <EmptyState title={search ? "Nobody matches that search" : "No people yet"}>
               {search
                 ? "Try part of a name, a phone number or an email address."
-                : "People are created when an inquiry arrives, or from a walk-in."}
+                : "Patients are added when an inquiry arrives, or from a walk-in."}
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">

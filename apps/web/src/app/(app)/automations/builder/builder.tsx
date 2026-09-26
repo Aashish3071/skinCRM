@@ -68,6 +68,12 @@ export function AutomationBuilder({
   const [pending, startTransition] = useTransition();
   const [test, setTest] = useState<{ personName: string; lines: TestRunLine[] } | null>(null);
 
+  // On a phone the settings panel is a sheet over the flow; start with it
+  // closed so the flow is what people see first.
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 1023px)").matches) setSelected(null);
+  }, []);
+
   // Warn before leaving with unsaved changes.
   useEffect(() => {
     if (!dirty) return;
@@ -189,7 +195,7 @@ export function AutomationBuilder({
         <Link href="/automations" className="text-sm text-ink-muted hover:text-ink">
           ← Automations
         </Link>
-        <div className="flex min-w-0 flex-1 basis-64 items-center gap-2">
+        <div className="flex min-w-0 flex-1 basis-full items-center gap-2 sm:basis-64">
           <label htmlFor="automation-name" className="sr-only">
             Automation name
           </label>
@@ -238,11 +244,11 @@ export function AutomationBuilder({
         </p>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         {/* --- Canvas ----------------------------------------------------- */}
         <section
           aria-label="Automation flow"
-          className="rounded-card border border-line bg-surface-muted px-4 py-8 [background-image:radial-gradient(var(--color-line-strong)_1px,transparent_1px)] [background-size:18px_18px]"
+          className="min-w-0 rounded-card border border-line bg-surface-muted px-3 py-6 sm:px-4 sm:py-8 [background-image:radial-gradient(var(--color-line-strong)_1px,transparent_1px)] [background-size:18px_18px]"
         >
           <ol className="mx-auto flex max-w-md flex-col items-stretch">
             <li>
@@ -328,7 +334,7 @@ export function AutomationBuilder({
         <aside
           aria-label="Settings"
           className={`${
-            selected ? "fixed inset-x-0 bottom-0 z-50 max-h-[80vh] overflow-y-auto rounded-t-2xl shadow-[var(--shadow-pop)]" : "hidden"
+            selected ? "fixed inset-x-0 bottom-0 z-50 max-h-[80dvh] overflow-y-auto rounded-t-2xl pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[var(--shadow-pop)]" : "hidden"
           } border border-line bg-surface p-5 lg:sticky lg:top-6 lg:z-auto lg:block lg:max-h-[calc(100vh-3rem)] lg:self-start lg:rounded-card lg:shadow-none`}
         >
           <div className="mb-4 flex items-center justify-between">

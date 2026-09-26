@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { uuidSchema } from "@skincrm/contracts";
-import { PageHeader, inputClasses } from "@/components/ui";
+import { PageHeader } from "@/components/ui";
 import { can, requireCapability } from "@/lib/session";
 import { getAppointments, getCalendarOptions, getConsultationTypes } from "@/lib/calendar";
-import { calendarDays, dayLabel, localDate, shiftDate, validDate } from "@/lib/calendar-view";
+import { calendarDays, localDate, shiftDate, validDate } from "@/lib/calendar-view";
 import { getLead } from "@/lib/crm";
 import { CalendarBoard } from "./calendar-client";
+import { CalendarToolbar } from "./toolbar";
 
 export const metadata = { title: "Calendar — SkinCRM" };
 
@@ -27,34 +28,32 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   if (branchId) query.set("branchId", branchId);
   const data = await getAppointments(query.toString());
   const lead = uuidSchema.safeParse(value("leadId")).success && can(session, "leads:read") ? await getLead(value("leadId")) : null;
-  const url = (nextDate: string, nextView = view) => `/calendar?${new URLSearchParams({ date: nextDate, view: nextView, staffUserId: staffId, branchId, includeCanceled: String(includeCanceled) })}`;
+  const url = (nextDate: string, nextView = view) => {
+    const q = new URLSearchParams({ date: nextDate, view: nextView, staffUserId: staffId, branchId, includeCanceled: includeCanceled ? "true" : "" });
+    for (const [k, v] of [...q]) if (!v) q.delete(k);
+    return `/calendar?${q}`;
+  };
+
+  const title = view === "day"
+    ? new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" })
+    : rangeTitle(days[0]!, days[6]!);
 
   return <>
-    <PageHeader title="Calendar" description={`All times in ${timezone.replace(/_/g, " ")}.`}
-      actions={can(session, "settings:write") ? <Link href="/settings/calendar" className="text-sm text-brand">Calendar settings</Link> : null} />
-    <div className="mb-4 rounded-card border border-line bg-surface p-4">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <Link href={url(shiftDate(date, view === "day" ? -1 : -7))} className="rounded border border-line px-3 py-2 text-sm" aria-label={`Previous ${view}`}>←</Link>
-          <h2 className="text-sm font-semibold">{dayLabel(days[0]!)}{view === "week" ? ` – ${dayLabel(days[6]!)}` : ""}</h2>
-          <Link href={url(shiftDate(date, view === "day" ? 1 : 7))} className="rounded border border-line px-3 py-2 text-sm" aria-label={`Next ${view}`}>→</Link>
-          <Link href={url(today)} className="text-sm text-brand">Today</Link>
-        </div>
-        <nav aria-label="Calendar view" className="flex gap-1 rounded-md bg-surface-muted p-1">
-          {(["day", "week"] as const).map((mode) => <Link key={mode} href={url(date, mode)} aria-current={view === mode ? "page" : undefined} className={`rounded px-4 py-1.5 text-sm capitalize ${view === mode ? "bg-surface font-semibold text-brand" : "text-ink-muted"}`}>{mode}</Link>)}
-        </nav>
-      </div>
-      <form className="flex flex-wrap items-end gap-3" action="/calendar">
-        <input type="hidden" name="view" value={view} />
-        <label className="text-xs font-medium">Date<input type="date" aria-label="Calendar date" name="date" defaultValue={date} required className={`${inputClasses} mt-1`} /></label>
-        <label className="text-xs font-medium">Staff<select aria-label="Filter by staff" name="staffUserId" defaultValue={staffId} className={`${inputClasses} mt-1`}><option value="">All available staff</option>{options.staff.map((s) => <option key={s.id} value={s.id}>{s.fullName}</option>)}</select></label>
-        <label className="text-xs font-medium">Branch<select aria-label="Filter by branch" name="branchId" defaultValue={branchId} className={`${inputClasses} mt-1`}><option value="">All branches</option>{options.branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
-        <label className="flex items-center gap-2 py-2 text-sm"><input type="checkbox" name="includeCanceled" value="true" defaultChecked={includeCanceled} />Show canceled and rescheduled</label>
-        <button className="rounded-md border border-line-strong px-4 py-2 text-sm">Apply filters</button>
-      </form>
-    </div>
+    <PageHeader title="Calendar" description={`Times in ${timezone.replace(/_/g, " ")}.`}
+      actions={can(session, "settings:write") ? <Link href="/settings/calendar" className="text-sm text-ink-muted hover:text-ink">Hours & appointment types</Link> : null} />
+    <CalendarToolbar title={title} view={view} options={options} staffId={staffId} branchId={branchId} includeCanceled={includeCanceled}
+      prevHref={url(shiftDate(date, view === "day" ? -1 : -7))} nextHref={url(shiftDate(date, view === "day" ? 1 : 7))} todayHref={url(today)} />
     <CalendarBoard appointments={data.items} days={days} date={date} timezone={timezone} options={options} types={types}
       staffId={staffId} branchId={branchId} writable={can(session, "appointments:write")}
       initialPerson={lead ? { id: lead.personId, displayName: lead.personName, leadId: lead.id } : undefined} />
   </>;
+}
+
+function rangeTitle(from: string, to: string): string {
+  const a = new Date(`${from}T12:00:00Z`);
+  const b = new Date(`${to}T12:00:00Z`);
+  const month = (d: Date) => d.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" });
+  return a.getUTCMonth() === b.getUTCMonth()
+    ? `${month(a)} ${a.getUTCDate()} – ${b.getUTCDate()}, ${b.getUTCFullYear()}`
+    : `${month(a)} ${a.getUTCDate()} – ${month(b)} ${b.getUTCDate()}, ${b.getUTCFullYear()}`;
 }

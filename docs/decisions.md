@@ -449,3 +449,48 @@ development `CONNECTOR_EMAIL=live` points at Mailpit (docker compose,
 http://localhost:8025). Invite and password-reset emails go through the same
 connector but bypass the client send gate: they are account email to staff, and
 a reset that waits for the end of quiet hours is a locked-out front desk.
+
+**D-63. "Qualified" means booked.**
+At the client's request the pipeline's third stage is named **Qualified**, with
+the hint "Booked an appointment" everywhere it appears (`STAGE_HINTS`). Its
+category is still `consultation_booked`. Entering it stamps both `bookedAt` and
+`qualifiedAt` (once each), so the Qualified conversion signal for Meta/Google
+(PRD 4.5a) exists again and needs no separate stage. `930_simplify_pipeline.sql`
+backfills `qualified_at` from `booked_at`.
+
+**D-64. The inbox is a view over the delivery log, not a second message store.**
+`conversations` holds one thread per person per channel (assignee, status,
+unread count, 24-hour window start, preview). Every WhatsApp message — inbound,
+staff reply, automation send, even a blocked one — is a row in `messages` with
+`conversation_id`. So the send gate, the delivery log, the automation "They
+reply" stop condition and the service-window check all read the same rows.
+Inbound messages from unknown numbers go through the normal intake pipeline and
+become a person and a `whatsapp_organic` lead. Staff replies ignore quiet hours
+(a live conversation), but nothing else in the gate.
+
+**D-65. Reply collision is a soft lock, not a hard one.**
+Typing in a thread sets `replying_user_id` for 45 seconds; a colleague's reply
+during that time gets a 409 naming who is replying. It expires on its own, so an
+abandoned tab never blocks anyone for long (PRD WA-03).
+
+**D-66. Unsubscribing withdraws marketing consent only.**
+The public `/unsubscribe/[token]` page records a `withdrawn` promotional consent
+row for that channel rather than a hard suppression, so the patient still gets
+appointment confirmations and reminders — which is what unsubscribing from a
+marketing email means. The page names the clinic, never the person.
+
+**D-67. Notes and Activity are clinic-wide feeds, grouped by day.**
+Doctors asked to catch up without opening patients one by one. `/notes` lists
+every General Note (search covers note text and patient name; filters: pinned,
+written by me) with a write-a-note box that asks "who is this about?" first.
+`/activity` lists the activity timeline across patients with plain groups
+(Calls, Messages, Appointments, Notes, Lead progress, Tasks), "Everyone / Just
+me", and a patient picker. Staff without `leads:read_all` see only activity they
+did or on leads they own.
+
+**D-68. Phone layout: four tabs plus "More"; tables stack into cards.**
+Home, Inbox, Leads and Calendar are the tab bar; everything else is in a "More"
+sheet with large rows. Tables use the `.stack-table` class (globals.css) so each
+row becomes a labelled card below 640px instead of scrolling sideways. The
+calendar shows a day strip and an agenda list on phones and a time grid from
+768px up.

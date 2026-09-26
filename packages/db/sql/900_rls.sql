@@ -63,7 +63,10 @@ declare
     'messages',
     'suppressions',
     'automation_rules',
-    'automation_enrollments'
+    'automation_enrollments',
+    -- Phase 5: shared inbox
+    'conversations',
+    'conversation_notes'
   ];
 begin
   foreach tbl in array tenant_tables loop

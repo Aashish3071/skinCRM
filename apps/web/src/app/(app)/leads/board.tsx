@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useOptimistic, useRef, useState, useTransition } from "react";
-import type { LeadDto } from "@skincrm/contracts";
+import { STAGE_HINTS, type LeadDto, type StageCategory } from "@skincrm/contracts";
 import { moveLeadAction } from "@/lib/crm-actions";
 import { buttonClasses, inputClasses } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
@@ -103,9 +103,14 @@ export function LeadBoard({
                   dragOver === stage.id ? "bg-brand-soft ring-2 ring-brand" : "bg-surface-muted"
                 }`}
               >
-                <header className="flex items-center justify-between px-2 pb-2 pt-1">
-                  <h2 className="text-sm font-semibold">{stage.name}</h2>
-                  <span className="rounded-full bg-surface px-2 text-xs tabular-nums text-ink-muted">{total}</span>
+                <header className="px-2 pb-2 pt-1">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold">{stage.name}</h2>
+                    <span className="rounded-full bg-surface px-2 text-xs tabular-nums text-ink-muted">{total}</span>
+                  </div>
+                  {STAGE_HINTS[stage.category as StageCategory] && (
+                    <p className="text-xs text-ink-subtle">{STAGE_HINTS[stage.category as StageCategory]}</p>
+                  )}
                 </header>
                 <ul className="flex flex-col gap-2">
                   {cards.map((lead) => (

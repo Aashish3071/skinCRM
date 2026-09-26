@@ -9,6 +9,7 @@ import { recordAudit } from "../audit";
 import { addActivity } from "../leads/service";
 import { evaluateSend, resolveDestination } from "./send-gate";
 import { renderTemplate } from "./render";
+import { ensureConversation, touchConversation } from "../inbox/store";
 
 const { messages, messageTemplates, people, clinics, appointments, users, suppressions } = schema;
 
@@ -34,6 +35,8 @@ export interface SendRequest {
   idempotencyKey: string;
   ruleId?: string | null;
   ignoreQuietHours?: boolean;
+  /** Who is replying from the inbox, for the thread's "sent by". */
+  conversationId?: string | null;
 }
 
 export interface SendOutcome {
@@ -66,6 +69,12 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
     : (request.adHoc!.classification ?? "operational");
 
   const destination = await resolveDestination(request.personId, channel);
+
+  // Every WhatsApp message, automated or not, belongs to the patient's inbox
+  // thread — including ones that were blocked, so staff can see why.
+  const conversationId =
+    request.conversationId ??
+    (channel === "whatsapp" ? await ensureConversation(request.personId, "whatsapp", request.leadId ?? null) : null);
 
   // --- The gate. Evaluated now, not when this was scheduled. ---------------
   const decision = await evaluateSend({
@@ -109,6 +118,7 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
         failureDetail: decision.detail,
         idempotencyKey: request.idempotencyKey,
         ruleId: request.ruleId ?? null,
+        conversationId,
         triggeredByUserId: context.userId,
       })
       .returning({ id: messages.id });
@@ -158,6 +168,7 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
         failureDetail: `Missing template variables: ${renderedBody.missing.join(", ")}`,
         idempotencyKey: request.idempotencyKey,
         ruleId: request.ruleId ?? null,
+        conversationId,
         failedAt: new Date(),
       })
       .returning({ id: messages.id });
@@ -190,6 +201,7 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
       attempts: 1,
       idempotencyKey: request.idempotencyKey,
       ruleId: request.ruleId ?? null,
+      conversationId,
       triggeredByUserId: context.userId,
     })
     .returning({ id: messages.id });
@@ -213,6 +225,9 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
             text: renderedBody.text,
             fromAddress: `noreply@${clinicRow?.sendingDomain ?? "example-clinic.test"}`,
             fromName: clinicRow?.name ?? "Clinic",
+            // Promotional mail carries List-Unsubscribe so mail apps show
+            // their own one-click unsubscribe button.
+            unsubscribeUrl: classification === "promotional" ? variables["link.unsubscribe"] ?? undefined : undefined,
             idempotencyKey: request.idempotencyKey,
           })
         : await connectors.whatsapp.send(
@@ -242,6 +257,10 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
         updatedAt: new Date(),
       })
       .where(eq(messages.id, messageId));
+
+    if (conversationId) {
+      await touchConversation(conversationId, { direction: "outbound", body: renderedBody.text, at: result.acceptedAt });
+    }
 
     await addActivity({
       personId: request.personId,
