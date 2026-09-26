@@ -1,16 +1,23 @@
-import { Badge, Card, PageHeader } from "@/components/ui";
-import { requireSession } from "@/lib/session";
+import Link from "next/link";
+import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
+import { getLeads, getTasks, relativeTime } from "@/lib/crm";
+import { can, requireSession } from "@/lib/session";
 
 export const metadata = { title: "Home — SkinCRM" };
 
-/**
- * The work queue from PRD section 6.1. The tiles are wired to real counts as each
- * phase lands; until then each one says plainly that it has no data source yet
- * rather than showing a zero that looks like a real number.
- */
+/** The work queue from PRD section 6.1. */
 export default async function HomePage() {
   const session = await requireSession();
   const firstName = session.fullName.split(" ")[0] ?? session.fullName;
+
+  const canLeads = can(session, "leads:read");
+  const canTasks = can(session, "tasks:read");
+
+  const [overdue, mine, unassigned] = await Promise.all([
+    canTasks ? getTasks("dueView=overdue&mine=true&limit=25") : Promise.resolve(null),
+    canTasks ? getTasks("dueView=today&mine=true&limit=25") : Promise.resolve(null),
+    canLeads ? getLeads("unassigned=true&includeClosed=false&limit=10") : Promise.resolve(null),
+  ]);
 
   return (
     <>
@@ -20,17 +27,115 @@ export default async function HomePage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <QueueTile label="Overdue tasks" requirement="LEAD-05" phase="Phase 2" />
-        <QueueTile label="Unassigned leads" requirement="LEAD-03" phase="Phase 2" />
-        <QueueTile label="Appointments today" requirement="CAL-01" phase="Phase 3" />
-        <QueueTile label="Integration alerts" requirement="INT-01" phase="Phase 7" />
+        <Tile
+          label="Your overdue tasks"
+          value={overdue?.length}
+          href="/leads"
+          tone={overdue && overdue.length > 0 ? "critical" : "neutral"}
+          unavailable={!canTasks}
+        />
+        <Tile
+          label="Unassigned leads"
+          value={unassigned?.totalCount}
+          href="/leads?unassigned=true"
+          tone={unassigned && unassigned.totalCount > 0 ? "caution" : "neutral"}
+          unavailable={!canLeads}
+        />
+        {/* No data source until phase 3, so an em dash rather than a 0 that
+            would read as a real, reassuring count. */}
+        <Tile label="Appointments today" pending="Phase 3 · CAL-01" />
+        <Tile label="Integration alerts" pending="Phase 7 · INT-01" />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        {canTasks && (
+          <Card
+            title="Due and overdue"
+            description="Sorted by due time, most overdue first."
+            actions={
+              <Link href="/leads" className="text-sm text-brand">
+                All leads
+              </Link>
+            }
+          >
+            {dedupeById([...(overdue ?? []), ...(mine ?? [])]).length === 0 ? (
+              <EmptyState title="Nothing due">You are clear for now.</EmptyState>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {dedupeById([...(overdue ?? []), ...(mine ?? [])])
+                  .slice(0, 8)
+                  .map((task) => {
+                  const isOverdue = new Date(task.dueAt).getTime() < Date.now();
+                    return (
+                      <li
+                        key={task.id}
+                        className="flex items-start justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">
+                            {task.leadId ? (
+                              <Link href={`/leads/${task.leadId}`} className="text-brand hover:underline">
+                                {task.title}
+                              </Link>
+                            ) : (
+                              task.title
+                            )}
+                          </p>
+                          <p className="mt-0.5 text-xs text-ink-subtle">
+                            {task.personName ? `${task.personName} · ` : ""}
+                            due {relativeTime(task.dueAt)}
+                          </p>
+                        </div>
+                        {isOverdue ? <Badge tone="critical">Overdue</Badge> : <Badge>Today</Badge>}
+                      </li>
+                    );
+                  })}
+              </ul>
+            )}
+          </Card>
+        )}
+
+        {canLeads && (
+          <Card
+            title="Unassigned queue"
+            description="Nobody owns these yet."
+            actions={
+              <Link href="/leads?unassigned=true" className="text-sm text-brand">
+                View all
+              </Link>
+            }
+          >
+            {(unassigned?.items.length ?? 0) === 0 ? (
+              <EmptyState title="Queue is empty">Every open inquiry has an owner.</EmptyState>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {unassigned!.items.slice(0, 8).map((lead) => (
+                  <li
+                    key={lead.id}
+                    className="flex items-start justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
+                  >
+                    <div>
+                      <Link
+                        href={`/leads/${lead.id}`}
+                        className="text-sm font-medium text-brand hover:underline"
+                      >
+                        {lead.personName}
+                      </Link>
+                      <p className="mt-0.5 text-xs text-ink-subtle">
+                        {lead.serviceInterest ?? "No service noted"} · {relativeTime(lead.createdAt)}
+                      </p>
+                    </div>
+                    <Badge>{lead.stageName}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
+
         <Card title="Setup status" description="What this deployment can and cannot do right now.">
           <dl className="flex flex-col gap-3 text-sm">
             <StatusRow label="Clinic timezone" value={session.clinic.timezone} tone="neutral" />
-            <StatusRow label="Country" value={session.clinic.country} tone="neutral" />
             <StatusRow
               label="Outbound messaging"
               value="Off"
@@ -51,47 +156,63 @@ export default async function HomePage() {
             />
           </dl>
         </Card>
-
-        <Card title="Your access" description="What your role can do. The API enforces the same list.">
-          <p className="text-sm text-ink-muted">
-            You are signed in as <strong className="text-ink">{session.role}</strong> with{" "}
-            {session.capabilities.length} permissions.
-          </p>
-          <ul className="mt-3 flex flex-wrap gap-1.5">
-            {session.capabilities.map((capability) => (
-              <li
-                key={capability}
-                className="rounded border border-line px-1.5 py-0.5 font-mono text-xs text-ink-muted"
-              >
-                {capability}
-              </li>
-            ))}
-          </ul>
-        </Card>
       </div>
     </>
   );
 }
 
-function QueueTile({
+/**
+ * The overdue and today queries overlap — anything overdue is also due today —
+ * so the same task would otherwise be listed twice.
+ */
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)));
+}
+
+function Tile({
   label,
-  requirement,
-  phase,
+  value,
+  href,
+  tone = "neutral",
+  pending,
+  unavailable,
 }: {
   label: string;
-  requirement: string;
-  phase: string;
+  value?: number;
+  href?: string;
+  tone?: "neutral" | "caution" | "critical";
+  pending?: string;
+  unavailable?: boolean;
 }) {
-  return (
+  const body = (
     <div className="rounded-card border border-line bg-surface px-4 py-4">
       <p className="text-sm font-medium">{label}</p>
-      {/* An em dash rather than 0: there is no data source yet, and a zero would
-          read as a real, reassuring count. */}
-      <p className="mt-2 text-2xl font-semibold tabular-nums text-ink-subtle">—</p>
+      <p
+        className={`mt-2 text-2xl font-semibold tabular-nums ${
+          pending || unavailable
+            ? "text-ink-subtle"
+            : tone === "critical"
+              ? "text-critical"
+              : tone === "caution"
+                ? "text-caution"
+                : "text-ink"
+        }`}
+      >
+        {pending || unavailable ? "—" : (value ?? 0)}
+      </p>
       <p className="mt-2 text-xs text-ink-subtle">
-        {phase} · <span className="font-mono">{requirement}</span>
+        {pending ?? (unavailable ? "Not available for your role" : "Live")}
       </p>
     </div>
+  );
+
+  return href && !pending && !unavailable ? (
+    <Link href={href} className="block hover:opacity-90">
+      {body}
+    </Link>
+  ) : (
+    body
   );
 }
 

@@ -22,8 +22,8 @@ export interface NavSection {
 export const NAV_SECTIONS: NavSection[] = [
   { href: "/home", label: "Home", capability: null },
   { href: "/inbox", label: "Inbox", capability: "conversations:read", pending: true },
-  { href: "/leads", label: "Leads", capability: "leads:read", pending: true },
-  { href: "/people", label: "People", capability: "people:read", pending: true },
+  { href: "/leads", label: "Leads", capability: "leads:read" },
+  { href: "/people", label: "People", capability: "people:read" },
   { href: "/calendar", label: "Calendar", capability: "appointments:read", pending: true },
   { href: "/automations", label: "Automations", capability: "automations:read", pending: true },
   { href: "/reports", label: "Reports", capability: "reports:read", pending: true },
