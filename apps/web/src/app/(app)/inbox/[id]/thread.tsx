@@ -118,7 +118,7 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
           </button>
         )}
         <details className="relative">
-          <summary aria-label="Chat options" className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full text-[var(--wa-meta)] hover:bg-black/5 dark:hover:bg-white/5">
+          <summary aria-label="Chat options" className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full text-[var(--wa-meta)] hover:bg-black/5">
             <MoreIcon size={20} />
           </summary>
           <div className="absolute right-0 z-30 mt-1 w-64 rounded-lg bg-[var(--wa-list)] py-2 text-sm shadow-[var(--shadow-pop)]">
@@ -181,7 +181,7 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
               {(["reply", "note"] as const).map((m) => (
                 <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => { setMode(m); input.current?.focus(); }}
                   className={`h-7 rounded-full px-3 text-xs font-medium ${
-                    mode === m ? (m === "note" ? "bg-[var(--wa-note)] text-[var(--wa-note-text)]" : "bg-[#d9fdd3] text-[#0a5c36] dark:bg-[#103529] dark:text-[#25d366]") : "text-[var(--wa-meta)] hover:text-[var(--wa-text)]"
+                    mode === m ? (m === "note" ? "bg-[var(--wa-note)] text-[var(--wa-note-text)]" : "bg-[#d9fdd3] text-[#0a5c36]") : "text-[var(--wa-meta)] hover:text-[var(--wa-text)]"
                   }`}>
                   {m === "reply" ? "Message" : "Team note"}
                 </button>

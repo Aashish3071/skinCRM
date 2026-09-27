@@ -1,134 +1,126 @@
 import Link from "next/link";
-import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { getLeads, getTasks, relativeTime } from "@/lib/crm";
+import type { ComponentType } from "react";
+import { CalendarIcon, ClockIcon, LeadsIcon, TaskIcon } from "@/components/icons";
+import { SlaBadge } from "@/components/sla-badge";
+import { Badge, Card, EmptyState } from "@/components/ui";
 import { getAppointments } from "@/lib/calendar";
-import { localDate } from "@/lib/calendar-view";
+import { appointmentLabels, clockTime, localDate } from "@/lib/calendar-view";
+import { getLeads, getTasks, relativeTime } from "@/lib/crm";
 import { can, requireSession } from "@/lib/session";
 
 export const metadata = { title: "Home — SkinCRM" };
 
-/** The work queue from PRD section 6.1. */
+/**
+ * Today at a glance: what needs doing now, and nothing about how the system
+ * is configured (that lives in Settings). Four numbers across the top, each a
+ * link to the list behind it; the lists below are the first few of each.
+ */
 export default async function HomePage() {
   const session = await requireSession();
+  const tz = session.clinic.timezone;
   const firstName = session.fullName.split(" ")[0] ?? session.fullName;
+  const today = localDate(new Date(), tz);
+  const hour = Number(new Date().toLocaleString("en-US", { timeZone: tz, hour: "numeric", hour12: false }));
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   const canLeads = can(session, "leads:read");
   const canTasks = can(session, "tasks:read");
-
-  const today = localDate(new Date(), session.clinic.timezone);
   const canCalendar = can(session, "appointments:read");
-  const [overdue, mine, unassigned, appointments] = await Promise.all([
-    canTasks ? getTasks("dueView=overdue&mine=true&limit=25") : Promise.resolve(null),
-    canTasks ? getTasks("dueView=today&mine=true&limit=25") : Promise.resolve(null),
-    canLeads ? getLeads("unassigned=true&includeClosed=false&limit=10") : Promise.resolve(null),
-    canCalendar ? getAppointments(`from=${today}&to=${today}`) : Promise.resolve(null),
+
+  const [overdue, dueToday, unassigned, awaiting, appointments] = await Promise.all([
+    canTasks ? getTasks("dueView=overdue&mine=true&limit=25") : null,
+    canTasks ? getTasks("dueView=today&mine=true&limit=25") : null,
+    canLeads ? getLeads("unassigned=true&includeClosed=false&limit=6") : null,
+    canLeads ? getLeads("awaitingResponse=true&includeClosed=false&limit=6") : null,
+    canCalendar ? getAppointments(`from=${today}&to=${today}`) : null,
   ]);
+  const tasks = dedupeById([...(overdue ?? []), ...(dueToday ?? [])]);
+  const visits = (appointments?.items ?? [])
+    .filter((a) => a.status !== "canceled" && a.status !== "rescheduled")
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const upcoming = visits.filter((a) => new Date(a.clientVisibleEndsAt ?? a.endsAt).getTime() > Date.now());
 
   return (
     <>
-      <PageHeader
-        title={`Good day, ${firstName}`}
-        description="Your queue for today. Overdue follow-ups come first, then appointments, then anything the integrations need."
-      />
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold tracking-tight">{greeting}, {firstName}</h1>
+        <p className="mt-1 text-sm text-ink-muted">
+          {new Date().toLocaleDateString("en-US", { timeZone: tz, weekday: "long", month: "long", day: "numeric" })}
+        </p>
+      </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Tile
-          label="Your overdue tasks"
-          value={overdue?.length}
-          href="/leads"
-          tone={overdue && overdue.length > 0 ? "critical" : "neutral"}
-          unavailable={!canTasks}
-        />
-        <Tile
-          label="Unassigned leads"
-          value={unassigned?.totalCount}
-          href="/leads?unassigned=true"
-          tone={unassigned && unassigned.totalCount > 0 ? "caution" : "neutral"}
-          unavailable={!canLeads}
-        />
-        <Tile label="Appointments today" value={appointments?.items.length} href={`/calendar?view=day&date=${today}`} unavailable={!canCalendar} />
-        <Tile label="Integration alerts" pending="Phase 7 · INT-01" />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {canTasks && <Tile icon={TaskIcon} label="Overdue tasks" value={overdue?.length ?? 0} href="/activity?group=tasks" tone={overdue?.length ? "critical" : "neutral"} />}
+        {canLeads && <Tile icon={ClockIcon} label="Waiting for a reply" value={awaiting?.totalCount ?? 0} href="/leads" tone={awaiting?.totalCount ? "caution" : "neutral"} />}
+        {canLeads && <Tile icon={LeadsIcon} label="Unassigned leads" value={unassigned?.totalCount ?? 0} href="/leads?unassigned=true" tone={unassigned?.totalCount ? "caution" : "neutral"} />}
+        {canCalendar && <Tile icon={CalendarIcon} label="Appointments today" value={visits.length} href={`/calendar?view=day&date=${today}`} />}
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        {canTasks && (
-          <Card
-            title="Due and overdue"
-            description="Sorted by due time, most overdue first."
-            actions={
-              <Link href="/leads" className="text-sm text-brand">
-                All leads
-              </Link>
-            }
-          >
-            {dedupeById([...(overdue ?? []), ...(mine ?? [])]).length === 0 ? (
-              <EmptyState title="Nothing due">You are clear for now.</EmptyState>
+        {canCalendar && (
+          <Card title="Today's appointments" actions={<Link href={`/calendar?view=day&date=${today}`} className="text-sm text-brand">Calendar</Link>}>
+            {visits.length === 0 ? (
+              <EmptyState title="Nothing booked today" />
             ) : (
-              <ul className="flex flex-col gap-3">
-                {dedupeById([...(overdue ?? []), ...(mine ?? [])])
-                  .slice(0, 8)
-                  .map((task) => {
-                  const isOverdue = new Date(task.dueAt).getTime() < Date.now();
-                    return (
-                      <li
-                        key={task.id}
-                        className="flex items-start justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
-                      >
-                        <div>
-                          <p className="text-sm font-medium">
-                            {task.leadId ? (
-                              <Link href={`/leads/${task.leadId}`} className="text-brand hover:underline">
-                                {task.title}
-                              </Link>
-                            ) : (
-                              task.title
-                            )}
-                          </p>
-                          <p className="mt-0.5 text-xs text-ink-subtle">
-                            {task.personName ? `${task.personName} · ` : ""}
-                            due {relativeTime(task.dueAt)}
-                          </p>
-                        </div>
-                        {isOverdue ? <Badge tone="critical">Overdue</Badge> : <Badge>Today</Badge>}
-                      </li>
-                    );
-                  })}
+              <ul className="flex flex-col divide-y divide-line">
+                {visits.slice(0, 6).map((a) => {
+                  const past = !upcoming.includes(a);
+                  return (
+                    <li key={a.id} className={`flex items-center gap-3 py-2.5 ${past ? "opacity-60" : ""}`}>
+                      <span className="w-16 shrink-0 text-sm font-semibold tabular-nums">{clockTime(a.startsAt, tz)}</span>
+                      <span className="min-w-0 flex-1">
+                        <Link href={a.leadId ? `/leads/${a.leadId}` : `/people/${a.personId}`} className="block truncate font-medium hover:text-brand">{a.personName}</Link>
+                        <span className="block truncate text-xs text-ink-subtle">{a.consultationTypeName ?? "Consultation"} · {a.staffName}</span>
+                      </span>
+                      <Badge tone={a.status === "attended" ? "positive" : a.status === "no_show" ? "critical" : "neutral"}>{appointmentLabels[a.status]}</Badge>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+        )}
+
+        {canTasks && (
+          <Card title="Your tasks" description="Overdue first, then due today.">
+            {tasks.length === 0 ? (
+              <EmptyState title="Nothing due">You&rsquo;re clear for now.</EmptyState>
+            ) : (
+              <ul className="flex flex-col divide-y divide-line">
+                {tasks.slice(0, 6).map((task) => {
+                  const late = new Date(task.dueAt).getTime() < Date.now();
+                  return (
+                    <li key={task.id} className="flex items-start justify-between gap-3 py-2.5">
+                      <span className="min-w-0">
+                        {task.leadId ? (
+                          <Link href={`/leads/${task.leadId}`} className="block truncate font-medium hover:text-brand">{task.title}</Link>
+                        ) : (
+                          <span className="block truncate font-medium">{task.title}</span>
+                        )}
+                        <span className="block text-xs text-ink-subtle">{task.personName ? `${task.personName} · ` : ""}due {relativeTime(task.dueAt)}</span>
+                      </span>
+                      {late ? <Badge tone="critical">Overdue</Badge> : <Badge>Today</Badge>}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>
         )}
 
         {canLeads && (
-          <Card
-            title="Unassigned queue"
-            description="Nobody owns these yet."
-            actions={
-              <Link href="/leads?unassigned=true" className="text-sm text-brand">
-                View all
-              </Link>
-            }
-          >
-            {(unassigned?.items.length ?? 0) === 0 ? (
-              <EmptyState title="Queue is empty">Every open inquiry has an owner.</EmptyState>
+          <Card title="Waiting for a first reply" description="New leads nobody has contacted yet.">
+            {(awaiting?.items.length ?? 0) === 0 ? (
+              <EmptyState title="Everyone has had a reply" />
             ) : (
-              <ul className="flex flex-col gap-3">
-                {unassigned!.items.slice(0, 8).map((lead) => (
-                  <li
-                    key={lead.id}
-                    className="flex items-start justify-between gap-3 border-b border-line pb-3 last:border-0 last:pb-0"
-                  >
-                    <div>
-                      <Link
-                        href={`/leads/${lead.id}`}
-                        className="text-sm font-medium text-brand hover:underline"
-                      >
-                        {lead.personName}
-                      </Link>
-                      <p className="mt-0.5 text-xs text-ink-subtle">
-                        {lead.serviceInterest ?? "No service noted"} · {relativeTime(lead.createdAt)}
-                      </p>
-                    </div>
-                    <Badge>{lead.stageName}</Badge>
+              <ul className="flex flex-col divide-y divide-line">
+                {awaiting!.items.map((lead) => (
+                  <li key={lead.id} className="flex items-center justify-between gap-3 py-2.5">
+                    <span className="min-w-0">
+                      <Link href={`/leads/${lead.id}`} className="block truncate font-medium hover:text-brand">{lead.personName}</Link>
+                      <span className="block text-xs text-ink-subtle">{lead.ownerName ?? "Unassigned"} · came in {relativeTime(lead.createdAt)}</span>
+                    </span>
+                    <SlaBadge lead={lead} />
                   </li>
                 ))}
               </ul>
@@ -136,108 +128,51 @@ export default async function HomePage() {
           </Card>
         )}
 
-        <Card title="Setup status" description="What this deployment can and cannot do right now.">
-          <dl className="flex flex-col gap-3 text-sm">
-            <StatusRow label="Clinic timezone" value={session.clinic.timezone} tone="neutral" />
-            <StatusRow
-              label="Outbound messaging"
-              value="Off"
-              tone="caution"
-              note="Email and WhatsApp sending stays disabled until the clinic approves message copy and legal basis."
-            />
-            <StatusRow
-              label="Ad-platform conversion feedback"
-              value="Off"
-              tone="caution"
-              note="Stays off until each destination passes its eligibility check (PRD FB-03)."
-            />
-            <StatusRow
-              label="Integrations"
-              value="Mock connectors"
-              tone="neutral"
-              note="The app is fully usable with sample data before any real credentials are connected."
-            />
-          </dl>
-        </Card>
+        {canLeads && (
+          <Card title="Nobody owns these yet" actions={<Link href="/leads?unassigned=true" className="text-sm text-brand">View all</Link>}>
+            {(unassigned?.items.length ?? 0) === 0 ? (
+              <EmptyState title="Every open lead has an owner" />
+            ) : (
+              <ul className="flex flex-col divide-y divide-line">
+                {unassigned!.items.map((lead) => (
+                  <li key={lead.id} className="flex items-center justify-between gap-3 py-2.5">
+                    <span className="min-w-0">
+                      <Link href={`/leads/${lead.id}`} className="block truncate font-medium hover:text-brand">{lead.personName}</Link>
+                      <span className="block text-xs text-ink-subtle">came in {relativeTime(lead.createdAt)}</span>
+                    </span>
+                    <Badge>{lead.stageName}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
       </div>
     </>
   );
 }
 
-/**
- * The overdue and today queries overlap — anything overdue is also due today —
- * so the same task would otherwise be listed twice.
- */
+/** Overdue tasks are also "due today", so the two lists overlap. */
 function dedupeById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
   return items.filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)));
 }
 
-function Tile({
-  label,
-  value,
-  href,
-  tone = "neutral",
-  pending,
-  unavailable,
-}: {
+function Tile({ icon: Icon, label, value, href, tone = "neutral" }: {
+  icon: ComponentType<{ size?: number }>;
   label: string;
-  value?: number;
-  href?: string;
+  value: number;
+  href: string;
   tone?: "neutral" | "caution" | "critical";
-  pending?: string;
-  unavailable?: boolean;
 }) {
-  const body = (
-    <div className="rounded-card border border-line bg-surface px-4 py-4">
-      <p className="text-sm font-medium">{label}</p>
-      <p
-        className={`mt-2 text-2xl font-semibold tabular-nums ${
-          pending || unavailable
-            ? "text-ink-subtle"
-            : tone === "critical"
-              ? "text-critical"
-              : tone === "caution"
-                ? "text-caution"
-                : "text-ink"
-        }`}
-      >
-        {pending || unavailable ? "—" : (value ?? 0)}
-      </p>
-      <p className="mt-2 text-xs text-ink-subtle">
-        {pending ?? (unavailable ? "Not available for your role" : "Live")}
-      </p>
-    </div>
-  );
-
-  return href && !pending && !unavailable ? (
-    <Link href={href} className="block hover:opacity-90">
-      {body}
-    </Link>
-  ) : (
-    body
-  );
-}
-
-function StatusRow({
-  label,
-  value,
-  tone,
-  note,
-}: {
-  label: string;
-  value: string;
-  tone: "neutral" | "caution" | "positive";
-  note?: string;
-}) {
+  const colour = tone === "critical" ? "text-critical" : tone === "caution" ? "text-caution" : "text-ink";
   return (
-    // One <div> directly around a dt/dd group — the only wrapper a <dl> allows.
-    <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 border-b border-line pb-3 last:border-0 last:pb-0">
-      <dt className="text-ink-muted">{label}</dt>
-      <dd>
-        <Badge tone={tone}>{value}</Badge>
-      </dd>
-      {note && <dd className="col-span-2 text-xs text-ink-subtle">{note}</dd>}
-    </div>
+    <Link href={href} className="flex items-center gap-3 rounded-card border border-line bg-surface p-4 shadow-[var(--shadow-card)] hover:border-brand">
+      <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand"><Icon size={20} /></span>
+      <span>
+        <span className={`block text-2xl font-semibold tabular-nums leading-tight ${colour}`}>{value}</span>
+        <span className="block text-sm text-ink-muted">{label}</span>
+      </span>
+    </Link>
   );
 }

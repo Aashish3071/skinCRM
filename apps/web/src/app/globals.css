@@ -41,37 +41,12 @@
   --shadow-pop: 0 8px 24px rgb(16 24 40 / 0.12);
 }
 
-/**
- * Dark theme. `@theme` only works at the top level, so the variables are
- * redefined on `:root` instead — the generated utilities reference
- * `var(--color-*)`, so overriding the values is enough.
- */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-canvas: #0e1215;
-    --color-surface: #161b1f;
-    --color-surface-muted: #1d2328;
-    --color-line: #283036;
-    --color-line-strong: #38424a;
 
-    --color-ink: #edf1f3;
-    --color-ink-muted: #a4afb8;
-    --color-ink-subtle: #8a959e;
 
-    --color-brand: #4fc4b6;
-    --color-brand-hover: #74d3c8;
-    --color-brand-soft: #12302d;
-
-    --color-positive: #5fc79b;
-    --color-positive-soft: #10281f;
-    --color-caution: #e0b062;
-    --color-caution-soft: #2a2113;
-    --color-critical: #f08a82;
-    --color-critical-soft: #2d1614;
-
-    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
-    --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5);
-  }
+/* Light theme only, at the client's request: tell the browser too, so form
+   controls and scrollbars never switch to dark on a dark-mode computer. */
+:root {
+  color-scheme: light;
 }
 
 html,
@@ -108,11 +83,7 @@ body {
 .text-on-brand {
   color: #ffffff;
 }
-@media (prefers-color-scheme: dark) {
-  .text-on-brand {
-    color: #0e1215;
-  }
-}
+
 
 /*
  * Tables that become stacked cards on phones. Each <td data-label="…"> shows
@@ -184,28 +155,7 @@ body {
   --wa-note: #fff4cc;
   --wa-note-text: #5c4400;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --wa-panel: #202c33;
-    --wa-list: #111b21;
-    --wa-list-hover: #202c33;
-    --wa-list-active: #2a3942;
-    --wa-wallpaper: #0b141a;
-    --wa-doodle: rgb(255 255 255 / 0.035);
-    --wa-in: #202c33;
-    --wa-out: #005c4b;
-    --wa-text: #e9edef;
-    --wa-meta: #8696a0;
-    --wa-green: #00a884;
-    --wa-green-bright: #25d366;
-    --wa-send: #00a884;
-    --wa-tick-read: #53bdeb;
-    --wa-chip: #182229;
-    --wa-input: #2a3942;
-    --wa-note: #3a2f12;
-    --wa-note-text: #f3dfa0;
-  }
-}
+
 
 /* The faint doodle wallpaper behind a chat. */
 .wa-wallpaper {

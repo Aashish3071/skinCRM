@@ -55,7 +55,7 @@ export function InboxShell({ list, view, search, selectedId, children }: {
                   <li key={v.key}>
                     <Link href={`/inbox${q({ view: v.key })}`} aria-current={active ? "true" : undefined}
                       className={`flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] ${
-                        active ? "bg-[#d9fdd3] font-medium text-[#0a5c36] dark:bg-[#103529] dark:text-[#25d366]" : "bg-[var(--wa-panel)] text-[var(--wa-meta)] hover:text-[var(--wa-text)]"
+                        active ? "bg-[#d9fdd3] font-medium text-[#0a5c36]" : "bg-[var(--wa-panel)] text-[var(--wa-meta)] hover:text-[var(--wa-text)]"
                       }`}>
                       {v.label}
                       {n > 0 && <span className="tabular-nums">{n}</span>}

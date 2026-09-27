@@ -86,6 +86,8 @@ export const listLeadsQuerySchema = z.object({
   ownerUserId: uuidSchema.optional(),
   /** `unassigned` is a first-class filter: it is the front desk's work queue. */
   unassigned: queryBoolean(false),
+  /** Open leads nobody has responded to yet, with a response-time target (D-73). */
+  awaitingResponse: queryBoolean(false),
   source: z.enum(LEAD_SOURCES).optional(),
   branchId: uuidSchema.optional(),
   /** Clinic-local dates; converted to UTC bounds server-side. */

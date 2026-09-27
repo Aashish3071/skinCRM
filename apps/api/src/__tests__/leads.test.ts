@@ -55,6 +55,8 @@ async function cleanup(): Promise<void> {
     .from(people)
     .where(or(like(people.displayName, `%${TAG}%`), like(people.emailRaw, `%${TAG}%`)));
   const ids = rows.map((r) => r.id);
+  // Standalone tasks (no person) are found by title.
+  await db.delete(tasks).where(like(tasks.title, `%${TAG}%`));
   if (ids.length === 0) return;
   const leadRows = await db.select({ id: leads.id }).from(leads).where(inArray(leads.personId, ids));
   const leadIds = leadRows.map((r) => r.id);

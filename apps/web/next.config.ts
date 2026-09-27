@@ -19,7 +19,10 @@ const config: NextConfig = {
   outputFileTracingRoot: new URL("../..", import.meta.url).pathname,
   // Lets a production build run beside `next dev` without clobbering its
   // output (NEXT_DIST_DIR=.next-build pnpm build).
-  distDir: process.env.NEXT_DIST_DIR ?? ".next",
+  // `next dev` gets its own folder, so a production build (`pnpm build`, CI,
+  // Docker) can never overwrite files the running dev server is serving — which
+  // is what broke the UI on 2026-09-27 (all CSS and JS returned 404).
+  distDir: process.env.NEXT_DIST_DIR ?? (process.env.NODE_ENV === "development" ? ".next-dev" : ".next"),
   typedRoutes: false,
 };
 

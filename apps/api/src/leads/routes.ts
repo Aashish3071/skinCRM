@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, asc, desc, eq, gte, ilike, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   addLeadNoteSchema,
@@ -705,6 +705,7 @@ async function buildLeadFilters(query: {
   createdTo?: string;
   includeClosed: boolean;
   includeTest: boolean;
+  awaitingResponse?: boolean;
 }) {
   const context = getContext();
   const conditions = [isNull(leads.archivedAt)];
@@ -722,6 +723,9 @@ async function buildLeadFilters(query: {
   if (!query.includeClosed) conditions.push(eq(pipelineStages.isClosed, false));
   // Test submissions are excluded by default so they cannot inflate reporting.
   if (!query.includeTest) conditions.push(eq(leads.isTest, false));
+  if (query.awaitingResponse) {
+    conditions.push(isNull(leads.firstResponseAt), isNull(leads.closedAt), isNotNull(leads.slaDueAt));
+  }
 
   if (query.createdFrom) conditions.push(gte(leads.createdAt, new Date(query.createdFrom)));
   if (query.createdTo) conditions.push(lte(leads.createdAt, new Date(query.createdTo)));
