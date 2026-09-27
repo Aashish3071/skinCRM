@@ -17,6 +17,8 @@ export interface InboundWhatsApp {
   body: string;
   providerMessageId: string;
   receivedAt?: Date;
+  /** Present when they tapped a click-to-WhatsApp ad (PRD FB-02). */
+  referral?: { sourceId?: string | null; ctwaClid?: string | null } | null;
 }
 
 /**
@@ -53,8 +55,9 @@ export async function receiveInboundWhatsApp(input: InboundWhatsApp): Promise<{ 
     const [firstName, ...rest] = (input.profileName ?? "").trim().split(/\s+/);
     const outcome = await ingestSubmission({
       platform: "whatsapp",
-      source: "whatsapp_organic",
+      source: input.referral ? "whatsapp_ad" : "whatsapp_organic",
       externalId: `wa:${phone.e164}`,
+      attribution: input.referral ? { adId: input.referral.sourceId ?? null, referralId: input.referral.ctwaClid ?? null } : undefined,
       submittedAt: at,
       firstName: firstName || null,
       lastName: rest.join(" ") || null,
@@ -86,8 +89,9 @@ export async function receiveInboundWhatsApp(input: InboundWhatsApp): Promise<{ 
   if (!leadId) {
     const outcome = await ingestSubmission({
       platform: "whatsapp",
-      source: "whatsapp_organic",
+      source: input.referral ? "whatsapp_ad" : "whatsapp_organic",
       externalId: `wa-msg:${input.providerMessageId}`,
+      attribution: input.referral ? { adId: input.referral.sourceId ?? null, referralId: input.referral.ctwaClid ?? null } : undefined,
       submittedAt: at,
       phone: phone.e164,
       inquiryNote: input.body.slice(0, 2_000),

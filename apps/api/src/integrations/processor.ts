@@ -158,6 +158,7 @@ async function processEvent(eventId: string): Promise<void> {
         body,
         providerMessageId: p.id,
         receivedAt: p.timestamp ? new Date(Number(p.timestamp) * 1000) : undefined,
+        referral: p.referral ? { sourceId: p.referral.source_id ?? null, ctwaClid: p.referral.ctwa_clid ?? null } : null,
       });
       result = `conversation:${outcome.conversationId}`;
       if (event.connectionId) await markConnection(event.connectionId, { ok: true });

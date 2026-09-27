@@ -367,34 +367,19 @@ contracts `packages/contracts/src/automations.ts`, UI `apps/web/src/app/(app)/au
 
 ## 7. Conversion feedback (CRM → ad platform)
 
-The highest-risk feature in the product. Architecture reflects that.
+Code: `apps/api/src/feedback/` (service + routes), adapters in
+`packages/connectors/src/meta/capi.ts` and `google/data-manager.ts`, UI at
+`/settings/feedback`.
 
-- **Transactional outbox.** A milestone transition writes a candidate row in the
-  same transaction as the stage change. The worker sends from the outbox. One
-  transition produces exactly one candidate per destination; retries reuse the
-  event id, so a replay cannot double-count a conversion.
-- **Default off.** `CONVERSION_FEEDBACK_ENABLED=false` globally, and each
-  destination starts at eligibility state `unreviewed`. Production sending
-  requires `approved_production`.
-- **Field allowlist, not a denylist.** Only the milestone event and the
-  identifiers in `FEEDBACK_MATCH_KEYS` may be transmitted. Service, condition,
-  diagnosis, treatment details, note text and arbitrary CRM fields are denied by
-  construction.
-- **No hashed contact identifiers for Google.** Google's customer-data policy
-  says health or medical conversions cannot be measured with enhanced
-  conversions. Hashing does not remove a health-data restriction, so hashed
-  email and phone are not in the allowlist at all.
-- **Preview and test mode.** An admin sees the exact event category, timestamp,
-  destination and identifiers, with personal values masked, before anything is
-  enabled. Test mode cannot silently promote itself to production.
-- **Kill switch.** One action stops all sends, and queued unsent events are
-  canceled rather than left pending.
-- **CRM reporting is independent.** A rejected or unmatched platform event is
-  still visible in the CRM and is never counted as a platform-reported
-  conversion. Sending events does not change campaign bidding; that remains a
-  deliberate action in the ad account.
-
----
+- `changeStage` → `createFeedbackCandidates()` for each milestone first stamped
+  (Qualified and Booked together, D-63), only for reviewed, unpaused destinations
+  with that milestone mapped. Match key from the lead's source submission: Meta lead
+  id, WhatsApp referral id (opt-in), or gclid; none → `unmatched`; test lead → `blocked`.
+- Worker `processFeedbackOutbox()` claims `queued` rows (SKIP LOCKED), re-runs
+  `feedbackGate()`, builds the allowlisted payload, sends via the adapter, and
+  records `accepted` / retries with backoff / `rejected`.
+- Pause and revoke cancel queued rows; unmapping a milestone cancels its queue.
+- The ops monitor alerts on rejections (`feedback_rejected`).
 
 ## 8. Authentication and authorization
 
@@ -540,5 +525,7 @@ Consequences to know about:
 | Monitoring, alerts, retention, health endpoints | ✅ Built, 7 tests |
 | CI, production images, compose + HTTPS, backups, restore test | ✅ Built and run |
 | Accessibility scan (WCAG 2.2 AA, automated) | ✅ 0 violations |
-| Conversion feedback outbox and gate `[FB-01…10]` | ⬜ Phase 8 |
+| Conversion feedback `[FB-01…10]` | ✅ Built, 13 tests (mocks) |
+| Notifications, clinic and personal profiles | ✅ Built, 6 tests |
+| Light theme only | ✅ |
 

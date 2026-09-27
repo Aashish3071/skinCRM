@@ -139,7 +139,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 | 5 | WhatsApp shared inbox `[WA-01…09]` | ✅ WhatsApp-style inbox, assignment, notes, reply lock, window rules, live Cloud API sender + webhooks |
 | 6 | Reporting and exports `[REP-01…04]` | 🅿️ Built and tested, parked (not in nav) at client request — D-72 |
 | 7 | Real integrations — Meta, Google, WhatsApp Cloud, email `[INT-01…09]` | 🟡 Meta Lead Ads, Google lead forms, WhatsApp Cloud and SMTP built and tested against fakes; needs real accounts to go live |
-| 8 | Conversion feedback — outbox, eligibility gate, adapters `[FB-01…10]` | ⬜ Not started |
+| 8 | Conversion feedback — outbox, eligibility gate, adapters `[FB-01…10]` | ✅ Built on mocks; Meta/Google must be tested with the real accounts (D-79, D-80) |
 | 9 | Hardening, backups, monitoring, deployment guide, 15 UAT scenarios | ✅ Done — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/UAT.md](docs/UAT.md) |
 
 ### Verify the build yourself
@@ -147,7 +147,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 ```bash
 pnpm typecheck    # clean
 pnpm lint         # clean
-pnpm test         # 303 tests: 14 RLS isolation, 24 security, 260 API, 5 web
+pnpm test         # 322 tests: 14 RLS isolation, 24 security, 279 API, 5 web
 ```
 
 ### Done and verified in phase 1
@@ -326,6 +326,21 @@ http://localhost:8025. Put both back before pointing at a real relay.
   viewer (Settings → Audit log), load check (p95 68 ms), accessibility scan
   (0 WCAG 2.2 AA violations, light and dark), deployment guide and UAT checklist.
   Fixed a launch blocker: production could not start (D-75).
+
+### Done in the fifth session
+
+- **Fixed a broken UI:** a production build had overwritten the dev server's
+  files (all CSS/JS 404). The dev server now uses `.next-dev`.
+- **Light theme only** (D-78) and a simpler **Home** (today's appointments,
+  tasks, leads waiting for a reply, unassigned leads).
+- **Clinic profile** (name, logo, phone, address, time zone) and **My profile**
+  (name, password, two-step sign-in with QR code).
+- **Notifications** — bell with unread count; new/assigned leads, upcoming
+  appointments, tasks due, missed response times, WhatsApp messages; per-person
+  settings (D-77).
+- **Phase 8 — Ad platform feedback** (Settings): Meta Conversions API and Google
+  Data Manager, milestone mapping, checklist, test mode, go-live, pause, revoke,
+  masked preview, diagnostics, bidding checklist (D-79, D-80).
 
 ### Going live
 

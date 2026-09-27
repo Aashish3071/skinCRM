@@ -19,8 +19,8 @@ column with the clinic.
 | 10 | Dashboard counts reconcile with lists and CSV | `reports.test.ts` (Reports parked, D-72) | 🅿️ Built; unpark to run | |
 | 11 | Connect the clinic's existing WhatsApp Business number | Manual only — needs Meta's coexistence onboarding | ⬜ Pilot | |
 | 12 | Duplicate WhatsApp webhooks → one message; free-form in/out of window; template | `inbox.test.ts`, `integrations.test.ts` | ✅ Automated on mocks · Manual with real number | |
-| 13 | Qualified twice + replay → one feedback event | Phase 8 (conversion feedback) not built | ⬜ Phase 8 | |
-| 14 | Unapproved feedback mapping blocked | Phase 8 | ⬜ Phase 8 | |
+| 13 | Qualified twice + replay → one feedback event | `feedback.test.ts` ("one event per milestone…") | ✅ Automated · Manual with real accounts in test mode | |
+| 14 | Unapproved feedback mapping / forbidden field blocked | `feedback.test.ts` (health-word event name refused; unreviewed queues nothing; allowlisted payload) | ✅ Automated | |
 | 15 | Pinned General Note visible on other leads; edit/archive audited; never in messages | `people.test.ts`, `messaging.test.ts` (render excludes notes), Notes section | ✅ Automated | |
 
 ## Release gates (PRD 9) — status

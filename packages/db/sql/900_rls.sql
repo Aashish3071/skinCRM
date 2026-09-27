@@ -70,7 +70,10 @@ declare
     -- Phase 7: integrations
     'integration_connections',
     'inbound_events',
-    'notifications'
+    'notifications',
+    -- Phase 8: conversion feedback
+    'feedback_destinations',
+    'feedback_events'
   ];
 begin
   foreach tbl in array tenant_tables loop

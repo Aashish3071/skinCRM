@@ -21,6 +21,7 @@ import { registerLeadRoutes } from "./leads/routes";
 import { registerMessagingRoutes } from "./messaging/routes";
 import { registerUnsubscribeRoutes } from "./messaging/unsubscribe-routes";
 import { registerPeopleRoutes } from "./people/routes";
+import { registerFeedbackRoutes } from "./feedback/routes";
 import { registerNotificationRoutes } from "./notifications/routes";
 import { registerProfileRoutes } from "./profile/routes";
 import { registerReportRoutes } from "./reports/routes";
@@ -162,6 +163,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerAuditLogRoutes(app);
   registerProfileRoutes(app);
   registerNotificationRoutes(app);
+  registerFeedbackRoutes(app);
 
   return app;
 }

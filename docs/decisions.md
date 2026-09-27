@@ -573,3 +573,24 @@ staff email alerts are the "Email the team" automation step (D-74).
 
 **D-78. Light theme only, at the client's request.** Dark palette and `dark:`
 classes removed; `color-scheme: light` so browser controls match.
+
+**D-79. Conversion feedback: reviewed before anything queues; allowlist, not blocklist.**
+`feedback_destinations` (one per clinic per platform) starts `unreviewed` and
+queues nothing. A three-point checklist moves it to `approved_test_only`;
+Go live (`approved_production`) is refused until a test event succeeded.
+Candidates are created only while a destination is reviewed and not paused, so
+approving later never back-fills old outcomes. The outbox (`feedback_events`) is
+unique per clinic × destination × lead × milestone, with a stable `event_id`
+(sha256), so repeats and replays can't double-report (UAT 13). The gate runs at
+send time: installation switch `CONVERSION_FEEDBACK_ENABLED`, pause, mapping still
+on, eligibility, credentials, test code. The payload builder has fields for the
+event name, time, id and one platform identifier only (Meta lead id / WhatsApp
+referral / gclid) — there is no path to add anything else (FB-03). Event names are
+screened for service and health words (UAT 14). Credentials are separate from lead
+ingestion and encrypted per clinic. Test events use Meta's test event code or
+Google's validate-only.
+
+**D-80. Google feedback uses the Data Manager API, click ID only.** No hashed
+email/phone and no enhanced conversions (Google's health policy). The request
+shape is marked "verify before go-live" in `google/data-manager.ts`; the test-mode
+gate exists so it is proven against the real account before real events flow.

@@ -77,6 +77,11 @@ export async function collectAlerts(now = new Date()): Promise<OpsAlert[]> {
           and coalesce(i.last_event_at, i.created_at) < ${iso}::timestamptz - interval '7 days'
         group by c.name
       union all
+      select 'feedback_rejected', c.name, count(*)::int
+        from feedback_events f join clinics c on c.id = f.clinic_id
+        where f.state = 'rejected' and f.updated_at > ${iso}::timestamptz - interval '24 hours'
+        group by c.name
+      union all
       select 'email_failures', c.name, count(*)::int
         from messages m join clinics c on c.id = m.clinic_id
         where m.channel = 'email' and m.state in ('failed', 'bounced')
@@ -91,6 +96,7 @@ export async function collectAlerts(now = new Date()): Promise<OpsAlert[]> {
     automation_backlog: ["warning", (c, n) => `${c}: ${n} automation runs overdue by more than 10 minutes.`],
     integration_error: ["critical", (c, n) => `${c}: ${n} connected account(s) reporting errors.`],
     source_silent: ["warning", (c, n) => `${c}: ${n} connected ad account(s) have sent no leads for 7 days — check the connection.`],
+    feedback_rejected: ["warning", (c, n) => `${c}: ${n} conversion events rejected by an ad platform in the last 24 hours (Settings → Ad platform feedback).`],
     email_failures: ["warning", (c, n) => `${c}: ${n} emails failed or bounced in the last hour.`],
   };
   for (const r of rows) {

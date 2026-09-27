@@ -67,3 +67,24 @@ export function getMetaLeadsConnector(): MetaLeadsConnector {
 export function setMetaLeadsConnector(connector: MetaLeadsConnector | undefined): void {
   metaLeads = connector;
 }
+
+export * from "./meta/capi";
+export * from "./google/data-manager";
+import { LiveMetaCapiConnector, MockMetaCapiConnector, type MetaCapiConnector } from "./meta/capi";
+import { LiveGoogleFeedbackConnector, MockGoogleFeedbackConnector, type GoogleFeedbackConnector } from "./google/data-manager";
+
+let capi: MetaCapiConnector | undefined;
+let googleFeedback: GoogleFeedbackConnector | undefined;
+
+/** Conversion-feedback senders, from CONNECTOR_META / CONNECTOR_GOOGLE. */
+export function getFeedbackConnectors(): { meta: MetaCapiConnector; google: GoogleFeedbackConnector } {
+  const env = getEnv();
+  capi ??= env.CONNECTOR_META === "live" ? new LiveMetaCapiConnector() : new MockMetaCapiConnector();
+  googleFeedback ??= env.CONNECTOR_GOOGLE === "live" ? new LiveGoogleFeedbackConnector() : new MockGoogleFeedbackConnector();
+  return { meta: capi, google: googleFeedback };
+}
+
+export function setFeedbackConnectors(next: { meta?: MetaCapiConnector; google?: GoogleFeedbackConnector } | undefined): void {
+  capi = next?.meta;
+  googleFeedback = next?.google;
+}

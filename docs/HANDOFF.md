@@ -1,8 +1,8 @@
 # Handoff — resume point
 
 **Updated:** 2026-09-26
-**Phase:** 9 done. Remaining: phase 8 (conversion feedback), unpark Reporting when asked, go-live with real accounts.
-**Overall:** ~90% of the build
+**Phase:** All 9 phases built. Remaining: go-live with real accounts, Reporting unpark.
+**Overall:** ~95% of the build
 
 Read [README.md](../README.md) to run it and [ARCHITECTURE.md](../ARCHITECTURE.md)
 for the rules that must not be broken. This file says only what to do next.
@@ -20,7 +20,7 @@ pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
 pnpm lint                     # clean
-pnpm test                     # expect 303 passing
+pnpm test                     # expect 322 passing
 ```
 
 If those 289 tests pass, the foundation is intact and you can build on it.
@@ -120,28 +120,26 @@ The next planned work is conversion feedback and deployment hardening.
 
 ## Do this next, in order
 
-Fourth session (2026-09-27) landed: staff lead alerts (D-74), response-time SLA
-(D-73), Settings → Lead rules, and all of phase 9 (D-75, D-76). All committed.
-303 tests passing, lint and typecheck clean, production images build and boot.
+Fifth session (2026-09-27): UI fix, light theme, Home, clinic/personal profiles,
+notifications, and phase 8 conversion feedback. 322 tests passing.
 
-### 1. Go live with the clinic — follow docs/DEPLOYMENT.md
-Server, `.env` from the table there, `docker compose … up`, create the first
-admin (no production seed — see §3), connect Meta/Google/WhatsApp/email in
-Settings, backup cron + off-site copy, uptime monitor on `/health/alerts`, then
-run the manual rows of docs/UAT.md with the clinic.
+Local `.env` now also has `CONVERSION_FEEDBACK_ENABLED=true` (mock connectors,
+nothing leaves the machine). Both feedback destinations were left **Off**.
 
-### 2. Phase 8 — conversion feedback `[FB-01…10]`
-Qualified = booked already stamps `qualified_at` (D-63). Build the outbox, the
-eligibility gate (default off), Meta CAPI + Google adapters, preview/test mode
-and the kill switch (`CONVERSION_FEEDBACK_ENABLED`). UAT rows 13–14 depend on it.
+### 1. Go live with the clinic — docs/DEPLOYMENT.md
+Plus, for feedback: connect Meta (dataset id, CAPI token, test event code) and
+Google (customer id, OAuth client, refresh token, conversion action ids) in
+Settings → Ad platform feedback, run the checklist, **send a test event against
+the real account** (Google's Data Manager request shape is marked verify-before-
+go-live), check it in Events Manager / Google Ads, then Go live.
 
-### 3. Smaller follow-ups
+### 2. Smaller follow-ups
 - Unpark Reporting when asked (D-72).
-- KMS-wrapped master key (D-75).
-- Business-hours SLA (skip nights/weekends) if the clinic wants it (D-73).
-- A production "create first clinic and admin" script, so §3 of DEPLOYMENT.md
-  isn't a manual SQL step.
-- Manual screen-reader pass (VoiceOver/NVDA) on the core flows.
+- A production "create first clinic and admin" script (DEPLOYMENT.md §3).
+- KMS-wrapped master key (D-75); business-hours SLA (D-73).
+- Email copies of notifications, if staff ask (today: in-app bell + the
+  "Email the team" automation).
+- Manual screen-reader pass.
 
 ---
 
@@ -221,6 +219,10 @@ and the kill switch (`CONVERSION_FEEDBACK_ENABLED`). UAT rows 13–14 depend on 
    `/health/alerts` does).
 29. **Tests that depend on `OUTBOUND_SENDING_ENABLED` must set it** — a
    developer's local `.env` may have sending on.
+31. **Never run `next build` into `.next` while `next dev` is running** — dev now
+   uses `.next-dev` (next.config.ts) so this can't recur, but keep it that way.
+32. **The ESLint config has no Next.js plugin** — don't write
+   `eslint-disable @next/next/...` comments; the rule doesn't exist here.
 30. **Port 3000 may be taken** on the dev machine (another Docker project);
    `web-3100` in `.claude/launch.json` runs the web app on 3100.
 24. **Stop the dev API before `pnpm test`** — its in-process worker claims the

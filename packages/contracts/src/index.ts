@@ -13,3 +13,4 @@ export * from "./inbox";
 export * from "./integrations";
 export * from "./reports";
 export * from "./profile";
+export * from "./feedback";

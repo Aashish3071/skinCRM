@@ -4,6 +4,7 @@ import { processSlaBreaches } from "../leads/sla";
 import { housekeeping, processDueAutomations } from "./jobs";
 import { heartbeat, runMonitor } from "../ops/monitor";
 import { processTimedNotifications } from "../notifications/service";
+import { processFeedbackOutbox } from "../feedback/service";
 
 const HOUSEKEEPING_MS = 60 * 60 * 1000;
 const MONITOR_MS = 5 * 60 * 1000;
@@ -28,7 +29,7 @@ export function startWorker(pollMs: number): () => Promise<void> {
         let processed = 0;
         do {
           // New leads first: an automation may be waiting on them.
-          processed = (await processDueInboundEvents()) + (await processDueAutomations()) + (await processSlaBreaches());
+          processed = (await processDueInboundEvents()) + (await processDueAutomations()) + (await processSlaBreaches()) + (await processFeedbackOutbox());
         } while (processed > 0 && !stopping);
 
         // Tells /health/ready and the monitor the worker is alive.

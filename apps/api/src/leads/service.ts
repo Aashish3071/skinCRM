@@ -1,5 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
+  type FeedbackMilestone,
   CLOSED_STAGE_CATEGORIES,
   REASON_REQUIRED_STAGE_CATEGORIES,
   STAGE_MILESTONE_FIELD,
@@ -163,6 +164,17 @@ export async function changeStage(params: {
     reason,
     occurredAt: now,
   });
+
+  // Conversion feedback (PRD FB-05): one candidate per milestone first reached.
+  const reached: FeedbackMilestone[] = [];
+  if (updates.qualifiedAt) reached.push("qualified");
+  if (updates.bookedAt) reached.push("consultation_booked");
+  if (updates.attendedAt) reached.push("consultation_attended");
+  if (updates.convertedAt) reached.push("converted");
+  if (reached.length) {
+    const { createFeedbackCandidates } = await import("../feedback/service");
+    for (const m of reached) await createFeedbackCandidates({ id: lead.id, isTest: lead.isTest }, m, now);
+  }
 
   // A person moving a lead is a response to it (D-73). Lazy import: sla.ts
   // imports this module.
