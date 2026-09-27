@@ -160,15 +160,7 @@ export function registerUserRoutes(app: FastifyInstance): void {
       const losingAdmin =
         before.role === "admin" &&
         ((body.role && body.role !== "admin") || body.status === "suspended");
-      if (losingAdmin) {
-        const remaining = await tx
-          .select({ id: users.id })
-          .from(users)
-          .where(and(eq(users.role, "admin"), eq(users.status, "active"), isNull(users.archivedAt)));
-        if (remaining.filter((r) => r.id !== params.id).length === 0) {
-          throw badRequest("This is the clinic's only active admin. Promote someone else first.");
-        }
-      }
+      await assertNotLastActiveAdmin(params.id, losingAdmin);
 
       const updates: Record<string, unknown> = {};
       if (body.fullName !== undefined) updates.fullName = body.fullName;
@@ -224,8 +216,9 @@ export function registerUserRoutes(app: FastifyInstance): void {
       if (params.id === context.userId) {
         throw forbidden("You cannot archive your own account.");
       }
-      const found = await tx.select({ role: users.role }).from(users).where(eq(users.id, params.id)).limit(1);
+      const found = await tx.select({ role: users.role, status: users.status }).from(users).where(eq(users.id, params.id)).limit(1);
       if (!found[0]) throw notFound("No such user.");
+      await assertNotLastActiveAdmin(params.id, found[0].role === "admin");
 
       // Archived, not deleted: their audit entries, notes and assigned records
       // must remain attributable (BRD 7).
@@ -235,6 +228,55 @@ export function registerUserRoutes(app: FastifyInstance): void {
         .where(eq(users.id, params.id));
       await revokeAllSessionsForUser(context.clinicId!, params.id);
       await recordAudit({ action: "user_suspended", entityType: "user", entityId: params.id });
+      return null;
+    },
+  });
+
+  /**
+   * Permanently delete a staff account (distinct from Archive above, which is
+   * reversible and is what actually revokes access). An admin account can
+   * never be deleted directly — the role has to be changed away from admin
+   * first, so a delete can never be the accidental way a clinic loses its last
+   * admin. Audit entries, notes and timeline entries keep the person's name in
+   * a denormalized label field, so history still reads correctly afterward.
+   */
+  registerRoute(app, {
+    method: "DELETE",
+    url: "/users/:id/permanent",
+    auth: { capability: "users:write" },
+    params: z.object({ id: uuidSchema }),
+    status: 204,
+    handler: async ({ params }) => {
+      const context = getContext();
+      const tx = getTx();
+      if (params.id === context.userId) {
+        throw forbidden("You cannot delete your own account.");
+      }
+      const found = await tx.select({ role: users.role, fullName: users.fullName }).from(users).where(eq(users.id, params.id)).limit(1);
+      if (!found[0]) throw notFound("No such user.");
+      if (found[0].role === "admin") {
+        throw badRequest("This is an admin account. Change their role first, then you can delete it.");
+      }
+
+      await recordAudit({
+        action: "record_deleted",
+        entityType: "user",
+        entityId: params.id,
+        changeSummary: { fullName: found[0].fullName, deleted: true },
+      });
+
+      try {
+        await tx.delete(users).where(eq(users.id, params.id));
+      } catch (error) {
+        // FK RESTRICT on appointments.staff_user_id: a practitioner with any
+        // appointment history cannot be removed outright, only archived.
+        if ((error as { code?: string }).code === "23503") {
+          throw conflict(
+            "This person has appointments or other records that depend on their account. Archive them instead to remove their access.",
+          );
+        }
+        throw error;
+      }
       return null;
     },
   });
@@ -297,6 +339,23 @@ function assertCapabilitiesAreGrantable(requested: readonly Capability[]): void 
     throw badRequest("Those permissions cannot be granted individually.", {
       grantedCapabilities: rejected.map((c) => `${c} is not delegatable`),
     });
+  }
+}
+
+/**
+ * Refuse an action that would leave the clinic with no active admin at all.
+ * `wouldLoseAdmin` is true when the target is currently an active admin and
+ * the action would take that away (a role change, a suspension, or a delete).
+ */
+async function assertNotLastActiveAdmin(userId: string, wouldLoseAdmin: boolean): Promise<void> {
+  if (!wouldLoseAdmin) return;
+  const tx = getTx();
+  const remaining = await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.role, "admin"), eq(users.status, "active"), isNull(users.archivedAt)));
+  if (remaining.filter((r) => r.id !== userId).length === 0) {
+    throw badRequest("This is the clinic's only active admin. Promote someone else first.");
   }
 }
 

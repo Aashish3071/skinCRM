@@ -6,6 +6,7 @@ import { USER_ROLES, USER_ROLE_LABELS, type UserRole } from "@skincrm/contracts"
 import { Badge, Card, Field, inputClasses } from "@/components/ui";
 import {
   archiveStaffAction,
+  deleteStaffAction,
   inviteStaffAction,
   updateStaffRoleAction,
   type StaffActionState,
@@ -89,7 +90,8 @@ export function StaffTable({ members, currentUserId }: { members: StaffMember[];
 function StaffRow({ member, isSelf }: { member: StaffMember; isSelf: boolean }) {
   const [roleState, roleAction] = useActionState(updateStaffRoleAction, initial);
   const [archiveState, archiveAction] = useActionState(archiveStaffAction, initial);
-  const feedback = roleState.status !== "idle" ? roleState : archiveState;
+  const [deleteState, deleteAction] = useActionState(deleteStaffAction, initial);
+  const feedback = roleState.status !== "idle" ? roleState : archiveState.status !== "idle" ? archiveState : deleteState;
 
   return (
     <>
@@ -156,12 +158,33 @@ function StaffRow({ member, isSelf }: { member: StaffMember; isSelf: boolean }) 
         </td>
 
         <td className="py-3">
-          {!isSelf && member.status !== "suspended" && (
-            <form action={archiveAction}>
-              <input type="hidden" name="userId" value={member.id} />
-              <SubmitButton label="Archive" pendingLabel="…" subtle danger />
-            </form>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {!isSelf && member.status !== "suspended" && (
+              <form action={archiveAction}>
+                <input type="hidden" name="userId" value={member.id} />
+                <SubmitButton label="Archive" pendingLabel="…" subtle danger />
+              </form>
+            )}
+            {!isSelf && member.role !== "admin" ? (
+              <form
+                action={deleteAction}
+                onSubmit={(event) => {
+                  if (!window.confirm(`Permanently delete ${member.fullName}'s account? This can't be undone.`)) {
+                    event.preventDefault();
+                  }
+                }}
+              >
+                <input type="hidden" name="userId" value={member.id} />
+                <SubmitButton label="Delete" pendingLabel="…" subtle danger />
+              </form>
+            ) : (
+              !isSelf && (
+                <span className="text-xs text-ink-subtle" title="Change their role away from Admin before deleting.">
+                  Admins can&rsquo;t be deleted
+                </span>
+              )
+            )}
+          </div>
         </td>
       </tr>
 

@@ -13,14 +13,14 @@ import {
   MoreIcon,
   NotesIcon,
   PeopleIcon,
+  ReportsIcon,
   SettingsIcon,
   XIcon,
   ZapIcon,
 } from "./icons";
 
 /**
- * Main navigation. Only sections that work are listed. Reports is built but
- * parked (not linked) until the client asks for it — see docs/HANDOFF.md.
+ * Main navigation. Only sections that work are listed.
  *
  * `capability` decides whether a link renders at all. Presentation only: the
  * API enforces the same capability independently.
@@ -41,6 +41,7 @@ export const NAV_SECTIONS: NavSection[] = [
   { href: "/calendar", label: "Calendar", capability: "appointments:read", icon: CalendarIcon, primary: true },
   { href: "/people", label: "Patients", capability: "people:read", icon: PeopleIcon, primary: false },
   { href: "/notes", label: "Notes", capability: "notes:read", icon: NotesIcon, primary: false },
+  { href: "/reports", label: "Reports", capability: "reports:read", icon: ReportsIcon, primary: false },
   { href: "/activity", label: "Activity", capability: "leads:read", icon: ActivityIcon, primary: false },
   { href: "/automations", label: "Automations", capability: "automations:read", icon: ZapIcon, primary: false },
   { href: "/settings", label: "Settings", capability: "settings:read", icon: SettingsIcon, primary: false },

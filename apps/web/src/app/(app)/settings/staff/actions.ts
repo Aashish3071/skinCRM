@@ -73,6 +73,27 @@ export async function archiveStaffAction(
 }
 
 /**
+ * Permanently delete a non-admin staff account. The API refuses this outright
+ * for an admin — their role has to be changed first — so that guard does not
+ * need repeating here.
+ */
+export async function deleteStaffAction(
+  _previous: StaffActionState,
+  formData: FormData,
+): Promise<StaffActionState> {
+  const userId = String(formData.get("userId") ?? "");
+
+  try {
+    await apiFetch(`/users/${userId}/permanent`, { method: "DELETE" });
+  } catch (error) {
+    return toState(error);
+  }
+
+  revalidatePath("/settings/staff");
+  return { status: "success", message: "Account deleted." };
+}
+
+/**
  * Surface the API's own message and field errors. The API is the authority on
  * whether an action is allowed, so its wording is what the user should see rather
  * than a guess made here.
