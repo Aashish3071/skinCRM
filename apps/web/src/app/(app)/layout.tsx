@@ -1,6 +1,7 @@
 import { USER_ROLE_LABELS } from "@skincrm/contracts";
 import { LogoutIcon } from "@/components/icons";
 import { SideNav, TabBar } from "@/components/nav";
+import { NotificationBell } from "@/components/notification-bell";
 import { logoutAction } from "@/lib/auth-actions";
 import { requireSession } from "@/lib/session";
 import Link from "next/link";
@@ -43,10 +44,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-line bg-surface md:flex">
         <div className="flex items-center gap-3 px-5 pb-4 pt-5">
           <ClinicMark name={session.clinic.name} logoVersion={session.clinic.logoVersion} />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-[15px] font-semibold leading-tight tracking-tight">{session.clinic.name}</p>
             <p className="text-xs text-ink-subtle">SkinCRM</p>
           </div>
+          <NotificationBell />
         </div>
         <div className="flex-1 overflow-y-auto px-3">
           <SideNav capabilities={session.capabilities} />
@@ -83,9 +85,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <ClinicMark name={session.clinic.name} logoVersion={session.clinic.logoVersion} size={28} />
           <p className="truncate text-[15px] font-semibold tracking-tight">{session.clinic.name}</p>
         </div>
-        <Link href="/settings/profile" aria-label="My profile" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand">
-          {initials}
-        </Link>
+        <div className="flex shrink-0 items-center gap-1">
+          <NotificationBell align="right" />
+          <Link href="/settings/profile" aria-label="My profile" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand">
+            {initials}
+          </Link>
+        </div>
       </header>
 
       <main id="main" className="px-4 pb-24 pt-6 md:ml-60 md:px-10 md:pb-10 md:pt-8">

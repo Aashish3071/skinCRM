@@ -477,3 +477,24 @@ export type InboundEventType = (typeof INBOUND_EVENT_TYPES)[number];
 
 export const INBOUND_EVENT_STATES = ["pending", "processed", "failed", "ignored"] as const;
 export type InboundEventState = (typeof INBOUND_EVENT_STATES)[number];
+
+// --- Notifications ------------------------------------------------------------
+
+export const NOTIFICATION_TYPES = [
+  "lead_new",
+  "lead_assigned",
+  "appointment_soon",
+  "task_due",
+  "sla_missed",
+  "whatsapp_message",
+] as const;
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, { title: string; description: string }> = {
+  lead_new: { title: "New leads nobody owns yet", description: "Someone new came in and needs picking up." },
+  lead_assigned: { title: "Leads given to me", description: "A lead was assigned to you." },
+  appointment_soon: { title: "My upcoming appointments", description: "An hour before each of your appointments." },
+  task_due: { title: "My tasks coming due", description: "When one of your tasks is due." },
+  sla_missed: { title: "Missed response times", description: "Nobody responded to a new lead in time." },
+  whatsapp_message: { title: "WhatsApp messages", description: "A patient wrote in (chats you handle, or unassigned ones)." },
+};

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, asc, desc, eq, gte, ilike, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  LEAD_SOURCE_LABELS,
   addLeadNoteSchema,
   assignLeadSchema,
   changeStageSchema,
@@ -24,6 +25,7 @@ import { diffSummary, recordAudit } from "../audit";
 import { registerRoute } from "../route";
 import { emitAutomationEvent } from "../automations/engine";
 import { markFirstResponse, slaDueFor } from "./sla";
+import { notifyNewLead } from "../notifications/service";
 import { createPerson, getPerson, DuplicatePersonError } from "../people/service";
 import { AppError } from "../errors";
 import { routeLead } from "./assignment";
@@ -235,7 +237,9 @@ export function registerLeadRoutes(app: FastifyInstance): void {
 
       await emitAutomationEvent({ type: "lead_created", leadId: lead.id, personId: lead.personId, source: body.source });
 
-      return loadLeadDto(lead.id);
+      const dto = await loadLeadDto(lead.id);
+      await notifyNewLead({ id: lead.id, ownerUserId: routing.ownerUserId }, dto.personName, LEAD_SOURCE_LABELS[body.source]);
+      return dto;
     },
   });
 

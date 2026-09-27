@@ -69,7 +69,8 @@ declare
     'conversation_notes',
     -- Phase 7: integrations
     'integration_connections',
-    'inbound_events'
+    'inbound_events',
+    'notifications'
   ];
 begin
   foreach tbl in array tenant_tables loop

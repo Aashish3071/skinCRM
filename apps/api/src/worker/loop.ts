@@ -3,6 +3,7 @@ import { processDueInboundEvents } from "../integrations/processor";
 import { processSlaBreaches } from "../leads/sla";
 import { housekeeping, processDueAutomations } from "./jobs";
 import { heartbeat, runMonitor } from "../ops/monitor";
+import { processTimedNotifications } from "../notifications/service";
 
 const HOUSEKEEPING_MS = 60 * 60 * 1000;
 const MONITOR_MS = 5 * 60 * 1000;
@@ -16,6 +17,7 @@ export function startWorker(pollMs: number): () => Promise<void> {
   let stopping = false;
   let lastHousekeeping = 0;
   let lastMonitor = 0;
+  let lastTimed = 0;
   let wake: (() => void) | null = null;
 
   const done = (async () => {
@@ -31,6 +33,10 @@ export function startWorker(pollMs: number): () => Promise<void> {
 
         // Tells /health/ready and the monitor the worker is alive.
         await heartbeat("worker");
+        if (Date.now() - lastTimed > 60_000) {
+          lastTimed = Date.now();
+          await processTimedNotifications();
+        }
         if (Date.now() - lastMonitor > MONITOR_MS) {
           lastMonitor = Date.now();
           await runMonitor();

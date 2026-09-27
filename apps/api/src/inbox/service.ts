@@ -5,6 +5,7 @@ import { getContext, getTx } from "../context";
 import { ingestSubmission } from "../intake/pipeline";
 import { addActivity } from "../leads/service";
 import { ensureConversation, touchConversation } from "./store";
+import { notifyUsers, usersWith } from "../notifications/service";
 
 const { people, messages, leads, clinics } = schema;
 
@@ -115,6 +116,17 @@ export async function receiveInboundWhatsApp(input: InboundWhatsApp): Promise<{ 
   });
 
   await touchConversation(conversationId, { direction: "inbound", body: input.body, at });
+
+  // One notification per chat, bumped on each new message (D-77).
+  const convo = (await tx.select({ assignee: schema.conversations.assignedUserId }).from(schema.conversations).where(eq(schema.conversations.id, conversationId)).limit(1))[0];
+  const who = (await tx.select({ name: people.displayName }).from(people).where(eq(people.id, person.id)).limit(1))[0];
+  await notifyUsers(convo?.assignee ? [convo.assignee] : await usersWith("conversations:assign"), {
+    type: "whatsapp_message",
+    title: `WhatsApp from ${who?.name ?? "a patient"}`,
+    body: input.body.split("\n")[0]!.slice(0, 80),
+    link: `/inbox/${conversationId}`,
+    dedupeKey: `wa:${conversationId}`,
+  });
 
   await addActivity({
     personId: person.id,

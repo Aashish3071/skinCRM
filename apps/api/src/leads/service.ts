@@ -230,6 +230,17 @@ export async function assignLead(params: {
     .where(eq(leads.id, lead.id))
     .returning();
 
+  if (params.ownerUserId) {
+    const { notifyUsers } = await import("../notifications/service");
+    const person = (await tx.select({ name: people.displayName }).from(people).where(eq(people.id, lead.personId)).limit(1))[0];
+    await notifyUsers([params.ownerUserId], {
+      type: "lead_assigned",
+      title: `Lead given to you: ${person?.name ?? "a lead"}`,
+      link: `/leads/${lead.id}`,
+      dedupeKey: `lead:${lead.id}:assigned:${params.ownerUserId}`,
+    });
+  }
+
   await addActivity({
     personId: lead.personId,
     leadId: lead.id,

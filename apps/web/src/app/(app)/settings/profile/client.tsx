@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { PASSWORD_MIN_LENGTH } from "@skincrm/contracts";
+import { NOTIFICATION_TYPES, NOTIFICATION_TYPE_LABELS, PASSWORD_MIN_LENGTH, type NotificationType } from "@skincrm/contracts";
+import { saveMutedAction } from "@/lib/notification-actions";
 import { Badge, Field, buttonClasses, inputClasses } from "@/components/ui";
 import {
   changePasswordAction,
@@ -29,8 +30,8 @@ function Section({ title, intro, children }: { title: string; intro?: string; ch
   );
 }
 
-export function MyProfile({ name, email, role, mfaEnabled, mustEnableMfa, isAdmin }: {
-  name: string; email: string; role: string; mfaEnabled: boolean; mustEnableMfa: boolean; isAdmin: boolean;
+export function MyProfile({ name, email, role, mfaEnabled, mustEnableMfa, isAdmin, muted }: {
+  name: string; email: string; role: string; mfaEnabled: boolean; mustEnableMfa: boolean; isAdmin: boolean; muted: NotificationType[];
 }) {
   const [pending, start] = useTransition();
   const [nameResult, setNameResult] = useState<ProfileResult | null>(null);
@@ -67,6 +68,8 @@ export function MyProfile({ name, email, role, mfaEnabled, mustEnableMfa, isAdmi
           <Outcome result={pwResult} />
         </form>
       </Section>
+
+      <Notifications initial={muted} />
 
       <TwoStep enabled={mfaEnabled} highlight={mustEnableMfa || (isAdmin && !mfaEnabled)} />
     </div>
@@ -126,5 +129,41 @@ function TwoStep({ enabled, highlight }: { enabled: boolean; highlight: boolean 
         </>
       )}
     </Section>
+  );
+}
+
+/** Each switch saves as soon as you flip it. */
+function Notifications({ initial }: { initial: NotificationType[] }) {
+  const [muted, setMuted] = useState<NotificationType[]>(initial);
+  const [status, setStatus] = useState<string | null>(null);
+  const [, start] = useTransition();
+  const toggle = (t: NotificationType, on: boolean) => {
+    const next = on ? muted.filter((m) => m !== t) : [...muted, t];
+    setMuted(next);
+    start(async () => setStatus((await saveMutedAction(next)) ? "Saved." : "Couldn't save — try again."));
+  };
+  return (
+    <section id="notifications" className="scroll-mt-6 rounded-card border border-line bg-surface p-5 shadow-[var(--shadow-card)]">
+      <h2 className="text-base font-semibold">Notifications</h2>
+      <p className="mt-0.5 text-sm text-ink-muted">What shows up under the bell for you.</p>
+      <ul className="mt-4 flex flex-col divide-y divide-line">
+        {NOTIFICATION_TYPES.map((t) => {
+          const on = !muted.includes(t);
+          return (
+            <li key={t} className="flex items-center justify-between gap-4 py-3">
+              <span>
+                <span className="block text-sm font-medium">{NOTIFICATION_TYPE_LABELS[t].title}</span>
+                <span className="block text-xs text-ink-subtle">{NOTIFICATION_TYPE_LABELS[t].description}</span>
+              </span>
+              <button type="button" role="switch" aria-checked={on} aria-label={NOTIFICATION_TYPE_LABELS[t].title} onClick={() => toggle(t, !on)}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${on ? "bg-brand" : "bg-line-strong"}`}>
+                <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${on ? "translate-x-5" : "translate-x-0.5"}`} />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {status && <p role="status" className="mt-2 text-xs text-ink-subtle">{status}</p>}
+    </section>
   );
 }

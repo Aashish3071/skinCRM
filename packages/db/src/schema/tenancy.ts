@@ -128,6 +128,8 @@ export const users = pgTable(
      * issued with and are rejected when it no longer matches.
      */
     sessionEpoch: integer("session_epoch").notNull().default(0),
+    /** Notification types this person has switched off; everything else is on. */
+    mutedNotifications: jsonb("muted_notifications").$type<string[]>().notNull().default([]),
     ...timestamps(),
     archivedAt: archivedAt(),
   },

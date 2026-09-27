@@ -559,3 +559,17 @@ and emails `OPS_ALERT_EMAIL` (hourly per problem); `/health/alerts` exposes the
 same to an uptime monitor behind `MONITOR_TOKEN`. Retention deletes raw provider
 payloads after `RAW_PAYLOAD_RETENTION_DAYS` and processed events after 90 days;
 personal records are never deleted on a timer.
+
+**D-77. In-app notifications with a bump-not-pile rule.**
+`notifications` rows are per user, unique on `(user_id, dedupe_key)`; a repeat of
+the same thing (another message in the same chat, the same lead) re-opens and
+re-dates the existing row instead of adding one. Sources: new unowned lead
+(to everyone with `leads:assign`), lead assigned (new owner), appointment within
+60 min (the staff member), task due (owner), missed response time (owner +
+admins), WhatsApp message (assignee, or `conversations:assign` if unassigned).
+Never to the person who caused it. People mute types in My profile
+(`users.muted_notifications`). The bell polls every 30 s; no push or email here —
+staff email alerts are the "Email the team" automation step (D-74).
+
+**D-78. Light theme only, at the client's request.** Dark palette and `dark:`
+classes removed; `color-scheme: light` so browser controls match.

@@ -1,5 +1,6 @@
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import {
+  LEAD_SOURCE_LABELS,
   normalizeEmail,
   normalizePhone,
   type ConsentPurpose,
@@ -16,6 +17,7 @@ import { recordAudit } from "../audit";
 import { emitAutomationEvent } from "../automations/engine";
 import { addActivity, stageByCategory } from "../leads/service";
 import { slaDueFor } from "../leads/sla";
+import { notifyNewLead } from "../notifications/service";
 import { routeLead } from "../leads/assignment";
 import { buildDisplayName } from "../people/service";
 
@@ -311,6 +313,8 @@ export async function ingestSubmission(input: IntakeInput): Promise<IntakeOutcom
   });
 
   await emitAutomationEvent({ type: "lead_created", leadId, personId, source: input.source });
+  const personRow = (await tx.select({ name: people.displayName }).from(people).where(eq(people.id, personId)).limit(1))[0];
+  await notifyNewLead({ id: leadId, ownerUserId: routing.ownerUserId }, personRow?.name ?? "Someone", LEAD_SOURCE_LABELS[input.source]);
 
   return { status: "created", submissionId, personId, leadId, ownerUserId: routing.ownerUserId };
 }

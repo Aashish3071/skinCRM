@@ -5,6 +5,7 @@ import { logger } from "../logger";
 import { runAsSystem } from "../automations/system-context";
 import { sendSystemEmail, webLink } from "../messaging/system-email";
 import { addActivity } from "./service";
+import { notifyUsers } from "../notifications/service";
 
 const { leads, clinics, tasks, users, people } = schema;
 
@@ -73,6 +74,15 @@ async function escalate(leadId: string): Promise<void> {
     leadId: lead.id,
     type: "system",
     summary: `Response time missed — nobody responded within ${clinic.firstResponseSlaMinutes} minutes`,
+  });
+  const admins = (await tx.select({ id: users.id, role: users.role }).from(users).where(and(eq(users.status, "active"), isNull(users.archivedAt))))
+    .filter((u) => u.role === "admin").map((u) => u.id);
+  await notifyUsers([lead.ownerUserId, ...admins], {
+    type: "sla_missed",
+    title: `No reply yet: ${name}`,
+    body: `Came in ${clinic.firstResponseSlaMinutes} min ago`,
+    link: `/leads/${lead.id}`,
+    dedupeKey: `lead:${lead.id}:sla`,
   });
   if (!clinic.slaEscalationEnabled) return;
 
