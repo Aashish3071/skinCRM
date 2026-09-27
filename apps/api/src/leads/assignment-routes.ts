@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, asc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import {
+  leadRulesSettingsSchema,
   createAssignmentRuleSchema,
   updateAssignmentRuleSchema,
   uuidSchema,
@@ -147,6 +148,69 @@ export function registerAssignmentRuleRoutes(app: FastifyInstance): void {
         changeSummary: { deleted: rule.name },
       });
       return null;
+    },
+  });
+
+  /**
+   * Put rules in a new order (first = checked first). Priorities are unique,
+   * so they are parked on negative numbers first, then renumbered 10, 20, 30…
+   * — all inside the request transaction, so a failure changes nothing.
+   */
+  registerRoute(app, {
+    method: "POST",
+    url: "/assignment-rules/reorder",
+    auth: { capability: "settings:write" },
+    body: z.object({ ids: z.array(uuidSchema).min(1).max(200) }),
+    handler: async ({ body }) => {
+      const tx = getTx();
+      const existing = await tx.select({ id: assignmentRules.id }).from(assignmentRules);
+      const known = new Set(existing.map((r) => r.id));
+      if (body.ids.length !== known.size || body.ids.some((id) => !known.has(id))) {
+        throw badRequest("Send every rule exactly once.");
+      }
+      for (const [i, id] of body.ids.entries()) {
+        await tx.update(assignmentRules).set({ priority: -(i + 1) }).where(eq(assignmentRules.id, id));
+      }
+      for (const [i, id] of body.ids.entries()) {
+        await tx.update(assignmentRules).set({ priority: (i + 1) * 10, updatedAt: new Date() }).where(eq(assignmentRules.id, id));
+      }
+      await recordAudit({ action: "settings_changed", entityType: "assignment_rule", entityId: body.ids[0]!, changeSummary: { reordered: body.ids.length } });
+      const rows = await tx.select().from(assignmentRules).orderBy(asc(assignmentRules.priority));
+      return { items: rows.map(serialize) };
+    },
+  });
+
+  // --- Response-time SLA settings (D-73) ------------------------------------
+  registerRoute(app, {
+    method: "GET",
+    url: "/settings/lead-rules",
+    auth: { capability: "settings:read" },
+    handler: async () => {
+      const c = (await getTx().select().from(schema.clinics).limit(1))[0]!;
+      return { firstResponseSlaMinutes: c.firstResponseSlaMinutes, slaEscalationEnabled: c.slaEscalationEnabled };
+    },
+  });
+
+  registerRoute(app, {
+    method: "PATCH",
+    url: "/settings/lead-rules",
+    auth: { capability: "settings:write" },
+    body: leadRulesSettingsSchema,
+    handler: async ({ body }) => {
+      const tx = getTx();
+      const before = (await tx.select().from(schema.clinics).limit(1))[0]!;
+      await tx
+        .update(schema.clinics)
+        .set({ firstResponseSlaMinutes: body.firstResponseSlaMinutes, slaEscalationEnabled: body.slaEscalationEnabled, updatedAt: new Date() })
+        .where(eq(schema.clinics.id, before.id));
+      await recordAudit({
+        action: "settings_changed",
+        entityType: "clinic",
+        entityId: before.id,
+        changeSummary: { sla: { from: before.firstResponseSlaMinutes, to: body.firstResponseSlaMinutes }, escalation: body.slaEscalationEnabled },
+      });
+      // Applies to leads created from now on; existing due times are kept.
+      return body;
     },
   });
 

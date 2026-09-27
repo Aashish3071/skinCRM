@@ -161,6 +161,15 @@ export const leads = pgTable(
 
     /** Milestone timestamps. These drive the funnel and conversion feedback. */
     firstContactedAt: timestamp("first_contacted_at", { withTimezone: true, mode: "date" }),
+    /**
+     * Response-time SLA (D-73). `first_response_at` is the first time anyone on
+     * the team did something with the lead — a logged call attempt, a message,
+     * moving it out of New. `sla_due_at` is fixed at creation from the clinic's
+     * target; `sla_breached_at` is stamped once by the worker when it passes.
+     */
+    firstResponseAt: timestamp("first_response_at", { withTimezone: true, mode: "date" }),
+    slaDueAt: timestamp("sla_due_at", { withTimezone: true, mode: "date" }),
+    slaBreachedAt: timestamp("sla_breached_at", { withTimezone: true, mode: "date" }),
     qualifiedAt: timestamp("qualified_at", { withTimezone: true, mode: "date" }),
     qualifiedByUserId: uuid("qualified_by_user_id").references(() => users.id, { onDelete: "set null" }),
     bookedAt: timestamp("booked_at", { withTimezone: true, mode: "date" }),
@@ -179,6 +188,8 @@ export const leads = pgTable(
   (t) => [
     index("leads_clinic_stage_idx").on(t.clinicId, t.stageId),
     index("leads_clinic_owner_idx").on(t.clinicId, t.ownerUserId),
+    // The worker's SLA sweep: open, unanswered, due.
+    index("leads_sla_due_idx").on(t.slaDueAt).where(sql`${t.firstResponseAt} is null and ${t.slaBreachedAt} is null`),
     index("leads_person_idx").on(t.personId),
     index("leads_clinic_created_idx").on(t.clinicId, t.createdAt),
     index("leads_clinic_source_idx").on(t.clinicId, t.source),

@@ -1,6 +1,7 @@
-import { and, desc, eq, gt, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import {
   FILTER_LABELS,
+  LEAD_SOURCE_LABELS,
   STEP_LABELS,
   type AutomationStep,
   type AutomationStopCondition,
@@ -11,6 +12,7 @@ import {
   type StageCategory,
 } from "@skincrm/contracts";
 import { schema } from "@skincrm/db";
+import { sendSystemEmail, webLink } from "../messaging/system-email";
 import { getContext, getTx } from "../context";
 import { logger } from "../logger";
 import { addActivity, changeStage, getLead } from "../leads/service";
@@ -26,6 +28,8 @@ const {
   messages,
   pipelineStages,
   tasks,
+  users,
+  people,
 } = schema;
 
 /**
@@ -310,6 +314,12 @@ export async function runEnrollment(enrollmentId: string, now = new Date()): Pro
         break;
       }
 
+      case "notify_team": {
+        const sent = await notifyTeam(current, run);
+        record({ outcome: sent > 0 ? "done" : "skipped", detail: sent > 0 ? `Emailed ${sent} ${sent === 1 ? "person" : "people"}` : "Nobody to email (no owner or addresses)" });
+        break;
+      }
+
       case "move_stage": {
         if (!run.leadId) {
           record({ outcome: "skipped", detail: "No lead to move" });
@@ -534,6 +544,61 @@ async function filterPasses(step: Extract<AutomationStep, { type: "filter" }>, r
   }
 }
 
+/**
+ * Email staff about this lead. Recipients are resolved at run time — whoever
+ * owns the lead *now*, whoever is an admin *now* — and only active staff of
+ * this clinic (RLS guarantees the clinic) plus addresses the admin typed in.
+ *
+ * The message carries the minimum needed to act: name, source, optionally
+ * phone and email, the inquiry note's first line, and a link. Nothing from
+ * General Notes (PRD ID-08).
+ */
+async function notifyTeam(step: Extract<AutomationStep, { type: "notify_team" }>, run: Enrollment): Promise<number> {
+  const tx = getTx();
+  const staff = await tx
+    .select({ id: users.id, email: users.email, role: users.role })
+    .from(users)
+    .where(and(eq(users.status, "active"), isNull(users.archivedAt)));
+  const lead = run.leadId ? await getLead(run.leadId) : null;
+
+  const to = new Set<string>();
+  for (const u of staff) {
+    if (step.audiences.includes("everyone")) to.add(u.email);
+    if (step.audiences.includes("admins") && u.role === "admin") to.add(u.email);
+    if (step.audiences.includes("owner") && lead?.ownerUserId === u.id) to.add(u.email);
+    if (step.userIds.includes(u.id)) to.add(u.email);
+  }
+  for (const e of step.extraEmails) to.add(e);
+  if (to.size === 0) return 0;
+
+  const person = (await tx.select().from(people).where(eq(people.id, run.personId)).limit(1))[0];
+  const clinic = (await tx.select({ name: clinics.name }).from(clinics).limit(1))[0];
+  const owner = lead?.ownerUserId ? staff.find((u) => u.id === lead.ownerUserId) : null;
+  const ownerName = owner ? (await tx.select({ name: users.fullName }).from(users).where(eq(users.id, owner.id)).limit(1))[0]?.name : null;
+  const name = person?.displayName ?? "Someone";
+  const source = lead ? LEAD_SOURCE_LABELS[lead.source] : "an automation";
+  const lines = [
+    `New lead for ${clinic?.name ?? "your clinic"}: ${name}`,
+    "",
+    `Came from: ${source}`,
+    ...(step.includeContact
+      ? [person?.phoneRaw ? `Phone: ${person.phoneRaw}` : null, person?.emailRaw ? `Email: ${person.emailRaw}` : null].filter((l): l is string => Boolean(l))
+      : []),
+    `Owner: ${ownerName ?? "Unassigned — someone needs to pick it up"}`,
+    ...(lead?.inquiryNote ? ["", `What they said: ${lead.inquiryNote.split("\n")[0]!.slice(0, 300)}`] : []),
+    "",
+    `Open the lead: ${webLink(lead ? `/leads/${lead.id}` : `/people/${run.personId}`)}`,
+    "",
+    "You get this email because an automation in SkinCRM is set up to send it.",
+  ];
+
+  let sent = 0;
+  for (const address of to) {
+    if (await sendSystemEmail({ to: address, subject: `New lead: ${name} (${source})`, text: lines.join("\n") })) sent += 1;
+  }
+  return sent;
+}
+
 /** Human summary of a step, for the dry run and the run history. */
 export function describeStep(step: AutomationStep): string {
   switch (step.type) {
@@ -545,6 +610,8 @@ export function describeStep(step: AutomationStep): string {
       return `Create task "${step.title}"`;
     case "move_stage":
       return `Move lead to ${step.stageCategory.replace(/_/g, " ")}`;
+    case "notify_team":
+      return "Email the team about this lead";
     default:
       return STEP_LABELS[step.type].title;
   }

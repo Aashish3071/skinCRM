@@ -15,6 +15,7 @@ import { logger } from "../logger";
 import { recordAudit } from "../audit";
 import { emitAutomationEvent } from "../automations/engine";
 import { addActivity, stageByCategory } from "../leads/service";
+import { slaDueFor } from "../leads/sla";
 import { routeLead } from "../leads/assignment";
 import { buildDisplayName } from "../people/service";
 
@@ -261,6 +262,7 @@ export async function ingestSubmission(input: IntakeInput): Promise<IntakeOutcom
       serviceInterest: input.serviceInterest ?? null,
       inquiryNote: input.inquiryNote ?? null,
       isTest: input.isTest ?? false,
+      slaDueAt: await slaDueFor(new Date()),
     })
     .returning({ id: leads.id });
 

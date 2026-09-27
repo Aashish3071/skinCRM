@@ -13,6 +13,7 @@ export interface AutomationOptions {
     whatsappStatus: string | null;
   }[];
   variables: { name: string; description: string }[];
+  staff: { id: string; name: string }[];
 }
 
 export const getAutomations = () =>

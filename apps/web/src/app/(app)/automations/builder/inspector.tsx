@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   AUTOMATION_STOP_CONDITIONS,
   AUTOMATION_TRIGGERS,
@@ -8,7 +8,8 @@ import {
   FILTER_LABELS,
   LEAD_SOURCES,
   LEAD_SOURCE_LABELS,
-
+  NOTIFY_AUDIENCES,
+  NOTIFY_AUDIENCE_LABELS,
   STOP_CONDITION_LABELS,
   TASK_PRIORITIES,
   TRIGGER_LABELS,
@@ -261,6 +262,9 @@ export function StepInspector({
         </div>
       );
 
+    case "notify_team":
+      return <NotifyInspector step={step} options={options} onChange={onChange} />;
+
     case "filter":
       return (
         <div className="flex flex-col gap-4">
@@ -456,6 +460,90 @@ function MessageInspector({
           everyone, use a template approved by Meta.
         </p>
       )}
+    </div>
+  );
+}
+
+function NotifyInspector({
+  step,
+  options,
+  onChange,
+}: {
+  step: Extract<AutomationStep, { type: "notify_team" }>;
+  options: CanvasOptions;
+  onChange: (step: AutomationStep) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [bad, setBad] = useState(false);
+  const addEmail = () => {
+    const email = draft.trim().toLowerCase();
+    if (!email) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setBad(true);
+    if (!step.extraEmails.includes(email)) onChange({ ...step, extraEmails: [...step.extraEmails, email] });
+    setDraft("");
+    setBad(false);
+  };
+  return (
+    <div className="flex flex-col gap-5">
+      <fieldset>
+        <legend className={labelClass}>Who gets the email?</legend>
+        <div className="mt-2 flex flex-col gap-2">
+          {NOTIFY_AUDIENCES.map((a) => (
+            <label key={a} className="flex cursor-pointer items-center gap-2.5 text-sm">
+              <input
+                type="checkbox"
+                checked={step.audiences.includes(a)}
+                onChange={(e) => onChange({ ...step, audiences: e.target.checked ? [...step.audiences, a] : step.audiences.filter((x) => x !== a) })}
+              />
+              {NOTIFY_AUDIENCE_LABELS[a]}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {options.staff.length > 0 && (
+        <ChipPicker
+          legend="And these people"
+          values={options.staff.map((s) => s.id)}
+          selected={step.userIds}
+          label={(id) => options.staff.find((s) => s.id === id)?.name ?? id}
+          onChange={(userIds) => onChange({ ...step, userIds })}
+        />
+      )}
+      <div>
+        <label htmlFor={`${step.id}-extra`} className={labelClass}>Other email addresses</label>
+        <p className={hintClass}>For example a manager&rsquo;s personal address while travelling.</p>
+        <div className="mt-1.5 flex gap-2">
+          <input
+            id={`${step.id}-extra`}
+            type="email"
+            value={draft}
+            aria-invalid={bad}
+            onChange={(e) => { setDraft(e.target.value); setBad(false); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addEmail(); } }}
+            placeholder="name@example.com"
+            className={inputClasses}
+          />
+          <button type="button" onClick={addEmail} className="shrink-0 rounded-lg border border-line-strong px-3 text-sm hover:bg-surface-muted">Add</button>
+        </div>
+        {bad && <p role="alert" className="mt-1 text-xs text-critical">That doesn&rsquo;t look like an email address.</p>}
+        {step.extraEmails.length > 0 && (
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {step.extraEmails.map((e) => (
+              <li key={e} className="inline-flex items-center gap-1 rounded-full bg-surface-muted py-1 pl-3 pr-1 text-xs">
+                {e}
+                <button type="button" aria-label={`Remove ${e}`} onClick={() => onChange({ ...step, extraEmails: step.extraEmails.filter((x) => x !== e) })} className="rounded-full px-1.5 hover:bg-line">×</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <label className="flex items-start gap-2.5 text-sm">
+        <input type="checkbox" checked={step.includeContact} onChange={(e) => onChange({ ...step, includeContact: e.target.checked })} className="mt-0.5" />
+        <span>
+          Include their phone and email
+          <span className={`${hintClass} block`}>Untick to send only the name and a link that needs a sign-in to open.</span>
+        </span>
+      </label>
     </div>
   );
 }

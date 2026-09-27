@@ -523,3 +523,19 @@ the clinic's own number and token (`WhatsAppCloudConnector`).
 `people:read`, formula-injection safe, audited) and the `/reports` page exist and
 are tested, but Reports is not linked in the nav at the client's request. To
 unpark, add it back to `NAV_SECTIONS` in `apps/web/src/components/nav.tsx`.
+
+**D-73. Response-time SLA per clinic, measured to the first human response.**
+`clinics.first_response_sla_minutes` (0 = off) fixes `leads.sla_due_at` when the
+lead is created. `first_response_at` is stamped by the first thing a *person*
+does: a logged contact attempt (any outcome), a sent message, or a stage move.
+Automated messages don't count. The worker stamps `sla_breached_at` once
+(`UPDATE … SKIP LOCKED`) and, if `sla_escalation_enabled`, adds an urgent task
+for the owner and emails the owner and admins. Changing the target applies to
+new leads only. Wall-clock minutes; business-hours SLAs are a later refinement.
+
+**D-74. Staff lead alerts are an automation step, not a separate feature.**
+"Email the team" (`notify_team`) sends internal email to the lead's owner, all
+admins, everyone, chosen staff and/or typed addresses, resolved at run time.
+It uses the system-email path (no patient consent applies; not quiet-houred)
+and carries only name, source, optional phone/email, the first line of the
+inquiry and a link. The "Email new leads to the team" recipe sets it up in one click.

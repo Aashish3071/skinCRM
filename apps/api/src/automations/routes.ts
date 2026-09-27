@@ -52,9 +52,15 @@ export function registerAutomationRoutes(app: FastifyInstance): void {
           .where(and(eq(messageTemplates.isActive, true), isNull(messageTemplates.archivedAt)))
           .orderBy(messageTemplates.name),
       ]);
+      const staff = await tx
+        .select({ id: schema.users.id, name: schema.users.fullName })
+        .from(schema.users)
+        .where(and(eq(schema.users.status, "active"), isNull(schema.users.archivedAt)))
+        .orderBy(schema.users.fullName);
       return {
         stages,
         templates,
+        staff,
         variables: Object.entries(TEMPLATE_VARIABLES).map(([name, description]) => ({ name, description })),
       };
     },
@@ -339,7 +345,14 @@ async function assertRuleIsUsable(rule: SaveAutomation): Promise<void> {
     : [];
   const byKey = new Map(templates.map((t) => [t.key, t]));
 
+  const staffIds = new Set(
+    (await tx.select({ id: schema.users.id }).from(schema.users).where(isNull(schema.users.archivedAt))).map((u) => u.id),
+  );
+
   rule.steps.forEach((step, index) => {
+    if (step.type === "notify_team" && step.userIds.some((id) => !staffIds.has(id))) {
+      add(`steps.${index}`, "One of those people is no longer on the team");
+    }
     const path = `steps.${index}`;
     if (step.type === "move_stage" && !activeCategories.has(step.stageCategory)) {
       add(path, "That stage is not part of this clinic's pipeline");

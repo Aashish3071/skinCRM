@@ -126,6 +126,24 @@ const moveStageStep = z.object({
   stageCategory: z.enum(STAGE_CATEGORIES),
 });
 
+/**
+ * Email staff about the lead (e.g. "a new lead came in") — for people away
+ * from the desk. Internal mail, so no patient consent applies; it goes only
+ * to active staff of this clinic and to addresses an admin typed in.
+ */
+export const NOTIFY_AUDIENCES = ["owner", "admins", "everyone"] as const;
+export type NotifyAudience = (typeof NOTIFY_AUDIENCES)[number];
+
+const notifyTeamStep = z.object({
+  id: stepId,
+  type: z.literal("notify_team"),
+  audiences: z.array(z.enum(NOTIFY_AUDIENCES)).max(3).default(["owner"]),
+  userIds: z.array(uuidSchema).max(50).default([]),
+  extraEmails: z.array(z.string().trim().toLowerCase().email("Enter a valid email address")).max(20).default([]),
+  /** Include phone and email in the message. Off sends only the name and a link. */
+  includeContact: z.boolean().default(true),
+});
+
 /** "Only continue if…". A run that fails a filter ends quietly, as completed. */
 const filterStep = z.object({
   id: stepId,
@@ -143,6 +161,7 @@ export const automationStepSchema = z
     createTaskStep,
     moveStageStep,
     filterStep,
+    notifyTeamStep,
   ])
   .superRefine((step, ctx) => {
     if (step.type === "send_email" && !step.templateKey && !(step.subject && step.body)) {
@@ -158,6 +177,9 @@ export const automationStepSchema = z
         message: "Pick a saved template, or write a message",
         path: ["body"],
       });
+    }
+    if (step.type === "notify_team" && step.audiences.length === 0 && step.userIds.length === 0 && step.extraEmails.length === 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Choose who should get the email", path: ["audiences"] });
     }
     if (step.type === "filter" && step.condition === "stage_is" && step.stageCategories.length === 0) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Pick at least one stage", path: ["stageCategories"] });
@@ -176,6 +198,13 @@ export const STEP_LABELS: Record<AutomationStepType, { title: string; descriptio
   create_task: { title: "Create task", description: "Give the lead owner a to-do." },
   move_stage: { title: "Move lead", description: "Move the lead to another stage." },
   filter: { title: "Only continue if", description: "Stop here unless a condition is true." },
+  notify_team: { title: "Email the team", description: "Tell staff by email — handy when they're away from the desk." },
+};
+
+export const NOTIFY_AUDIENCE_LABELS: Record<NotifyAudience, string> = {
+  owner: "The lead's owner",
+  admins: "All admins",
+  everyone: "Everyone on the team",
 };
 
 export const FILTER_LABELS: Record<FilterCondition, string> = {
@@ -295,6 +324,19 @@ export const AUTOMATION_RECIPES: ReadonlyArray<{
   description: string;
   rule: SaveAutomation;
 }> = [
+  {
+    key: "team_alert",
+    name: "Email new leads to the team",
+    description: "Every new lead — web, WhatsApp, Facebook or Google — is emailed to its owner and the admins, so nobody misses one while out.",
+    rule: {
+      name: "New lead alert by email",
+      trigger: { type: "lead_created", sources: [] },
+      stopWhen: [],
+      steps: [
+        { id: "s1", type: "notify_team", audiences: ["owner", "admins"], userIds: [], extraEmails: [], includeContact: true },
+      ],
+    },
+  },
   {
     key: "acknowledge",
     name: "Thank new leads right away",

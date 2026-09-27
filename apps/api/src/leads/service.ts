@@ -164,6 +164,11 @@ export async function changeStage(params: {
     occurredAt: now,
   });
 
+  // A person moving a lead is a response to it (D-73). Lazy import: sla.ts
+  // imports this module.
+  const { markFirstResponse } = await import("./sla");
+  await markFirstResponse(lead.id, now);
+
   // Imported lazily: the engine itself calls changeStage for "Move lead" steps.
   const { emitAutomationEvent } = await import("../automations/engine");
   await emitAutomationEvent({

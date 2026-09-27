@@ -124,3 +124,6 @@ export const ChevronLeftIcon = (p: IconProps) => (
 export const ReportsIcon = (p: IconProps) => (
   <Svg {...p}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></Svg>
 );
+export const BellIcon = (p: IconProps) => (
+  <Svg {...p}><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z" /><path d="M10 20a2 2 0 0 0 4 0" /></Svg>
+);

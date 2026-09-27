@@ -3,6 +3,7 @@ import { LEAD_SOURCE_LABELS } from "@skincrm/contracts";
 import { CalendarIcon, MailIcon, PhoneIcon } from "@/components/icons";
 import { Badge, Card, EmptyState, buttonClasses } from "@/components/ui";
 import { WhatsAppButton } from "@/components/whatsapp-button";
+import { SlaBadge } from "@/components/sla-badge";
 import {
   clinicTime,
   getAssignees,
@@ -77,6 +78,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       <Card>
         <StageStepper leadId={lead.id} stages={stages} currentStageId={lead.stageId} furthestPosition={lead.furthestPosition} canMove={writable} />
         <p className="mt-2 text-xs text-ink-subtle">Leads move forward only. Mark Won or Lost at any time.</p>
+        <div className="mt-2"><SlaBadge lead={lead} long /></div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
           {can(session, "leads:assign") ? (
             <OwnerPicker leadId={lead.id} staff={staff} currentOwnerId={lead.ownerUserId} />

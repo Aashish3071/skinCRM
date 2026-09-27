@@ -54,6 +54,10 @@ export const clinics = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    /** Minutes the team has to respond to a new lead (D-73). 0 turns the SLA off. */
+    firstResponseSlaMinutes: integer("first_response_sla_minutes").notNull().default(60),
+    /** When the SLA is missed: a high-priority task, and an email to owner + admins. */
+    slaEscalationEnabled: boolean("sla_escalation_enabled").notNull().default(true),
     /** Set once the clinic confirms its HIPAA status; gates real-data features. */
     hipaaStatus: text("hipaa_status").notNull().default("undetermined"),
     settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default({}),

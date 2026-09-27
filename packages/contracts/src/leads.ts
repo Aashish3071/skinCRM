@@ -121,6 +121,10 @@ export const leadSchema = z.object({
   inquiryNote: z.string().nullable(),
   isTest: z.boolean(),
   firstContactedAt: isoDateTime.nullable(),
+  /** Response-time SLA (D-73). */
+  firstResponseAt: isoDateTime.nullable(),
+  slaDueAt: isoDateTime.nullable(),
+  slaBreachedAt: isoDateTime.nullable(),
   qualifiedAt: isoDateTime.nullable(),
   bookedAt: isoDateTime.nullable(),
   attendedAt: isoDateTime.nullable(),
@@ -314,3 +318,13 @@ export const updateAssignmentRuleSchema = z
     { message: "Choose someone to assign to, or add at least one person to the pool", path: ["assignUserId"] },
   );
 export type UpdateAssignmentRule = z.infer<typeof updateAssignmentRuleSchema>;
+
+// --- Lead rules: response-time SLA (D-73) ---------------------------------
+
+export const SLA_MINUTE_CHOICES = [0, 15, 30, 60, 120, 240, 480, 1440] as const;
+
+export const leadRulesSettingsSchema = z.object({
+  firstResponseSlaMinutes: z.coerce.number().int().min(0).max(10_080),
+  slaEscalationEnabled: z.boolean(),
+});
+export type LeadRulesSettings = z.infer<typeof leadRulesSettingsSchema>;

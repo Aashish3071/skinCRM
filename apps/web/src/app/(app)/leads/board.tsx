@@ -13,6 +13,7 @@ const SOURCE_TONE: Partial<Record<LeadDto["source"], string>> = {
   google_lead_form: "bg-caution-soft text-caution",
 };
 import { moveLeadAction } from "@/lib/crm-actions";
+import { SlaBadge } from "@/components/sla-badge";
 import { buttonClasses, inputClasses } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
 
@@ -152,6 +153,7 @@ export function LeadBoard({
                           {LEAD_SOURCE_LABELS[lead.source]}
                         </span>
                         {lead.isTest && <span className="rounded bg-caution-soft px-1.5 py-0.5 text-[11px] font-medium text-caution">Test</span>}
+                        <SlaBadge lead={lead} />
                       </p>
                       <p className="mt-1 truncate text-xs text-ink-subtle">
                         {lead.ownerName ?? "Unassigned"} · {relativeTime(lead.createdAt)}

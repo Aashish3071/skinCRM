@@ -1,5 +1,6 @@
 import { logger } from "../logger";
 import { processDueInboundEvents } from "../integrations/processor";
+import { processSlaBreaches } from "../leads/sla";
 import { housekeeping, processDueAutomations } from "./jobs";
 
 const HOUSEKEEPING_MS = 60 * 60 * 1000;
@@ -22,7 +23,7 @@ export function startWorker(pollMs: number): () => Promise<void> {
         let processed = 0;
         do {
           // New leads first: an automation may be waiting on them.
-          processed = (await processDueInboundEvents()) + (await processDueAutomations());
+          processed = (await processDueInboundEvents()) + (await processDueAutomations()) + (await processSlaBreaches());
         } while (processed > 0 && !stopping);
 
         if (Date.now() - lastHousekeeping > HOUSEKEEPING_MS) {

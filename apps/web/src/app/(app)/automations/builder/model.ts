@@ -1,6 +1,7 @@
 import {
   FILTER_LABELS,
   LEAD_SOURCE_LABELS,
+  NOTIFY_AUDIENCE_LABELS,
   STEP_LABELS,
   TRIGGER_LABELS,
   type AutomationStep,
@@ -10,7 +11,7 @@ import {
   type StageCategory,
 } from "@skincrm/contracts";
 import type { ComponentType } from "react";
-import { ChatIcon, ClockIcon, FilterIcon, FlagIcon, MailIcon, TaskIcon } from "@/components/icons";
+import { BellIcon, ChatIcon, ClockIcon, FilterIcon, FlagIcon, MailIcon, TaskIcon } from "@/components/icons";
 
 /** The draft the canvas edits. Same shape the API saves. */
 export interface Draft {
@@ -31,6 +32,7 @@ export interface CanvasOptions {
     whatsappStatus: string | null;
   }[];
   variables: { name: string; description: string }[];
+  staff: { id: string; name: string }[];
 }
 
 export const STEP_ICONS: Record<AutomationStepType, ComponentType<{ size?: number }>> = {
@@ -40,10 +42,11 @@ export const STEP_ICONS: Record<AutomationStepType, ComponentType<{ size?: numbe
   create_task: TaskIcon,
   move_stage: FlagIcon,
   filter: FilterIcon,
+  notify_team: BellIcon,
 };
 
 /** Order in the "add a step" menu: the common ones first. */
-export const STEP_MENU: AutomationStepType[] = ["send_email", "send_whatsapp", "wait", "create_task", "filter", "move_stage"];
+export const STEP_MENU: AutomationStepType[] = ["send_email", "send_whatsapp", "notify_team", "wait", "create_task", "filter", "move_stage"];
 
 export function newStepId(): string {
   return `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -64,6 +67,8 @@ export function defaultStep(type: AutomationStepType, stages: CanvasOptions["sta
       return { id, type, stageCategory: stages.find((s) => s.category !== "new")?.category ?? "connected" };
     case "filter":
       return { id, type, condition: "not_booked", stageCategories: [], sources: [] };
+    case "notify_team":
+      return { id, type, audiences: ["owner", "admins"], userIds: [], extraEmails: [], includeContact: true };
   }
 }
 
@@ -109,6 +114,14 @@ export function stepSummary(step: AutomationStep, options: CanvasOptions): strin
         return `Came from ${step.sources.map((s) => LEAD_SOURCE_LABELS[s]).join(" or ")}`;
       }
       return FILTER_LABELS[step.condition];
+    case "notify_team": {
+      const who = [
+        ...step.audiences.map((a) => NOTIFY_AUDIENCE_LABELS[a].replace(/^The /, "").toLowerCase()),
+        ...step.userIds.map((id) => options.staff.find((s) => s.id === id)?.name ?? "someone"),
+        ...step.extraEmails,
+      ];
+      return who.length ? `To ${who.join(", ")}` : "Nobody chosen yet";
+    }
   }
 }
 

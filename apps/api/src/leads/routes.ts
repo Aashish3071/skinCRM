@@ -23,6 +23,7 @@ import { badRequest, forbidden, notFound } from "../errors";
 import { diffSummary, recordAudit } from "../audit";
 import { registerRoute } from "../route";
 import { emitAutomationEvent } from "../automations/engine";
+import { markFirstResponse, slaDueFor } from "./sla";
 import { createPerson, getPerson, DuplicatePersonError } from "../people/service";
 import { AppError } from "../errors";
 import { routeLead } from "./assignment";
@@ -186,6 +187,7 @@ export function registerLeadRoutes(app: FastifyInstance): void {
           branchId: body.branchId ?? null,
           serviceInterest: body.serviceInterest ?? null,
           inquiryNote: body.inquiryNote ?? null,
+          slaDueAt: await slaDueFor(new Date()),
         })
         .returning();
 
@@ -363,6 +365,8 @@ export function registerLeadRoutes(app: FastifyInstance): void {
       });
 
       // First successful contact is a reportable milestone (BRD 3: response speed).
+      // Any attempt — answered or not — is a response for the SLA (D-73).
+      await markFirstResponse(lead.id);
       if (body.outcome === "connected" && !lead.firstContactedAt) {
         await tx
           .update(leads)
@@ -654,6 +658,9 @@ function serializeLead(row: LeadJoinRow): LeadDto {
     inquiryNote: lead.inquiryNote,
     isTest: lead.isTest,
     firstContactedAt: lead.firstContactedAt?.toISOString() ?? null,
+    firstResponseAt: lead.firstResponseAt?.toISOString() ?? null,
+    slaDueAt: lead.slaDueAt?.toISOString() ?? null,
+    slaBreachedAt: lead.slaBreachedAt?.toISOString() ?? null,
     qualifiedAt: lead.qualifiedAt?.toISOString() ?? null,
     bookedAt: lead.bookedAt?.toISOString() ?? null,
     attendedAt: lead.attendedAt?.toISOString() ?? null,

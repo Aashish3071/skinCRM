@@ -11,6 +11,7 @@ import { evaluateSend, resolveDestination } from "./send-gate";
 import { extractVariables, renderTemplate } from "./render";
 import { whatsappConnector } from "../integrations/connections";
 import { ensureConversation, touchConversation } from "../inbox/store";
+import { markFirstResponse } from "../leads/sla";
 
 const { messages, messageTemplates, people, clinics, appointments, users, suppressions } = schema;
 
@@ -260,6 +261,9 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
         updatedAt: new Date(),
       })
       .where(eq(messages.id, messageId));
+
+    // A person sending a message is a response to the lead (D-73).
+    await markFirstResponse(request.leadId ?? null, result.acceptedAt);
 
     if (conversationId) {
       await touchConversation(conversationId, { direction: "outbound", body: renderedBody.text, at: result.acceptedAt });
