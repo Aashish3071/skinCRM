@@ -69,7 +69,9 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
     el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
   }, [text]);
 
-  const canSend = !pending && (templateKey ? true : text.trim().length > 0 && !needsTemplate);
+  const canSend = !pending && (mode === "note"
+    ? text.trim().length > 0
+    : Boolean(templateKey) || (text.trim().length > 0 && !needsTemplate));
 
   const send = () => {
     if (!canSend) return;
@@ -215,7 +217,7 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
               id="composer"
               rows={1}
               value={text}
-              disabled={pending || Boolean(templateKey) || needsTemplate}
+              disabled={pending || (mode === "reply" && (Boolean(templateKey) || needsTemplate))}
               onChange={(e) => {
                 setText(e.target.value);
                 if (mode === "reply" && Date.now() - lastTyping.current > 20_000) {

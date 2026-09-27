@@ -64,7 +64,7 @@ curl -s -c /tmp/c.txt -X POST http://localhost:4000/auth/login -H 'content-type:
   discovers every `clinic_id` table from the catalog and fails if any is
   unprotected. Idempotent seed: two clinics, 11 stages each, 7 users.
 
-### `apps/api` (Fastify) — 225 integration tests
+### `apps/api` (Fastify) — 246 integration tests
 
 - `src/route.ts` — the route contract. Correlation id, request context, Zod
   validation, session resolution, capability check, tenant transaction and
@@ -107,41 +107,53 @@ Routes live today:
 Sign-in with all three login branches, authenticated shell with capability-driven
 navigation, Home wired to live counts, Leads list and Kanban, lead detail with
 timeline and tasks, People search and profile with General Notes, duplicate
-review and merge, and Settings → Staff. Inbox, Calendar, Automations and Reports
-still render honest `NotBuiltYet` panels naming their phase.
+review and merge, and Settings → Staff. Inbox, Calendar, Automations, Notes,
+Activity, and integration settings are implemented. Reports are implemented
+but parked outside the navigation at the client's request.
 
 The browser never calls the API directly: reads go through server components and
 writes through Server Actions, both forwarding the session cookie.
 
-Nothing is half-finished. No failing tests, no temporary workarounds beyond the
-`TODO(phase 4)` markers listed under known gaps.
+The next planned work is conversion feedback and deployment hardening.
 
 ---
 
 ## Do this next, in order
 
-Session stopped at a usage limit. Everything below is committed and pushed.
+Continue from the verification below. The inbox composer fix and this handoff
+update are local changes.
 
-### 0. Where it stopped (half-done)
-- **WhatsApp-style inbox redesign is written and compiles** (`apps/web/src/app/(app)/inbox/shell.tsx`,
-  `[id]/thread.tsx`, `--wa-*` tokens and `.wa-wallpaper` / `.wa-tail-*` in
-  `globals.css`) but was **not yet reviewed in the browser**. Open `/inbox`,
-  press "+ Test message" to create a chat, add a team note and a reply, and
-  check light + dark and 390px width. Look for: bubble tails, time/ticks not
-  overlapping text, the "⋮" menu on mobile.
+### 0. Latest verification (2026-09-27)
+- The WhatsApp-style inbox was checked in the browser on desktop and at 390px.
+  A test inbound chat, team note, blocked reply with sending disabled, done
+  status, and the mobile options menu all behaved as expected. The composer
+  now allows team notes when the WhatsApp reply window is closed.
+- `pnpm build`, `pnpm typecheck`, and `pnpm lint` passed. The full `pnpm test`
+  suite passed on rerun: 289 tests (14 DB, 24 security, 246 API, 5 web).
+  One automation test failed once during the first full run and passed both
+  alone and in the full rerun; watch for recurrence.
 - The earlier demo chat ("Demo Patient") was deleted by an over-broad test
-  cleanup, now fixed. Recreate demo data with "+ Test message" if wanted.
-- Full `pnpm test` was last run before the inbox redesign and the test-cleanup
-  narrowing (289 passing then); `integrations` + `inbox` suites were rerun
-  after (28 passing). Run the full suite first.
+  cleanup, now fixed. A browser QA chat named "Inbox QA" was created during
+  verification.
 
-### 1. Switch sending on and prove it (client has signed off)
-`.env`: `OUTBOUND_SENDING_ENABLED=true`, `CONNECTOR_EMAIL=live`. Restart,
-Settings → Lead sources & messaging → "Send yourself a test" → check Mailpit
-(http://localhost:8025). Then turn on an automation and add a lead with an email.
-Real WhatsApp/Meta: `CONNECTOR_WHATSAPP=live`, `CONNECTOR_META=live`,
-`META_APP_SECRET`, public HTTPS `PUBLIC_API_URL`, connect accounts in Settings,
-subscribe the webhooks (URLs + verify tokens shown under "Technical details").
+### 1. Sending is ON locally and proven (2026-09-27)
+Local `.env` now has `OUTBOUND_SENDING_ENABLED=true` and `CONNECTOR_EMAIL=live`
+(SMTP → Mailpit, http://localhost:8025; nothing leaves the machine). Verified:
+- Settings → Lead sources & messaging → "Send yourself a test" → email arrived in Mailpit.
+- Automation "New inquiry thank-you" switched on; adding a lead with an email
+  sent the thank-you within seconds (worker), logged `sent` with the rule, run `completed`.
+  **That automation is still on** in the dev database.
+- WhatsApp stays on the mock (`CONNECTOR_WHATSAPP=mock`) until a real number exists.
+
+Still to do for production: a real SMTP relay (SES/Postmark/…) in `SMTP_*`,
+the clinic's sending domain with SPF/DKIM, tick "Marketing messages are approved"
+(needs the clinic's postal address), and for WhatsApp/Meta: `CONNECTOR_WHATSAPP=live`,
+`CONNECTOR_META=live`, `META_APP_SECRET`, public HTTPS `PUBLIC_API_URL`, connect the
+accounts in Settings and subscribe the webhooks.
+
+Note: port 3000 was taken on this machine by another Docker project, so the web
+app ran on 3100 (`web-3100` in `.claude/launch.json`). Unsubscribe and invite
+links use `PUBLIC_WEB_URL`, so set it to match whatever port the web app uses.
 
 ### 2. Unpark Reporting when the client asks (D-72)
 Add `{ href: "/reports", ... }` back to `NAV_SECTIONS` in `apps/web/src/components/nav.tsx`.
