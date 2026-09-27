@@ -21,6 +21,7 @@ import { registerLeadRoutes } from "./leads/routes";
 import { registerMessagingRoutes } from "./messaging/routes";
 import { registerUnsubscribeRoutes } from "./messaging/unsubscribe-routes";
 import { registerPeopleRoutes } from "./people/routes";
+import { registerProfileRoutes } from "./profile/routes";
 import { registerReportRoutes } from "./reports/routes";
 import { registerUserRoutes } from "./users/routes";
 import { registerWorkspaceRoutes } from "./workspace/routes";
@@ -158,6 +159,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerWebhooks(app);
   registerReportRoutes(app);
   registerAuditLogRoutes(app);
+  registerProfileRoutes(app);
 
   return app;
 }

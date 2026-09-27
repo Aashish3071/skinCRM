@@ -54,6 +54,17 @@ export const clinics = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    /** Main phone number patients see in messages ({{clinic.phone}}). */
+    phone: text("phone"),
+    website: text("website"),
+    /**
+     * The clinic's logo, stored in the database (base64) rather than a file
+     * store: it's small (≤ 512 KB, checked on upload), there is exactly one,
+     * and it then lives in the same backups as everything else.
+     */
+    logoData: text("logo_data"),
+    logoMime: text("logo_mime"),
+    logoUpdatedAt: timestamp("logo_updated_at", { withTimezone: true, mode: "date" }),
     /** Minutes the team has to respond to a new lead (D-73). 0 turns the SLA off. */
     firstResponseSlaMinutes: integer("first_response_sla_minutes").notNull().default(60),
     /** When the SLA is missed: a high-priority task, and an email to owner + admins. */

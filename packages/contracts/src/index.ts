@@ -12,3 +12,4 @@ export * from "./workspace";
 export * from "./inbox";
 export * from "./integrations";
 export * from "./reports";
+export * from "./profile";

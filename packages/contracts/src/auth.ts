@@ -51,6 +51,8 @@ export const sessionUserSchema = z.object({
     name: z.string(),
     timezone: z.string(),
     country: z.string(),
+    /** Changes whenever the logo does; null means no logo uploaded. */
+    logoVersion: z.string().nullable(),
   }),
 });
 export type SessionUser = z.infer<typeof sessionUserSchema>;

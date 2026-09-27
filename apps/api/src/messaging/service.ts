@@ -358,6 +358,7 @@ export async function resolveVariables(
       postalAddress: clinics.postalAddress,
       timezone: clinics.timezone,
       supportEmail: clinics.supportEmail,
+      phone: clinics.phone,
     })
     .from(clinics)
     .limit(1);
@@ -367,7 +368,8 @@ export async function resolveVariables(
     "person.firstName": person?.firstName ?? person?.displayName?.split(" ")[0] ?? null,
     "person.fullName": person?.displayName ?? null,
     "clinic.name": clinic?.name ?? null,
-    "clinic.phone": clinic?.supportEmail ?? null,
+    // The clinic's phone; before a phone is set, the contact email stands in.
+    "clinic.phone": clinic?.phone ?? clinic?.supportEmail ?? null,
     "clinic.address": clinic?.postalAddress ?? null,
     "appointment.date": null,
     "appointment.time": null,

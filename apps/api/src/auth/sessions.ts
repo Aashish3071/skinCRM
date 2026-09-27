@@ -101,6 +101,7 @@ export async function resolveSession(token: string | undefined): Promise<Resolve
         clinicName: clinics.name,
         clinicTimezone: clinics.timezone,
         clinicCountry: clinics.country,
+        clinicLogoUpdatedAt: clinics.logoUpdatedAt,
         clinicArchivedAt: clinics.archivedAt,
       })
       .from(sessions)
@@ -155,6 +156,7 @@ export async function resolveSession(token: string | undefined): Promise<Resolve
         name: row.clinicName,
         timezone: row.clinicTimezone,
         country: row.clinicCountry,
+        logoVersion: row.clinicLogoUpdatedAt ? row.clinicLogoUpdatedAt.getTime().toString(36) : null,
       },
     },
   };

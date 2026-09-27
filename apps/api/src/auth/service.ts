@@ -241,6 +241,7 @@ export async function loadSessionUser(clinicId: string, userId: string): Promise
         clinicName: clinics.name,
         clinicTimezone: clinics.timezone,
         clinicCountry: clinics.country,
+        clinicLogoUpdatedAt: clinics.logoUpdatedAt,
       })
       .from(users)
       .innerJoin(clinics, eq(clinics.id, users.clinicId))
@@ -269,6 +270,7 @@ export async function loadSessionUser(clinicId: string, userId: string): Promise
       name: row.clinicName,
       timezone: row.clinicTimezone,
       country: row.clinicCountry,
+        logoVersion: row.clinicLogoUpdatedAt ? row.clinicLogoUpdatedAt.getTime().toString(36) : null,
     },
   };
 }
