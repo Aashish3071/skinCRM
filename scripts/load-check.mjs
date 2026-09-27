@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global process, console, fetch, performance */
 /**
  * Load check (PRD 9: "Common list/detail actions within 2 seconds at p95
  * under agreed pilot load").
