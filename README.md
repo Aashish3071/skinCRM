@@ -140,14 +140,14 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 | 6 | Reporting and exports `[REP-01…04]` | 🅿️ Built and tested, parked (not in nav) at client request — D-72 |
 | 7 | Real integrations — Meta, Google, WhatsApp Cloud, email `[INT-01…09]` | 🟡 Meta Lead Ads, Google lead forms, WhatsApp Cloud and SMTP built and tested against fakes; needs real accounts to go live |
 | 8 | Conversion feedback — outbox, eligibility gate, adapters `[FB-01…10]` | ⬜ Not started |
-| 9 | Hardening, backups, monitoring, deployment guide, 15 UAT scenarios | ⬜ Not started |
+| 9 | Hardening, backups, monitoring, deployment guide, 15 UAT scenarios | ✅ Done — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/UAT.md](docs/UAT.md) |
 
 ### Verify the build yourself
 
 ```bash
 pnpm typecheck    # clean
 pnpm lint         # clean
-pnpm test         # 289 tests: 14 RLS isolation, 24 security, 246 API, 5 web
+pnpm test         # 303 tests: 14 RLS isolation, 24 security, 260 API, 5 web
 ```
 
 ### Done and verified in phase 1
@@ -311,6 +311,26 @@ http://localhost:8025. Put both back before pointing at a real relay.
   Enter-to-send pill composer, team notes as notices.
 - **Reporting** — funnel, sources, campaigns, trend, front-desk numbers, CSV
   export. Parked: not in the nav (D-72).
+
+### Done in the fourth session
+
+- **New-lead email alerts** — automation step "Email the team" and the recipe
+  "Email new leads to the team": owner, admins, chosen staff or any address (D-74).
+- **Response-time SLA** — target per clinic, live countdown on lead cards,
+  automatic escalation (urgent task + email) when missed (D-73).
+- **Settings → Lead rules** — SLA plus assignment rules in plain language
+  (reorder, on/off, edit, "where would this lead go?").
+- **Phase 9** — CI (`.github/workflows/ci.yml`), production Docker images and
+  compose with automatic HTTPS (`deploy/`), encrypted backups with a passing
+  restore test (`scripts/`), monitoring and alerts, data retention, audit-log
+  viewer (Settings → Audit log), load check (p95 68 ms), accessibility scan
+  (0 WCAG 2.2 AA violations, light and dark), deployment guide and UAT checklist.
+  Fixed a launch blocker: production could not start (D-75).
+
+### Going live
+
+Follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Locally, sending is on
+(`OUTBOUND_SENDING_ENABLED=true`, `CONNECTOR_EMAIL=live` → Mailpit).
 
 ### Turning sending on (client has signed off)
 

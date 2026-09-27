@@ -2,8 +2,10 @@ import { logger } from "../logger";
 import { processDueInboundEvents } from "../integrations/processor";
 import { processSlaBreaches } from "../leads/sla";
 import { housekeeping, processDueAutomations } from "./jobs";
+import { heartbeat, runMonitor } from "../ops/monitor";
 
 const HOUSEKEEPING_MS = 60 * 60 * 1000;
+const MONITOR_MS = 5 * 60 * 1000;
 
 /**
  * Start the polling loop. Returns a function that stops it and resolves once
@@ -13,6 +15,7 @@ const HOUSEKEEPING_MS = 60 * 60 * 1000;
 export function startWorker(pollMs: number): () => Promise<void> {
   let stopping = false;
   let lastHousekeeping = 0;
+  let lastMonitor = 0;
   let wake: (() => void) | null = null;
 
   const done = (async () => {
@@ -25,6 +28,13 @@ export function startWorker(pollMs: number): () => Promise<void> {
           // New leads first: an automation may be waiting on them.
           processed = (await processDueInboundEvents()) + (await processDueAutomations()) + (await processSlaBreaches());
         } while (processed > 0 && !stopping);
+
+        // Tells /health/ready and the monitor the worker is alive.
+        await heartbeat("worker");
+        if (Date.now() - lastMonitor > MONITOR_MS) {
+          lastMonitor = Date.now();
+          await runMonitor();
+        }
 
         if (Date.now() - lastHousekeeping > HOUSEKEEPING_MS) {
           lastHousekeeping = Date.now();

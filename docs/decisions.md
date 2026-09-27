@@ -539,3 +539,23 @@ admins, everyone, chosen staff and/or typed addresses, resolved at run time.
 It uses the system-email path (no patient consent applies; not quiet-houred)
 and carries only name, source, optional phone/email, the first line of the
 inquiry and a link. The "Email new leads to the team" recipe sets it up in one click.
+
+**D-75. Production master key: a strong secret from a secret manager, not KMS (yet).**
+The production gate used to require `CRYPTO_PROVIDER=aws-kms`, which was never
+implemented — production could not have started. It now accepts `local` with a
+master key and session secret of at least 32 characters, different from each
+other, injected from the host's secret manager, and refuses `aws-kms` with a
+clear message until a KMS-wrapped key is built. It also refuses live email
+pointed at localhost. Found by booting the production image (phase 9).
+
+**D-76. Phase 9 operations model.**
+One VM, docker compose (`deploy/`), Caddy for HTTPS on one domain routing
+`/webhooks`, `/public` and `/health` to the API and everything else to the web
+app. API and worker share one image. Migrations run as a one-shot service before
+either starts. Encrypted daily `pg_dump` via `scripts/backup.sh`, restore test via
+`scripts/verify-backup.sh`. The worker writes an `ops_heartbeats` row every tick;
+`apps/api/src/ops/monitor.ts` checks the PRD 9 alert conditions every 5 minutes
+and emails `OPS_ALERT_EMAIL` (hourly per problem); `/health/alerts` exposes the
+same to an uptime monitor behind `MONITOR_TOKEN`. Retention deletes raw provider
+payloads after `RAW_PAYLOAD_RETENTION_DAYS` and processed events after 90 days;
+personal records are never deleted on a timer.

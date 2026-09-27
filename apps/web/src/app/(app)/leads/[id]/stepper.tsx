@@ -86,7 +86,7 @@ export function StageStepper({
                     {stage.name}
                   </span>
                   {STAGE_HINTS[stage.category as StageCategory] && (
-                    <span className={`text-[11px] font-normal ${isCurrent ? "opacity-80" : "text-ink-subtle"}`}>
+                    <span className={`text-[11px] font-normal ${isCurrent ? "" : "text-ink-subtle"}`}>
                       {STAGE_HINTS[stage.category as StageCategory]}
                     </span>
                   )}

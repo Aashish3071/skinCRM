@@ -1,8 +1,8 @@
 # Handoff — resume point
 
 **Updated:** 2026-09-26
-**Phase:** 7 of 9 — integrations built against fakes; reporting parked; inbox redesigned.
-**Overall:** ~78% of the build
+**Phase:** 9 done. Remaining: phase 8 (conversion feedback), unpark Reporting when asked, go-live with real accounts.
+**Overall:** ~90% of the build
 
 Read [README.md](../README.md) to run it and [ARCHITECTURE.md](../ARCHITECTURE.md)
 for the rules that must not be broken. This file says only what to do next.
@@ -20,7 +20,7 @@ pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
 pnpm lint                     # clean
-pnpm test                     # expect ~289 passing
+pnpm test                     # expect 303 passing
 ```
 
 If those 289 tests pass, the foundation is intact and you can build on it.
@@ -120,45 +120,28 @@ The next planned work is conversion feedback and deployment hardening.
 
 ## Do this next, in order
 
-Continue from the verification below. The inbox composer fix and this handoff
-update are local changes.
+Fourth session (2026-09-27) landed: staff lead alerts (D-74), response-time SLA
+(D-73), Settings → Lead rules, and all of phase 9 (D-75, D-76). All committed.
+303 tests passing, lint and typecheck clean, production images build and boot.
 
-### 0. Latest verification (2026-09-27)
-- The WhatsApp-style inbox was checked in the browser on desktop and at 390px.
-  A test inbound chat, team note, blocked reply with sending disabled, done
-  status, and the mobile options menu all behaved as expected. The composer
-  now allows team notes when the WhatsApp reply window is closed.
-- `pnpm build`, `pnpm typecheck`, and `pnpm lint` passed. The full `pnpm test`
-  suite passed on rerun: 289 tests (14 DB, 24 security, 246 API, 5 web).
-  One automation test failed once during the first full run and passed both
-  alone and in the full rerun; watch for recurrence.
-- The earlier demo chat ("Demo Patient") was deleted by an over-broad test
-  cleanup, now fixed. A browser QA chat named "Inbox QA" was created during
-  verification.
+### 1. Go live with the clinic — follow docs/DEPLOYMENT.md
+Server, `.env` from the table there, `docker compose … up`, create the first
+admin (no production seed — see §3), connect Meta/Google/WhatsApp/email in
+Settings, backup cron + off-site copy, uptime monitor on `/health/alerts`, then
+run the manual rows of docs/UAT.md with the clinic.
 
-### 1. Sending is ON locally and proven (2026-09-27)
-Local `.env` now has `OUTBOUND_SENDING_ENABLED=true` and `CONNECTOR_EMAIL=live`
-(SMTP → Mailpit, http://localhost:8025; nothing leaves the machine). Verified:
-- Settings → Lead sources & messaging → "Send yourself a test" → email arrived in Mailpit.
-- Automation "New inquiry thank-you" switched on; adding a lead with an email
-  sent the thank-you within seconds (worker), logged `sent` with the rule, run `completed`.
-  **That automation is still on** in the dev database.
-- WhatsApp stays on the mock (`CONNECTOR_WHATSAPP=mock`) until a real number exists.
+### 2. Phase 8 — conversion feedback `[FB-01…10]`
+Qualified = booked already stamps `qualified_at` (D-63). Build the outbox, the
+eligibility gate (default off), Meta CAPI + Google adapters, preview/test mode
+and the kill switch (`CONVERSION_FEEDBACK_ENABLED`). UAT rows 13–14 depend on it.
 
-Still to do for production: a real SMTP relay (SES/Postmark/…) in `SMTP_*`,
-the clinic's sending domain with SPF/DKIM, tick "Marketing messages are approved"
-(needs the clinic's postal address), and for WhatsApp/Meta: `CONNECTOR_WHATSAPP=live`,
-`CONNECTOR_META=live`, `META_APP_SECRET`, public HTTPS `PUBLIC_API_URL`, connect the
-accounts in Settings and subscribe the webhooks.
-
-Note: port 3000 was taken on this machine by another Docker project, so the web
-app ran on 3100 (`web-3100` in `.claude/launch.json`). Unsubscribe and invite
-links use `PUBLIC_WEB_URL`, so set it to match whatever port the web app uses.
-
-### 2. Unpark Reporting when the client asks (D-72)
-Add `{ href: "/reports", ... }` back to `NAV_SECTIONS` in `apps/web/src/components/nav.tsx`.
-
-### 3. Phase 8 — conversion feedback, then phase 9 hardening
+### 3. Smaller follow-ups
+- Unpark Reporting when asked (D-72).
+- KMS-wrapped master key (D-75).
+- Business-hours SLA (skip nights/weekends) if the clinic wants it (D-73).
+- A production "create first clinic and admin" script, so §3 of DEPLOYMENT.md
+  isn't a manual SQL step.
+- Manual screen-reader pass (VoiceOver/NVDA) on the core flows.
 
 ---
 
@@ -231,6 +214,15 @@ Add `{ href: "/reports", ... }` back to `NAV_SECTIONS` in `apps/web/src/componen
    test replaces the clinic's Google connection — don't run it against a dev
    database with a real Google connection you care about.
 26. **Literal U+FEFF in source fails lint** — write `"\uFEFF"`.
+27. **Python string edits turn `"\n"` into real newlines** in TypeScript
+   string literals. Write `"\\n"` in the Python source, or edit with a tool.
+28. **`registerRoute` owns the status code.** Setting `reply.code()` inside a
+   handler is overwritten; throw an `AppError`, or use a plain `app.get` (as
+   `/health/alerts` does).
+29. **Tests that depend on `OUTBOUND_SENDING_ENABLED` must set it** — a
+   developer's local `.env` may have sending on.
+30. **Port 3000 may be taken** on the dev machine (another Docker project);
+   `web-3100` in `.claude/launch.json` runs the web app on 3100.
 24. **Stop the dev API before `pnpm test`** — its in-process worker claims the
    automation runs the tests create.
 21. **`next build` beside `next dev`:** use `NEXT_DIST_DIR=.next-build npx next build`

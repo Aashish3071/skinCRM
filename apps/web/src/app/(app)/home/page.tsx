@@ -231,14 +231,13 @@ function StatusRow({
   note?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1 border-b border-line pb-3 last:border-0 last:pb-0">
-      <div className="flex items-center justify-between gap-3">
-        <dt className="text-ink-muted">{label}</dt>
-        <dd>
-          <Badge tone={tone}>{value}</Badge>
-        </dd>
-      </div>
-      {note && <p className="text-xs text-ink-subtle">{note}</p>}
+    // One <div> directly around a dt/dd group — the only wrapper a <dl> allows.
+    <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 border-b border-line pb-3 last:border-0 last:pb-0">
+      <dt className="text-ink-muted">{label}</dt>
+      <dd>
+        <Badge tone={tone}>{value}</Badge>
+      </dd>
+      {note && <dd className="col-span-2 text-xs text-ink-subtle">{note}</dd>}
     </div>
   );
 }

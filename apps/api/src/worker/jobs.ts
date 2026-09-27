@@ -4,6 +4,7 @@ import { pruneExpiredSessions } from "../auth/sessions";
 import { runEnrollment } from "../automations/engine";
 import { runAsSystem } from "../automations/system-context";
 import { logger } from "../logger";
+import { applyRetention } from "../ops/monitor";
 
 /** How long a claimed run is reserved for one worker before another may retry it. */
 const CLAIM_SECONDS = 120;
@@ -77,4 +78,6 @@ async function recordRunError(id: string, clinicId: string, error: unknown, now:
 export async function housekeeping(): Promise<void> {
   const pruned = await pruneExpiredSessions();
   if (pruned > 0) logger.info({ pruned }, "Pruned expired sessions");
+  const retained = await applyRetention();
+  if (retained.rawPayloads || retained.inboundEvents) logger.info(retained, "Applied data retention");
 }

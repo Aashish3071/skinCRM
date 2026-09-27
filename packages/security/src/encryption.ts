@@ -21,8 +21,9 @@ import { getEnv } from "@skincrm/config";
  *    silently yielding A's secret.
  *  - A version prefix so the format can change without a flag day.
  *
- * Production uses a KMS (CRYPTO_PROVIDER=aws-kms) and the local provider is
- * refused at boot; see assertProductionSafety in @skincrm/config.
+ * In production the master key is injected from a secret manager and must be
+ * strong (checked at boot by assertProductionSafety in @skincrm/config, D-75).
+ * Wrapping it with a KMS is a planned hardening step, not yet implemented.
  */
 
 const VERSION = "v1";

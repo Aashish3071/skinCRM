@@ -94,6 +94,14 @@ const schema = z.object({
 
   GOOGLE_LEAD_FORM_KEY: z.string().default("dev_google_key"),
 
+  /** Where operational alerts go (queue backlog, failing webhooks, backups…). */
+  OPS_ALERT_EMAIL: z.string().email().optional(),
+  /** Shared secret for GET /health/alerts, for an external uptime monitor. */
+  MONITOR_TOKEN: z.string().min(16).optional(),
+  /** Alert if no successful backup has been recorded in 26 hours. */
+  BACKUPS_EXPECTED: booleanish.default("false"),
+  /** Raw provider payloads are kept this long for replay and disputes, then deleted. */
+  RAW_PAYLOAD_RETENTION_DAYS: z.coerce.number().int().min(7).max(3650).default(90),
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
   SENTRY_DSN: z.string().optional(),
 });
@@ -125,16 +133,25 @@ export function getEnv(): Env {
 }
 
 /**
- * Refuse to boot production with development placeholders or a local master key.
+ * Refuse to boot production with development placeholders, weak secrets, or a
+ * mail setup that would silently swallow every email.
  * A leaked dev key would decrypt every clinic's provider credentials.
  */
 function assertProductionSafety(env: Env): void {
   const problems: string[] = [];
   if (env.SESSION_SECRET.includes("dev_only")) problems.push("SESSION_SECRET is still the dev placeholder");
   if (env.CRYPTO_MASTER_KEY.includes("dev_only")) problems.push("CRYPTO_MASTER_KEY is still the dev placeholder");
-  if (env.CRYPTO_PROVIDER === "local")
-    problems.push("CRYPTO_PROVIDER=local is not allowed in production; use aws-kms");
-  if (env.CRYPTO_PROVIDER === "aws-kms" && !env.KMS_KEY_ID) problems.push("KMS_KEY_ID is required for aws-kms");
+  // D-75: the master key comes from the host's secret manager (AWS Secrets
+  // Manager, Doppler, 1Password…) and must be strong. A KMS-wrapped key is a
+  // later hardening step; selecting aws-kms before it exists fails loudly.
+  if (env.CRYPTO_PROVIDER === "aws-kms")
+    problems.push("CRYPTO_PROVIDER=aws-kms is not implemented yet; use local with a strong CRYPTO_MASTER_KEY from your secret manager");
+  if (env.CRYPTO_MASTER_KEY.length < 32)
+    problems.push("CRYPTO_MASTER_KEY must be at least 32 characters (openssl rand -base64 32)");
+  if (env.SESSION_SECRET.length < 32) problems.push("SESSION_SECRET must be at least 32 characters (openssl rand -base64 32)");
+  if (env.CRYPTO_MASTER_KEY === env.SESSION_SECRET) problems.push("CRYPTO_MASTER_KEY and SESSION_SECRET must be different");
+  if (env.OUTBOUND_SENDING_ENABLED && env.CONNECTOR_EMAIL === "live" && ["localhost", "127.0.0.1"].includes(env.SMTP_HOST))
+    problems.push("SMTP_HOST points at localhost (the development mail catcher); set your real email relay");
   if (!env.DATABASE_APP_URL)
     problems.push("DATABASE_APP_URL is required in production so runtime queries are subject to row-level security");
   if (problems.length > 0) {

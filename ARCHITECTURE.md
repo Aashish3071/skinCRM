@@ -349,6 +349,22 @@ contracts `packages/contracts/src/automations.ts`, UI `apps/web/src/app/(app)/au
 
 ---
 
+## 6d. SLA, staff alerts and operations
+
+- **SLA** (`apps/api/src/leads/sla.ts`): `sla_due_at` set on lead creation from
+  `clinics.first_response_sla_minutes`; `markFirstResponse()` is called from
+  contact attempts, `changeStage` and `sendMessage` (people only, never
+  automations). `processSlaBreaches()` runs in the worker loop.
+- **Staff alerts**: automation step `notify_team` → `sendSystemEmail` (D-74).
+- **Operations** (`apps/api/src/ops/monitor.ts`): heartbeats, alert collection,
+  retention; `ops_heartbeats` is owner-only (revoked from the app role).
+- **Deployment** (`deploy/`): one Dockerfile with `api`, `web`, `tools`
+  targets; `docker-compose.prod.yml`; `Caddyfile`. Web uses Next standalone output.
+- **Backups** (`scripts/`): `backup.sh`, `restore.sh`, `verify-backup.sh`,
+  sharing `scripts/lib/pg.sh` (host tools or the Postgres container).
+
+---
+
 ## 7. Conversion feedback (CRM → ad platform)
 
 The highest-risk feature in the product. Architecture reflects that.
@@ -518,5 +534,11 @@ Consequences to know about:
 | Forward-only stages (D-69) | ✅ Built |
 | WhatsApp-style inbox | ✅ Built (visual check incomplete — see HANDOFF) |
 | Reporting `[REP-01…04]` | 🅿️ Built, 4 tests, parked (D-72) |
+| Response-time SLA, escalation, staff email alerts | ✅ Built, 7 tests |
+| Lead rules settings (SLA + assignment UI) | ✅ Built |
+| Audit log viewer `[AUD-01]` | ✅ Built |
+| Monitoring, alerts, retention, health endpoints | ✅ Built, 7 tests |
+| CI, production images, compose + HTTPS, backups, restore test | ✅ Built and run |
+| Accessibility scan (WCAG 2.2 AA, automated) | ✅ 0 violations |
 | Conversion feedback outbox and gate `[FB-01…10]` | ⬜ Phase 8 |
-| Backups, monitoring, deployment guide, UAT | ⬜ Phase 9 |
+

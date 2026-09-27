@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -6,6 +6,7 @@ import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import { getEnv } from "@skincrm/config";
 import { registerAuthRoutes } from "./auth/routes";
+import { registerAuditLogRoutes } from "./audit-log/routes";
 import { registerErrorHandler } from "./errors";
 import { logger } from "./logger";
 import { registerRoute } from "./route";
@@ -116,8 +117,29 @@ export async function buildApp(): Promise<FastifyInstance> {
       // Readiness means the database answers, not merely that the process is up.
       const { getDb } = await import("@skincrm/db");
       await getDb().sql`select 1`;
-      return { status: "ready" };
+      const { lastBeat } = await import("./ops/monitor");
+      const worker = await lastBeat("worker");
+      const workerOk = worker !== null && Date.now() - worker.getTime() < 3 * 60_000;
+      return { status: workerOk ? "ready" : "degraded", database: "ok", worker: workerOk ? "ok" : "stale", workerLastSeen: worker?.toISOString() ?? null };
     },
+  });
+
+  /**
+   * For an external uptime monitor (UptimeRobot, Better Stack…): 200 with an
+   * empty list when all is well, 503 with the alerts otherwise. Protected by a
+   * shared token; the messages carry clinic names and counts, no personal data.
+   */
+  // A plain route (not registerRoute): it sets its own status code, 503
+  // while any alert is open, which is what uptime monitors key on.
+  app.get("/health/alerts", async (request, reply) => {
+    const token = getEnv().MONITOR_TOKEN;
+    const given = request.headers["x-monitor-token"];
+    if (!token || typeof given !== "string" || given.length !== token.length || !timingSafeEqual(Buffer.from(given), Buffer.from(token))) {
+      return reply.code(404).send({ error: { code: "not_found", message: "Not found." } });
+    }
+    const { collectAlerts } = await import("./ops/monitor");
+    const alerts = await collectAlerts();
+    return reply.code(alerts.length ? 503 : 200).send({ ok: alerts.length === 0, alerts });
   });
 
   registerAuthRoutes(app);
@@ -135,6 +157,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerIntegrationRoutes(app);
   registerWebhooks(app);
   registerReportRoutes(app);
+  registerAuditLogRoutes(app);
 
   return app;
 }

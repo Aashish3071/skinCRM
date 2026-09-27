@@ -1,16 +1,17 @@
 import Link from "next/link";
 import type { ComponentType } from "react";
-import { CalendarIcon, ChevronRightIcon, FlagIcon, PeopleIcon, ZapIcon } from "@/components/icons";
+import { CalendarIcon, ChevronRightIcon, FlagIcon, LockIcon, PeopleIcon, ZapIcon } from "@/components/icons";
 import { PageHeader } from "@/components/ui";
 import { can, requireCapability } from "@/lib/session";
 
 export const metadata = { title: "Settings — SkinCRM" };
 
-const SECTIONS: { href: string; title: string; description: string; icon: ComponentType<{ size?: number }>; capability: "users:read" | "settings:read" | "integrations:read" }[] = [
+const SECTIONS: { href: string; title: string; description: string; icon: ComponentType<{ size?: number }>; capability: "users:read" | "settings:read" | "integrations:read" | "audit:read" }[] = [
   { href: "/settings/integrations", title: "Lead sources & messaging", description: "Facebook and Google lead ads, WhatsApp number, email sending and marketing approval.", icon: ZapIcon, capability: "integrations:read" },
   { href: "/settings/lead-rules", title: "Lead rules", description: "Response-time target and who gets each new lead.", icon: FlagIcon, capability: "settings:read" },
   { href: "/settings/staff", title: "Staff and roles", description: "Invite your team, set what each person can see and do.", icon: PeopleIcon, capability: "users:read" },
   { href: "/settings/calendar", title: "Calendar", description: "Appointment types, how long they take, and everyone's working hours.", icon: CalendarIcon, capability: "settings:read" },
+  { href: "/settings/audit", title: "Audit log", description: "Who signed in, changed, exported or viewed what — and when.", icon: LockIcon, capability: "audit:read" },
 ];
 
 /** Only sections that work are listed; planned ones live in the roadmap (docs/HANDOFF.md). */

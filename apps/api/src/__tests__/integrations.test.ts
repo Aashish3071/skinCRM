@@ -296,6 +296,9 @@ describe("outbound settings", () => {
   });
 
   it("sends a test email only when sending is switched on", async () => {
+    // Set explicitly: a developer's local .env may have sending switched on.
+    process.env.OUTBOUND_SENDING_ENABLED = "false";
+    resetEnvCache();
     const off = await app.inject({ method: "POST", url: "/integrations/test-send", headers: { cookie: admin }, payload: { channel: "email", to: "me@example.test" } });
     expect(off.statusCode).toBe(400);
     process.env.OUTBOUND_SENDING_ENABLED = "true";

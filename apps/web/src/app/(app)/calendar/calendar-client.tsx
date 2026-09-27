@@ -124,7 +124,8 @@ function TimeGrid({ days, appointments, timezone, staff, staffId, onOpen, onBook
         </div>;
       })}
     </div>
-    <div ref={scroller} className="max-h-[calc(100vh-17rem)] min-h-96 overflow-y-auto">
+    {/* Focusable so keyboard users can scroll the day (WCAG 2.1.1). */}
+    <div ref={scroller} tabIndex={0} role="region" aria-label="Appointments by time" className="max-h-[calc(100vh-17rem)] min-h-96 overflow-y-auto">
       <div className="relative grid" style={{ gridTemplateColumns: `56px repeat(${columns.length}, minmax(0, 1fr))`, height: hours.length * HOUR_PX }}>
         <div className="relative">
           {hours.map((h, i) => <span key={h} className="absolute right-2 -translate-y-1/2 text-[11px] text-ink-subtle" style={{ top: i * HOUR_PX }}>{i === 0 ? "" : hourLabel(h)}</span>)}

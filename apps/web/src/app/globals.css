@@ -22,7 +22,7 @@
 
   --color-ink: #14191f;
   --color-ink-muted: #56606b;
-  --color-ink-subtle: #6f7883;
+  --color-ink-subtle: #5b6470; /* ≥4.5:1 on white and on the grey panels */
 
   /* Deep teal: calm for all-day use, 5.4:1 on white for text and focus rings. */
   --color-brand: #0f766e;
@@ -174,8 +174,8 @@ body {
   --wa-in: #ffffff;
   --wa-out: #d9fdd3;
   --wa-text: #111b21;
-  --wa-meta: #667781;
-  --wa-green: #008069;
+  --wa-meta: #54656f;
+  --wa-green: #00705c;
   --wa-green-bright: #25d366;
   --wa-send: #00a884;
   --wa-tick-read: #027eb5;
@@ -234,4 +234,12 @@ body {
 .wa-tail-out::before {
   right: -8px;
   clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+/* Links inside running text are underlined, so they don't rely on colour
+   alone (WCAG 1.4.1). Buttons and nav links are unaffected. */
+p a,
+li > p a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

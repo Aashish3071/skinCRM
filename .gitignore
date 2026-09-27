@@ -20,3 +20,6 @@ pnpm-debug.log*
 playwright-report/
 test-results/
 .next-build
+
+# Encrypted database backups — never commit
+backups/

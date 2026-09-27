@@ -1,0 +1,22 @@
+# HTTPS for {$APP_DOMAIN}. Certificates are issued and renewed automatically.
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	# Public API endpoints: provider webhooks, unsubscribe links, health checks.
+	@api path /webhooks/* /public/* /health /health/*
+	handle @api {
+		reverse_proxy api:4000
+	}
+
+	# Everything else is the web app (which talks to the API privately).
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

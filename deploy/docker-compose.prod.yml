@@ -1,0 +1,81 @@
+# Production stack for one server. See docs/DEPLOYMENT.md.
+#
+#   cd deploy && docker compose -f docker-compose.prod.yml --env-file ../.env up -d
+#
+# Caddy terminates HTTPS (certificates are automatic) and serves one domain:
+# the web app, plus the API's public endpoints (webhooks, unsubscribe, health).
+# The API itself is not exposed; the web app reaches it on the private network.
+
+name: skincrm
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-skincrm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-skincrm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-skincrm}"]
+      interval: 10s
+      retries: 10
+
+  migrate:
+    build: { context: .., dockerfile: deploy/Dockerfile, target: tools }
+    env_file: ../.env
+    environment: &db
+      DATABASE_URL: postgresql://${POSTGRES_USER:-skincrm}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-skincrm}
+      DATABASE_APP_URL: postgresql://skincrm_app:${DATABASE_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-skincrm}
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: "no"
+
+  api:
+    build: { context: .., dockerfile: deploy/Dockerfile, target: api }
+    image: skincrm-api
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      <<: *db
+      WORKER_IN_API: "false"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      retries: 5
+
+  worker:
+    image: skincrm-api
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    env_file: ../.env
+    environment:
+      <<: *db
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    build: { context: .., dockerfile: deploy/Dockerfile, target: web }
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:4000
+    depends_on: [api]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN, e.g. crm.yourclinic.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [web, api]
+
+volumes:
+  pgdata:
+  caddy_data:

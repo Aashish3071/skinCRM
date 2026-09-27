@@ -120,3 +120,13 @@ revoke update, delete on public.audit_events from skincrm_app;
 -- Clinic provisioning is an operator action, not an API call. The app may read
 -- and update its own clinic row but never create or delete one.
 revoke insert, delete on public.clinics from skincrm_app;
+
+-- Operational heartbeats are for the owner connection (worker claims, monitor,
+-- backup script) only. The application role never needs them.
+do $$
+begin
+  if to_regclass('public.ops_heartbeats') is not null then
+    revoke all on public.ops_heartbeats from skincrm_app;
+  end if;
+end
+$$;
