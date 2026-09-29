@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { LOGO_MAX_BYTES } from "@skincrm/contracts";
 import { Field, buttonClasses, inputClasses } from "@/components/ui";
+import { EmailInput, PhoneInput } from "@/components/contact-inputs";
 import { removeLogoAction, saveClinicAction, uploadLogoAction, type ProfileResult } from "@/lib/profile-actions";
 import type { ClinicSettings } from "./page";
 
@@ -87,18 +88,18 @@ export function ClinicForm({ clinic, writable }: { clinic: ClinicSettings; writa
         <h2 className="text-base font-semibold">Details</h2>
         <fieldset disabled={!writable || pending} className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <Field label="Clinic name" htmlFor="c-name" errors={errors?.name}><input id="c-name" name="name" required defaultValue={clinic.name} className={inputClasses} /></Field>
+            <Field label="Clinic name" htmlFor="c-name" errors={errors?.name}><input id="c-name" name="name" required maxLength={120} defaultValue={clinic.name} className={inputClasses} /></Field>
           </div>
-          <Field label="Phone" htmlFor="c-phone" hint="Used in messages as the number to call."><input id="c-phone" name="phone" type="tel" defaultValue={clinic.phone ?? ""} className={inputClasses} /></Field>
-          <Field label="Contact email" htmlFor="c-email" errors={errors?.supportEmail}><input id="c-email" name="supportEmail" type="email" defaultValue={clinic.supportEmail ?? ""} className={inputClasses} /></Field>
-          <Field label="Website" htmlFor="c-web"><input id="c-web" name="website" defaultValue={clinic.website ?? ""} placeholder="https://" className={inputClasses} /></Field>
+          <Field label="Phone" htmlFor="c-phone" hint="Used in messages as the number to call." errors={errors?.phone}><PhoneInput id="c-phone" name="phone" defaultValue={clinic.phone} /></Field>
+          <Field label="Contact email" htmlFor="c-email" errors={errors?.supportEmail}><EmailInput id="c-email" name="supportEmail" defaultValue={clinic.supportEmail} placeholder="frontdesk@yourclinic.com" /></Field>
+          <Field label="Website" htmlFor="c-web" errors={errors?.website}><input id="c-web" name="website" type="text" inputMode="url" autoCapitalize="none" spellCheck={false} maxLength={200} defaultValue={clinic.website ?? ""} placeholder="yourclinic.com" className={inputClasses} /></Field>
           <Field label="Time zone" htmlFor="c-tz" hint="All times in the CRM use this.">
             <select id="c-tz" name="timezone" defaultValue={clinic.timezone} className={inputClasses}>
               {zones.map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}
             </select>
           </Field>
           <div className="sm:col-span-2">
-            <Field label="Postal address" htmlFor="c-addr" hint="Required on marketing emails by law."><input id="c-addr" name="postalAddress" defaultValue={clinic.postalAddress ?? ""} className={inputClasses} /></Field>
+            <Field label="Postal address" htmlFor="c-addr" hint="Required on marketing emails by law." errors={errors?.postalAddress}><input id="c-addr" maxLength={300} autoComplete="street-address" name="postalAddress" defaultValue={clinic.postalAddress ?? ""} className={inputClasses} /></Field>
           </div>
         </fieldset>
         {writable && <div><button disabled={pending} className={buttonClasses("primary")}>{pending ? "Saving…" : "Save"}</button></div>}

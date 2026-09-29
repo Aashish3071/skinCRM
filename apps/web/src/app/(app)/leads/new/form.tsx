@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { LEAD_SOURCE_LABELS, type LeadSource } from "@skincrm/contracts";
 import { Field, buttonClasses, inputClasses } from "@/components/ui";
+import { EmailInput, NameInput, PhoneInput } from "@/components/contact-inputs";
 import { createLeadAction, type ActionState } from "@/lib/crm-actions";
 
 /**
@@ -23,22 +24,36 @@ export function NewLeadForm() {
   const [showNote, setShowNote] = useState(false);
   const errors = state.status === "error" ? state.fieldErrors : undefined;
   const duplicateWarning = state.status === "error" && state.message.includes("already exists");
+  // Typed values survive a rejected submit; the key remounts the inputs with them.
+  const kept = state.status === "error" ? state.values : undefined;
+  const [contactMissing, setContactMissing] = useState(false);
 
   return (
-    <form action={action} className="flex flex-col gap-5">
-      <Field label="Name" htmlFor="fullName" errors={errors?.["person.firstName"] ?? errors?.firstName}>
-        <input id="fullName" name="fullName" required autoFocus autoComplete="off" placeholder="e.g. Maria Lopez" className={inputClasses} />
+    <form
+      action={action}
+      onSubmit={(e) => {
+        const f = new FormData(e.currentTarget);
+        const missing = !String(f.get("phone") ?? "").trim() && !String(f.get("email") ?? "").trim();
+        setContactMissing(missing);
+        if (missing) e.preventDefault();
+      }}
+      className="flex flex-col gap-5"
+    >
+      <Field label="Name" htmlFor="fullName" errors={errors?.["person.firstName"] ?? errors?.["person.lastName"] ?? errors?.firstName}>
+        <NameInput key={`n${kept?.fullName ?? ""}`} id="fullName" name="fullName" required autoFocus autoComplete="off" maxLength={240} defaultValue={kept?.fullName} placeholder="e.g. Maria Lopez" />
       </Field>
 
       <div className="grid gap-5 sm:grid-cols-2">
         <Field label="Phone" htmlFor="phone" errors={errors?.["person.phone"] ?? errors?.phone}>
-          <input id="phone" name="phone" type="tel" inputMode="tel" autoComplete="off" className={inputClasses} />
+          <PhoneInput key={`p${kept?.phone ?? ""}`} id="phone" name="phone" autoComplete="off" defaultValue={kept?.phone} />
         </Field>
         <Field label="Email" htmlFor="email" errors={errors?.["person.email"] ?? errors?.email}>
-          <input id="email" name="email" type="email" autoComplete="off" className={inputClasses} />
+          <EmailInput key={`e${kept?.email ?? ""}`} id="email" name="email" autoComplete="off" defaultValue={kept?.email} />
         </Field>
       </div>
-      <p className="-mt-3 text-xs text-ink-subtle">A phone number or an email is enough.</p>
+      <p role={contactMissing ? "alert" : undefined} className={`-mt-3 text-xs ${contactMissing ? "font-medium text-critical" : "text-ink-subtle"}`}>
+        {contactMissing ? "Add a phone number or an email address so the clinic can reach them." : "A phone number or an email is enough."}
+      </p>
 
       <fieldset>
         <legend className="text-sm font-medium">How did they find you?</legend>
@@ -68,7 +83,7 @@ export function NewLeadForm() {
 
       {showNote ? (
         <Field label="Note" htmlFor="inquiryNote" hint="What they asked about. Kept with this inquiry.">
-          <textarea id="inquiryNote" name="inquiryNote" rows={3} autoFocus className={inputClasses} />
+          <textarea key={`t${kept?.inquiryNote ?? ""}`} id="inquiryNote" name="inquiryNote" rows={3} maxLength={4000} autoFocus defaultValue={kept?.inquiryNote} className={inputClasses} />
         </Field>
       ) : (
         <button type="button" onClick={() => setShowNote(true)} className="self-start text-sm font-medium text-brand">

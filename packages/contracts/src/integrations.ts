@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isoDateTime, optionalShortText, shortText, uuidSchema } from "./common";
 import { INBOUND_EVENT_STATES, INBOUND_EVENT_TYPES, INTEGRATION_HEALTH_STATES, INTEGRATION_PROVIDERS } from "./enums";
+import { isValidEmail, optionalEmailField, optionalPhoneField, phoneShapeProblem } from "./contact";
 
 /** Settings → Integrations (PRD INT-01…04, MSG-01). Secrets go in, never come out. */
 
@@ -11,21 +12,37 @@ export const connectMetaSchema = z.object({
 
 export const connectWhatsAppSchema = z.object({
   phoneNumberId: z.string().trim().regex(/^\d{5,30}$/, "The phone-number id is a long number from Meta"),
-  businessAccountId: optionalShortText(40),
-  displayPhone: optionalShortText(40),
+  businessAccountId: z.string().trim().regex(/^\d{5,30}$/, "The WhatsApp Business Account id is a long number from Meta").optional()
+    .or(z.literal("").transform(() => undefined)),
+  displayPhone: optionalPhoneField,
   accessToken: shortText(1_000),
 });
 
-export const testSendSchema = z.object({
-  channel: z.enum(["email", "whatsapp"]),
-  to: shortText(200),
+/** "Send yourself a test": the address must match the channel. */
+export const testSendSchema = z
+  .object({
+    channel: z.enum(["email", "whatsapp"]),
+    to: shortText(200),
+  })
+  .superRefine((value, ctx) => {
+    const problem = value.channel === "email"
+      ? (isValidEmail(value.to) ? null : "Enter a full email address, like you@clinic.com.")
+      : phoneShapeProblem(value.to);
+    if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem, path: ["to"] });
+  });
+
+/** A domain name only, like sunshineskin.com (no https://, no @). */
+const optionalDomainField = optionalShortText(200).superRefine((value, ctx) => {
+  if (value !== null && !/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(value)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Enter just the domain, like sunshineskin.com." });
+  }
 });
 
 export const messagingSettingsSchema = z.object({
   promotionalSendingApproved: z.boolean().optional(),
   postalAddress: optionalShortText(300),
-  sendingDomain: optionalShortText(200),
-  supportEmail: optionalShortText(200),
+  sendingDomain: optionalDomainField,
+  supportEmail: optionalEmailField,
 });
 
 export const connectionSchema = z.object({
@@ -106,3 +123,23 @@ export interface OAuthCompleteResult {
   connection: ConnectionDto;
   detail: string;
 }
+
+/** WhatsApp Embedded Signup (D-88). */
+export interface WhatsAppSignupStart {
+  mode: "mock" | "live";
+  /** Live only: what the Facebook SDK needs in the browser (both are public). */
+  appId: string | null;
+  configId: string | null;
+  graphVersion: string;
+  state: string;
+}
+
+export const completeWhatsAppSignupSchema = z.object({
+  state: z.string().min(20).max(200),
+  code: z.string().min(1).max(2_000),
+  phoneNumberId: z.string().trim().regex(/^\d{5,30}$/, "The phone-number id is a long number from Meta"),
+  wabaId: z.string().trim().regex(/^\d{5,30}$/, "The WhatsApp Business Account id is a long number from Meta"),
+  /** Kept the WhatsApp Business app on the phone (coexistence): already registered. */
+  coexistence: z.boolean().default(false),
+});
+export type CompleteWhatsAppSignup = z.infer<typeof completeWhatsAppSignupSchema>;

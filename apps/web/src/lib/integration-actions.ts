@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { WhatsAppSignupStart } from "@skincrm/contracts";
 import { ApiError, apiFetch } from "./api";
 
 export type Result = { ok: true; detail?: string; key?: string; url?: string } | { ok: false; message: string; fieldErrors?: Record<string, string[]> };
@@ -70,4 +71,17 @@ export async function completeOAuthAction(pendingId: string, choiceId: string): 
 
 export async function syncGoogleFormsAction(): Promise<Result> {
   return run(async () => ({ detail: (await apiFetch<{ detail: string }>("/integrations/google/sync-forms", { method: "POST" })).detail }));
+}
+
+/** WhatsApp Embedded Signup (D-88): what the browser needs to open Meta's popup. */
+export async function startWhatsAppSignupAction(): Promise<{ ok: true; start: WhatsAppSignupStart } | { ok: false; message: string }> {
+  try {
+    return { ok: true, start: await apiFetch<WhatsAppSignupStart>("/integrations/whatsapp/signup/start", { method: "POST" }) };
+  } catch (error) {
+    return { ok: false, message: error instanceof ApiError ? error.message : "Could not reach the server." };
+  }
+}
+
+export async function completeWhatsAppSignupAction(input: { state: string; code: string; phoneNumberId: string; wabaId: string; coexistence: boolean }): Promise<Result> {
+  return run(async () => ({ detail: (await apiFetch<{ detail: string }>("/integrations/whatsapp/signup/complete", { method: "POST", body: input })).detail }));
 }

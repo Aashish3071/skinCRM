@@ -6,7 +6,7 @@ import { closeAllConnections, getOwnerDb, schema } from "@skincrm/db";
 import { MockGoogleFeedbackConnector, MockMetaCapiConnector, setFeedbackConnectors } from "@skincrm/connectors";
 import { DEFAULT_FEEDBACK_MAPPING } from "@skincrm/contracts";
 import { resetEnvCache } from "@skincrm/config";
-import { SEED, authenticate, clinicIdBySlug, createTestApp, resetAuthState } from "./helpers";
+import { SEED, authenticate, clinicIdBySlug, createTestApp, resetAuthState, letters } from "./helpers";
 import { processFeedbackOutbox } from "../feedback/service";
 
 const { people, leads, leadStageEvents, activities, sourceSubmissions, feedbackEvents, feedbackDestinations, notifications } = schema;
@@ -65,7 +65,7 @@ let n = 0;
 /** A lead that came from a Meta lead ad (has a Meta lead id), or a walk-in. */
 async function lead(fromMeta = true, isTest = false) {
   n += 1;
-  const r = await app.inject({ method: "POST", url: "/leads", headers: { cookie: admin }, payload: { person: { firstName: `F${n} ${TAG}`, email: `f${n}.${TAG}@example.test`, phone: `305-555-${6600 + n}`, allowDuplicate: true }, source: fromMeta ? "meta_lead_ad" : "walk_in" } });
+  const r = await app.inject({ method: "POST", url: "/leads", headers: { cookie: admin }, payload: { person: { firstName: `F${letters(n)} ${TAG}`, email: `f${n}.${TAG}@example.test`, phone: `305-555-${6600 + n}`, allowDuplicate: true }, source: fromMeta ? "meta_lead_ad" : "walk_in" } });
   const id = r.json().id as string;
   const { db } = getOwnerDb();
   if (fromMeta) {

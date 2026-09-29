@@ -73,17 +73,16 @@ describe("creating a person", () => {
     expect(body.phone).toBe("(305) 555-0123");
   });
 
-  it("keeps an unparseable phone rather than discarding it", async () => {
+  it("refuses a phone that isn't a number when staff type it (D-89)", async () => {
+    // Imports and web forms keep unreadable numbers instead (validation.test.ts);
+    // someone at the desk can simply correct it.
     const { status, body } = await createPerson({
       firstName: `Nate ${TAG}`,
       phone: "ask for the mobile",
       email: `nate.${TAG}@example.test`,
     });
-    expect(status).toBe(201);
-    expect(body.phoneValid).toBe(false);
-    expect(body.phoneE164).toBeNull();
-    // Still visible to staff, who may be able to make sense of it.
-    expect(body.phone).toBe("ask for the mobile");
+    expect(status).toBe(400);
+    expect(JSON.stringify(body)).toMatch(/only contain digits/);
   });
 
   it("requires at least a phone or an email", async () => {

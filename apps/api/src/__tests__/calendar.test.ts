@@ -257,7 +257,7 @@ describe("booking (PRD CAL-03)", () => {
     const typeId = typeResponse.json().id as string;
 
     const a = await makePerson(`Buf ${TAG}`);
-    const b = await makePerson(`Buf2 ${TAG}`);
+    const b = await makePerson(`Buf Two ${TAG}`);
 
     const booked = await book({
       personId: a,

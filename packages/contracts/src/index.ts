@@ -2,6 +2,7 @@ export * from "./enums";
 export * from "./permissions";
 export * from "./phone";
 export * from "./common";
+export * from "./contact";
 export * from "./auth";
 export * from "./people";
 export * from "./leads";

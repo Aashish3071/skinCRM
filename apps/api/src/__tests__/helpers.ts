@@ -79,3 +79,11 @@ export async function authenticate(app: FastifyInstance, email: string): Promise
   }
   return result.cookie;
 }
+
+/**
+ * A number spelled in letters (0 → "a", 27 → "bb"): unique test names that
+ * pass the "names can't contain numbers" rule (D-89).
+ */
+export function letters(n: number): string {
+  return Math.abs(Math.trunc(n)).toString(26).split("").map((c) => String.fromCharCode(97 + parseInt(c, 26))).join("");
+}

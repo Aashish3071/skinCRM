@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { parse } from "csv-parse/sync";
-import { normalizeEmail, normalizePhone } from "@skincrm/contracts";
+import { isValidEmail, normalizePhone } from "@skincrm/contracts";
 
 /**
  * CSV import (PRD ID-04).
@@ -137,6 +137,8 @@ export function validateRow(
 
   if (!phone && !email) {
     errors.push("No phone number or email address");
+  } else if (phone && !email && !/\d{3,}/.test(phone)) {
+    errors.push(`"${phone}" isn't a phone number and there is no email address`);
   }
 
   if (phone) {
@@ -148,7 +150,7 @@ export function validateRow(
     }
   }
 
-  if (email && !normalizeEmail(email)?.includes("@")) {
+  if (email && !isValidEmail(email)) {
     errors.push(`"${email}" does not look like an email address`);
   }
 

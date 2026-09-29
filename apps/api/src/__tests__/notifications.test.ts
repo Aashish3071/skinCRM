@@ -4,7 +4,7 @@ import { eq, inArray, like, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { closeAllConnections, getOwnerDb, schema } from "@skincrm/db";
 import { MockEmailConnector, MockWhatsAppConnector, resetConnectors, setConnectors } from "@skincrm/connectors";
-import { SEED, authenticate, createTestApp, resetAuthState } from "./helpers";
+import { SEED, authenticate, createTestApp, resetAuthState, letters } from "./helpers";
 import { processTimedNotifications } from "../notifications/service";
 
 const { people, leads, leadStageEvents, activities, notifications, users, appointments, messages, conversations, consentRecords, sourceSubmissions } = schema;
@@ -56,7 +56,7 @@ async function cleanup() {
 let n = 0;
 async function lead(cookie = frontDesk) {
   n += 1;
-  const r = await app.inject({ method: "POST", url: "/leads", headers: { cookie }, payload: { person: { firstName: `N${n} ${TAG}`, phone: `305-555-${5500 + n}`, allowDuplicate: true }, source: "walk_in", ownerUserId: null } });
+  const r = await app.inject({ method: "POST", url: "/leads", headers: { cookie }, payload: { person: { firstName: `N${letters(n)} ${TAG}`, phone: `305-555-${5500 + n}`, allowDuplicate: true }, source: "walk_in", ownerUserId: null } });
   expect(r.statusCode).toBe(201);
   return r.json() as { id: string; personId: string };
 }

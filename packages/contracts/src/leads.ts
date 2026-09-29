@@ -16,6 +16,7 @@ import {
   TASK_STATUSES,
   type StageCategory,
 } from "./enums";
+import { optionalEmailField, optionalNameField, optionalPhoneField } from "./contact";
 
 // --- Leads ----------------------------------------------------------------
 
@@ -29,10 +30,11 @@ export const createLeadSchema = z.object({
   personId: uuidSchema.optional(),
   person: z
     .object({
-      firstName: optionalShortText(120),
-      lastName: optionalShortText(120),
-      phone: optionalShortText(40),
-      email: optionalShortText(320),
+      // Typed at the front desk: strict (contact.ts, D-89).
+      firstName: optionalNameField(120),
+      lastName: optionalNameField(120),
+      phone: optionalPhoneField,
+      email: optionalEmailField,
       allowDuplicate: z.boolean().default(false),
     })
     .optional(),

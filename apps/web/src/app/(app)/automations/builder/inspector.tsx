@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import {
+import { isValidEmail,
   AUTOMATION_STOP_CONDITIONS,
   AUTOMATION_TRIGGERS,
   FILTER_CONDITIONS,
@@ -478,7 +478,7 @@ function NotifyInspector({
   const addEmail = () => {
     const email = draft.trim().toLowerCase();
     if (!email) return;
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setBad(true);
+    if (!isValidEmail(email)) return setBad(true);
     if (!step.extraEmails.includes(email)) onChange({ ...step, extraEmails: [...step.extraEmails, email] });
     setDraft("");
     setBad(false);

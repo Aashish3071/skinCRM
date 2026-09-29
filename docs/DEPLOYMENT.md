@@ -117,8 +117,23 @@ A form that already sends leads to another system (a previous CRM, Zapier) is
 left alone and listed, never overwritten. The manual routes — pasting a Page
 token, or a webhook key into the form — remain under "…by hand instead".
 
-- **WhatsApp:** phone-number ID + permanent token; subscribe `messages` with the
-  URL and token shown. Approve message templates in WhatsApp Manager.
+**WhatsApp (Connect WhatsApp — Embedded Signup)** — same Meta app
+1. Add the **WhatsApp** product. Become a Tech Provider (or Solution Partner) and
+   get `whatsapp_business_management` and `whatsapp_business_messaging`
+   approved in App Review.
+2. WhatsApp → **Embedded Signup** → create a configuration (Login for Business,
+   "WhatsApp Embedded Signup" variation). Put its id in `META_WA_CONFIG_ID`.
+3. Facebook Login for Business → **Allowed domains for the JavaScript SDK**:
+   add `crm.yourclinic.com` (the popup is opened from Settings in the browser).
+4. Webhooks → WhatsApp Business Account → subscribe `messages` with the Callback
+   URL and Verify token shown in Settings. Each clinic's WABA is then subscribed
+   automatically when they connect.
+5. `.env`: `CONNECTOR_WHATSAPP=live`, `META_APP_ID`, `META_APP_SECRET`, `META_WA_CONFIG_ID`.
+6. **Pilot the clinic's existing number** with "The number we already use"
+   (coexistence: the WhatsApp Business app keeps working on the phone). Meta
+   decides eligibility; if it refuses the number, the fallback is a new number.
+   Approve message templates in WhatsApp Manager.
+
 - **Email:** "Send yourself a test". Set up SPF/DKIM for the sending domain
   with your relay first, or mail will land in spam.
 

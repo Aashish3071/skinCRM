@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import type { ConnectionDto } from "@skincrm/contracts";
 import { Badge, Field, buttonClasses, inputClasses } from "@/components/ui";
+import { DigitsInput, EmailInput, PhoneInput } from "@/components/contact-inputs";
+import { WhatsAppConnect } from "./whatsapp-connect";
 import {
   connectMetaAction,
   connectWhatsAppAction,
@@ -21,7 +23,12 @@ function Outcome({ result }: { result: Result | null }) {
   return result.ok ? (
     <p role="status" className="rounded-lg bg-positive-soft px-3 py-2 text-sm text-positive">{result.detail ?? "Saved."}</p>
   ) : (
-    <p role="alert" className="rounded-lg bg-critical-soft px-3 py-2 text-sm text-critical">{result.message}</p>
+    <div role="alert" className="rounded-lg bg-critical-soft px-3 py-2 text-sm text-critical">
+      <p>{result.message}</p>
+      {result.fieldErrors && Object.keys(result.fieldErrors).length > 0 && (
+        <ul className="mt-1 list-disc pl-5">{Object.values(result.fieldErrors).flat().map((m) => <li key={m}>{m}</li>)}</ul>
+      )}
+    </div>
   );
 }
 
@@ -131,7 +138,7 @@ export function MetaCard({ connection, webhook, verifyToken, live }: { connectio
             <summary className="cursor-pointer text-sm font-medium">Enter a Page ID and token by hand instead</summary>
             <form className="mt-3 flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); run(() => connectMetaAction(String(f.get("pageId")), String(f.get("token")))); }}>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Page ID" htmlFor="meta-page"><input id="meta-page" name="pageId" required inputMode="numeric" className={inputClasses} /></Field>
+                <Field label="Page ID" htmlFor="meta-page"><DigitsInput id="meta-page" name="pageId" required minLength={5} maxLength={30} /></Field>
                 <Field label="Page access token" htmlFor="meta-token" hint="Needs leads_retrieval and pages_manage_metadata. Stored encrypted; never shown again."><input id="meta-token" name="token" type="password" required autoComplete="off" className={inputClasses} /></Field>
               </div>
               <div><button disabled={pending} className={buttonClasses("secondary")}>{pending ? "Checking…" : "Connect"}</button></div>
@@ -219,9 +226,24 @@ export function WhatsAppCard({ connection, webhook, verifyToken, live }: { conne
     <Section title="WhatsApp Business" status={<Status connection={connection} />}
       intro="Patients' WhatsApp messages land in the Inbox, and replies and reminders go out from your business number.">
       {connection ? (
-        <ConnectionFooter connection={connection} pending={pending} run={run} />
+        <>
+          <ConnectionFooter connection={connection} pending={pending} run={run} />
+          <p className="text-xs text-ink-subtle">
+            {connection.connectedVia === "oauth" ? "Connected with Meta's WhatsApp sign-up." : "Connected with a pasted token."} To switch numbers, disconnect and connect again.
+          </p>
+        </>
       ) : (
-        <form className="flex flex-col gap-4" onSubmit={(e) => {
+        <div className="flex flex-col gap-4">
+        <Steps items={[
+          "Choose which number below, then press Connect WhatsApp.",
+          "In Meta's window, sign in with the Facebook account that manages the clinic's business and follow the steps (confirm the number with the code Meta sends).",
+          "That's it — patients' messages start arriving in the Inbox.",
+        ]} />
+        <WhatsAppConnect onResult={(r) => run(async () => r)} />
+        {!live && <p className="text-xs text-ink-subtle">Demo mode: no Meta window; a made-up number connects, and the built-in test phone plays the patient (&ldquo;Test message&rdquo; in the Inbox).</p>}
+        <details className="rounded-lg border border-line p-3">
+        <summary className="cursor-pointer text-sm font-medium">Enter a phone number ID and token by hand instead</summary>
+        <form className="mt-3 flex flex-col gap-4" onSubmit={(e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
           run(() => connectWhatsAppAction({ phoneNumberId: String(f.get("pn")), accessToken: String(f.get("token")), displayPhone: String(f.get("display") || "") || undefined, businessAccountId: String(f.get("waba") || "") || undefined }));
@@ -232,14 +254,15 @@ export function WhatsAppCard({ connection, webhook, verifyToken, live }: { conne
             "Paste them below and press Connect.",
           ]} />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Phone number ID" htmlFor="wa-pn"><input id="wa-pn" name="pn" required inputMode="numeric" className={inputClasses} /></Field>
-            <Field label="Your WhatsApp number" htmlFor="wa-display" hint="As patients see it."><input id="wa-display" name="display" placeholder="+1 305 555 0100" className={inputClasses} /></Field>
+            <Field label="Phone number ID" htmlFor="wa-pn"><DigitsInput id="wa-pn" name="pn" required minLength={5} maxLength={30} /></Field>
+            <Field label="Your WhatsApp number" htmlFor="wa-display" hint="As patients see it."><PhoneInput id="wa-display" name="display" autoComplete="off" placeholder="+1 305 555 0100" /></Field>
             <Field label="Access token" htmlFor="wa-token" hint="Stored encrypted. Never shown again."><input id="wa-token" name="token" type="password" required autoComplete="off" className={inputClasses} /></Field>
-            <Field label="Business account ID (optional)" htmlFor="wa-waba"><input id="wa-waba" name="waba" className={inputClasses} /></Field>
+            <Field label="Business account ID (optional)" htmlFor="wa-waba"><DigitsInput id="wa-waba" name="waba" minLength={5} maxLength={30} /></Field>
           </div>
-          <div><button disabled={pending} className={buttonClasses("primary")}>{pending ? "Checking…" : "Connect"}</button></div>
-          {!live && <p className="text-xs text-ink-subtle">Demo mode: messages go to the built-in test phone, not WhatsApp. Use &ldquo;Test message&rdquo; in the Inbox to play the patient.</p>}
+          <div><button disabled={pending} className={buttonClasses("secondary")}>{pending ? "Checking…" : "Connect"}</button></div>
         </form>
+        </details>
+        </div>
       )}
       <Advanced>
         <p className="text-sm text-ink-muted">For whoever sets up the Meta app: subscribe the WhatsApp account to the <strong>messages</strong> field with these details.</p>
@@ -274,14 +297,14 @@ export function SendingCard({ sending, modes }: {
         }));
       }}>
         <Field label="Clinic postal address" htmlFor="addr" hint="Printed at the bottom of marketing email, as the law requires.">
-          <input id="addr" name="address" defaultValue={sending.postalAddress ?? ""} className={inputClasses} />
+          <input id="addr" name="address" maxLength={300} autoComplete="street-address" defaultValue={sending.postalAddress ?? ""} className={inputClasses} />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Email sending domain" htmlFor="domain" hint={`Emails come from noreply@ this domain (now ${sending.emailFrom}).`}>
-            <input id="domain" name="domain" defaultValue={sending.sendingDomain ?? ""} placeholder="yourclinic.com" className={inputClasses} />
+            <input id="domain" name="domain" inputMode="url" autoCapitalize="none" spellCheck={false} maxLength={200} pattern="[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+" title="Just the domain, like yourclinic.com" defaultValue={sending.sendingDomain ?? ""} placeholder="yourclinic.com" className={inputClasses} />
           </Field>
           <Field label="Reply-to / contact email" htmlFor="support">
-            <input id="support" name="support" type="email" defaultValue={sending.supportEmail ?? ""} className={inputClasses} />
+            <EmailInput id="support" name="support" defaultValue={sending.supportEmail} placeholder="frontdesk@yourclinic.com" />
           </Field>
         </div>
         <label className="flex items-start gap-3 rounded-lg border border-line p-3">
@@ -303,7 +326,11 @@ export function SendingCard({ sending, modes }: {
             <option value="whatsapp">WhatsApp{modes.whatsapp === "mock" ? " (demo)" : ""}</option>
           </select>
           <label className="sr-only" htmlFor="test-to">Send to</label>
-          <input id="test-to" name="to" required placeholder={channel === "email" ? "you@clinic.com" : "+1 305 555 0100"} className={`${inputClasses} min-w-0 flex-1`} />
+          <div className="min-w-0 flex-1">
+            {channel === "email"
+              ? <EmailInput key="email" id="test-to" name="to" required placeholder="you@clinic.com" />
+              : <PhoneInput key="phone" id="test-to" name="to" required autoComplete="off" placeholder="+1 305 555 0100" />}
+          </div>
           <button disabled={test.pending || !sending.enabled} className={buttonClasses("secondary")}>{test.pending ? "Sending…" : "Send test"}</button>
         </div>
         <Outcome result={test.result} />

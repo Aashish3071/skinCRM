@@ -7,6 +7,13 @@ import {
   uuidSchema,
 } from "./common";
 import { CONSENT_PURPOSES, CONSENT_SOURCES, CONSENT_STATUSES, CONTACT_CHANNELS } from "./enums";
+import {
+  optionalEmailField,
+  optionalNameField,
+  optionalPhoneField,
+  optionalPlaceField,
+  optionalPostalCodeField,
+} from "./contact";
 
 /**
  * Phone and email are both optional individually, but at least one is required
@@ -16,27 +23,34 @@ import { CONSENT_PURPOSES, CONSENT_SOURCES, CONSENT_STATUSES, CONTACT_CHANNELS }
 const contactRefinement = <T extends { phone?: string | null; email?: string | null }>(value: T) =>
   Boolean(value.phone?.trim()) || Boolean(value.email?.trim());
 
+/** Typed by staff, so strict (see contact.ts). Ingestion paths do not use these. */
 const contactFields = {
-  /** Free-form; normalized to E.164 server-side, original kept for audit. */
-  phone: optionalShortText(40),
-  email: optionalShortText(320),
+  /** Phone characters only; must be a real number for the clinic's country (checked by the API). */
+  phone: optionalPhoneField,
+  email: optionalEmailField,
 };
 
 const nameFields = {
-  firstName: optionalShortText(120),
-  lastName: optionalShortText(120),
+  firstName: optionalNameField(120),
+  lastName: optionalNameField(120),
 };
+
+/** Born in the past, and not implausibly long ago. */
+const dateOfBirthField = isoDate.nullish().refine(
+  (value) => !value || (value <= new Date().toISOString().slice(0, 10) && value >= "1900-01-01"),
+  "Enter a date of birth in the past",
+);
 
 const profileFields = {
   preferredContactMethod: z.enum(CONTACT_CHANNELS).nullish(),
-  preferredLanguage: optionalShortText(60),
+  preferredLanguage: optionalPlaceField(60),
   branchId: uuidSchema.nullish(),
-  dateOfBirth: isoDate.nullish(),
+  dateOfBirth: dateOfBirthField,
   addressLine1: optionalShortText(200),
   addressLine2: optionalShortText(200),
-  city: optionalShortText(120),
-  region: optionalShortText(120),
-  postalCode: optionalShortText(20),
+  city: optionalPlaceField(120),
+  region: optionalPlaceField(120),
+  postalCode: optionalPostalCodeField,
 };
 
 export const createPersonSchema = z
@@ -57,9 +71,14 @@ export const createPersonSchema = z
   });
 export type CreatePerson = z.infer<typeof createPersonSchema>;
 
+/**
+ * Editing: phone and email are checked by the API only when they change, so a
+ * patient imported with an unreadable number can still have their city fixed.
+ */
 export const updatePersonSchema = z.object({
   ...nameFields,
-  ...contactFields,
+  phone: optionalShortText(40),
+  email: optionalShortText(320),
   ...profileFields,
 });
 export type UpdatePerson = z.infer<typeof updatePersonSchema>;

@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { USER_ROLES, USER_ROLE_LABELS, type UserRole } from "@skincrm/contracts";
 import { Badge, Card, Field, inputClasses } from "@/components/ui";
+import { EmailInput, NameInput } from "@/components/contact-inputs";
 import {
   archiveStaffAction,
   deleteStaffAction,
@@ -32,10 +33,10 @@ export function InviteStaffForm() {
       <form action={action} className="flex flex-col gap-4">
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Full name" htmlFor="fullName" errors={errorsFor(state, "fullName")}>
-            <input id="fullName" name="fullName" required className={inputClasses} />
+            <NameInput id="fullName" name="fullName" required maxLength={200} />
           </Field>
           <Field label="Email" htmlFor="email" errors={errorsFor(state, "email")}>
-            <input id="email" name="email" type="email" required className={inputClasses} />
+            <EmailInput id="email" name="email" required autoComplete="off" placeholder="colleague@clinic.com" />
           </Field>
           <Field label="Role" htmlFor="role" errors={errorsFor(state, "role")}>
             <select id="role" name="role" defaultValue="front_desk" className={inputClasses}>

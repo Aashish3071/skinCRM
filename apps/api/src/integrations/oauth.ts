@@ -1,9 +1,11 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   completeOAuthSchema,
+  completeWhatsAppSignupSchema,
+  type WhatsAppSignupStart,
   oauthCallbackSchema,
   oauthProviderSchema,
   type OAuthChoice,
@@ -12,7 +14,7 @@ import {
   type OAuthProvider,
 } from "@skincrm/contracts";
 import { getEnv } from "@skincrm/config";
-import { ConnectorError, getOAuthClients, type GoogleAdsAccount } from "@skincrm/connectors";
+import { ConnectorError, GRAPH_VERSION, getOAuthClients, getWhatsAppSignupClient, type GoogleAdsAccount } from "@skincrm/connectors";
 import { schema } from "@skincrm/db";
 import { decryptForClinic, encryptForClinic, generateToken, hashToken } from "@skincrm/security";
 import { getContext, getTx } from "../context";
@@ -282,4 +284,82 @@ export function registerOAuthRoutes(app: FastifyInstance): void {
       return { connection: serializeConnection(rows[0]!), detail: formsSentence(result, true) };
     },
   });
+
+  // --- WhatsApp Embedded Signup (D-88) ---------------------------------------
+  registerRoute(app, {
+    method: "POST",
+    url: "/integrations/whatsapp/signup/start",
+    auth: { capability: "integrations:write" },
+    handler: async (): Promise<WhatsAppSignupStart> => {
+      const context = getContext();
+      const client = await provider("Setup", async () => getWhatsAppSignupClient());
+      const { token, tokenHash } = generateToken(32);
+      await getTx().insert(authTokens).values({
+        clinicId: context.clinicId!,
+        userId: context.userId,
+        purpose: "oauth_state",
+        tokenHash,
+        expiresAt: new Date(Date.now() + STATE_TTL_MS),
+        metadata: { provider: "whatsapp" },
+      });
+      const env = getEnv();
+      return {
+        mode: client.mode,
+        appId: client.mode === "live" ? env.META_APP_ID ?? null : null,
+        configId: client.mode === "live" ? env.META_WA_CONFIG_ID ?? null : null,
+        graphVersion: GRAPH_VERSION,
+        state: token,
+      };
+    },
+  });
+
+  registerRoute(app, {
+    method: "POST",
+    url: "/integrations/whatsapp/signup/complete",
+    auth: { capability: "integrations:write" },
+    body: completeWhatsAppSignupSchema,
+    handler: async ({ body }): Promise<OAuthCompleteResult> => {
+      const context = getContext();
+      const state = await takeToken(body.state, "oauth_state");
+      if (!state || state.metadata.provider !== "whatsapp") {
+        throw badRequest("This WhatsApp sign-up has expired or was already used. Press Connect WhatsApp again.");
+      }
+      const client = getWhatsAppSignupClient();
+      const token = await provider("Meta", () => client.exchangeCode(body.code));
+      // Webhooks first: a connected number whose messages never arrive is the worst outcome.
+      await provider("Meta refused to send this number's messages to SkinCRM", () => client.subscribeApp(body.wabaId, token));
+      // A new number needs registering for the Cloud API with a two-step PIN; a
+      // coexistence number (still on the WhatsApp Business app) already is.
+      const pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
+      if (!body.coexistence) {
+        await provider("Meta couldn't register the number", () => client.registerNumber(body.phoneNumberId, token, pin));
+      }
+      const details = await provider("Meta", () => client.numberDetails(body.phoneNumberId, token));
+
+      // One WhatsApp number per clinic: replace any earlier connection.
+      await getTx().delete(integrationConnections).where(eq(integrationConnections.provider, "whatsapp_cloud"));
+      const connection = await upsertConnection(
+        "whatsapp_cloud",
+        body.phoneNumberId,
+        details.displayPhone ?? `Number ${body.phoneNumberId}`,
+        token,
+        {
+          via: "oauth",
+          businessAccountId: body.wabaId,
+          verifiedName: details.verifiedName,
+          coexistence: body.coexistence ? "true" : "false",
+          // Needed to re-register the number later; never shown.
+          pinSealed: body.coexistence ? null : encryptForClinic(context.clinicId!, pin),
+        },
+      );
+      const name = details.verifiedName ? `${details.verifiedName} (${details.displayPhone ?? body.phoneNumberId})` : details.displayPhone ?? body.phoneNumberId;
+      return {
+        connection,
+        detail: body.coexistence
+          ? `Connected ${name}. Keep using the WhatsApp Business app on the phone; messages also appear in the Inbox.`
+          : `Connected ${name}. Patients' WhatsApp messages now arrive in the Inbox.`,
+      };
+    },
+  });
 }
+

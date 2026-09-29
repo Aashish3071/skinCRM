@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { NOTIFICATION_TYPES, NOTIFICATION_TYPE_LABELS, PASSWORD_MIN_LENGTH, type NotificationType } from "@skincrm/contracts";
 import { saveMutedAction } from "@/lib/notification-actions";
 import { Badge, Field, buttonClasses, inputClasses } from "@/components/ui";
+import { NameInput } from "@/components/contact-inputs";
 import {
   changePasswordAction,
   confirmMfaAction,
@@ -41,7 +42,7 @@ export function MyProfile({ name, email, role, mfaEnabled, mustEnableMfa, isAdmi
     <div className="flex max-w-2xl flex-col gap-4">
       <Section title="About you">
         <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); const n = String(new FormData(e.currentTarget).get("name")).trim(); start(async () => setNameResult(await saveMyNameAction(n))); }}>
-          <Field label="Your name" htmlFor="p-name" hint="How colleagues and the activity log see you."><input id="p-name" name="name" required defaultValue={name} className={inputClasses} /></Field>
+          <Field label="Your name" htmlFor="p-name" hint="How colleagues and the activity log see you."><NameInput id="p-name" name="name" required maxLength={200} defaultValue={name} /></Field>
           <div className="grid gap-1 text-sm sm:grid-cols-[8rem_1fr]">
             <span className="text-ink-muted">Email</span><span>{email}</span>
             <span className="text-ink-muted">Role</span><span>{role}</span>

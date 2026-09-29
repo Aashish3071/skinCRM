@@ -10,7 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { closeAllConnections, getOwnerDb, schema } from "@skincrm/db";
 import { MockEmailConnector, MockWhatsAppConnector, setConnectors, resetConnectors } from "@skincrm/connectors";
 import { resetEnvCache } from "@skincrm/config";
-import { SEED, authenticate, createTestApp, resetAuthState } from "./helpers";
+import { SEED, authenticate, createTestApp, resetAuthState, letters } from "./helpers";
 import { inQuietHours } from "../messaging/send-gate";
 
 const { people, messages, messageTemplates, suppressions, consentRecords, clinics, leads } = schema;
@@ -104,7 +104,7 @@ async function makePerson(opts: { email?: boolean } = { email: true }): Promise<
     url: "/people",
     headers: { cookie: adminCookie },
     payload: {
-      firstName: `Recipient${counter} ${TAG}`,
+      firstName: `Recipient${letters(counter)} ${TAG}`,
       phone: `305-555-${String(counter).padStart(4, "0")}`,
       ...(opts.email === false ? {} : { email: `p${counter}.${TAG}@example.test` }),
       allowDuplicate: true,

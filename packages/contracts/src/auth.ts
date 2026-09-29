@@ -2,6 +2,7 @@ import { z } from "zod";
 import { emailSchema, shortText, uuidSchema } from "./common";
 import { USER_ROLES, USER_STATUSES } from "./enums";
 import { CAPABILITIES } from "./permissions";
+import { personNameField } from "./contact";
 
 /**
  * Password policy. Length is the dominant factor, so we require 12 characters
@@ -111,7 +112,7 @@ export type MfaConfirmResponse = z.infer<typeof mfaConfirmResponseSchema>;
 
 export const inviteUserSchema = z.object({
   email: emailSchema,
-  fullName: shortText(200),
+  fullName: personNameField(200),
   role: z.enum(USER_ROLES),
   branchIds: z.array(uuidSchema).default([]),
 });
@@ -119,7 +120,7 @@ export type InviteUser = z.infer<typeof inviteUserSchema>;
 
 export const acceptInviteSchema = z.object({
   token: z.string().min(20).max(500),
-  fullName: shortText(200),
+  fullName: personNameField(200),
   password: passwordSchema,
 });
 export type AcceptInvite = z.infer<typeof acceptInviteSchema>;

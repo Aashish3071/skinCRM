@@ -659,3 +659,36 @@ The Google refresh token is reused for conversion feedback on request. Demo mode
 (`CONNECTOR_*=mock`) returns a relative callback path so the flow works on any
 local port. Manual paste paths remain as a fallback.
 
+**D-88. Connect WhatsApp with Meta's Embedded Signup.**
+The browser loads Facebook's JS SDK and calls `FB.login` with the Embedded
+Signup configuration (`META_WA_CONFIG_ID`), which returns a one-time code; Meta's
+popup also posts the chosen WABA id and phone-number id (`WA_EMBEDDED_SIGNUP`,
+origin checked to be facebook.com). The API (`/integrations/whatsapp/signup/*`,
+one-time state in `auth_tokens`) exchanges the code for a business token,
+subscribes our app to the WABA *before* saving, registers a new number for the
+Cloud API with a random 6-digit PIN (kept encrypted in `config.pinSealed`), and
+replaces any earlier WhatsApp connection (one number per clinic). **Coexistence**
+("the number we already use") sends `featureType: whatsapp_business_app_onboarding`
+and skips registration, so the clinic keeps the WhatsApp Business app on the
+phone — the path the first Florida clinic needs. Contacts/history sync for
+coexistence is not requested yet. Demo mode connects a made-up number without a
+popup. The paste-an-ID-and-token form remains under "by hand".
+
+**D-89. Contact fields: strict where staff type, forgiving where leads arrive.**
+One set of rules in `packages/contracts/src/contact.ts`, used by the API schemas
+and the web inputs (`apps/web/src/components/contact-inputs.tsx`). Typed by staff
+(Add lead, Edit patient, clinic profile, messaging settings, staff invite, My
+profile, test send, inbox simulator): phones are phone characters only (letters
+are stripped as you type) with 7–15 digits *and* must be a real number for the
+clinic's country (`assertRealPhone`, libphonenumber); emails must be a whole
+address (digits are fine — jane85@gmail.com — a bare "12345" is not); names
+have no digits; city/state/language no digits; postal codes letters/digits;
+date of birth in the past; website and sending domain well-formed. On Edit
+patient, phone and email are only checked when changed, so a patient imported
+with an unreadable number can still be edited. Arriving from outside (website,
+CSV, Meta, Google, WhatsApp): never dropped over a messy detail — an unreadable
+phone is kept and flagged; an invalid email is *not* stored as an address (we'd
+send to it) but kept in the inquiry note; a submission with nothing usable is
+refused. After a rejected submit, forms keep what was typed (React clears a form
+after its action; the action returns the values).
+

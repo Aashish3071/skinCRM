@@ -11,6 +11,7 @@ import { getContext, getTx } from "../context";
 import { badRequest, notFound } from "../errors";
 import { recordAudit } from "../audit";
 import { registerRoute } from "../route";
+import { assertRealPhone } from "../people/service";
 
 const { clinics, users } = schema;
 
@@ -50,6 +51,7 @@ export function registerProfileRoutes(app: FastifyInstance): void {
     handler: async ({ body }) => {
       const tx = getTx();
       const before = (await tx.select().from(clinics).limit(1))[0]!;
+      if (body.phone !== before.phone) assertRealPhone(body.phone, before.country);
       await tx.update(clinics).set({ ...body, updatedAt: new Date() }).where(eq(clinics.id, before.id));
       await recordAudit({
         action: "settings_changed",

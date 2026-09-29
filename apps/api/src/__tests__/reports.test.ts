@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { inArray, like } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { closeAllConnections, getOwnerDb, schema } from "@skincrm/db";
-import { SEED, authenticate, createTestApp, resetAuthState } from "./helpers";
+import { SEED, authenticate, createTestApp, resetAuthState, letters } from "./helpers";
 
 const { people, leads, leadStageEvents, activities } = schema;
 const TAG = "reporttest";
@@ -44,7 +44,7 @@ let n = 0;
 async function lead(source = "walk_in") {
   n += 1;
   const r = await app.inject({ method: "POST", url: "/leads", headers: { cookie: admin },
-    payload: { person: { firstName: `R${n} ${TAG}`, phone: `305-555-${String(3000 + n)}`, allowDuplicate: true }, source } });
+    payload: { person: { firstName: `R${letters(n)} ${TAG}`, phone: `305-555-${String(3000 + n)}`, allowDuplicate: true }, source } });
   return r.json().id as string;
 }
 const move = (id: string, category: string, reason?: string) =>

@@ -368,6 +368,12 @@ contracts `packages/contracts/src/automations.ts`, UI `apps/web/src/app/(app)/au
   container itself; D-86).
 - **Readiness** `/health/ready` is 503 when the database or worker is down;
   `/health` is liveness only (D-85).
+- **Contact fields** (D-89): one rule set in `packages/contracts/src/contact.ts`
+  (API schemas) and `apps/web/src/components/contact-inputs.tsx` (Phone/Email/Name
+  inputs). Staff-typed data is strict (`assertRealPhone` in people/service.ts);
+  `intake/pipeline.ts` is forgiving and never drops an outside lead.
+- **Connect WhatsApp** (`integrations/oauth.ts`, `/integrations/whatsapp/signup/*`;
+  browser side `settings/integrations/whatsapp-connect.tsx`) — D-88.
 - **Connect with Facebook / Google** (`integrations/oauth.ts`): start → provider sign-in → web callback route → pending choice (encrypted, one-time) → complete. States and pending ids are hashed rows in `auth_tokens` (D-87).
 - **New tenants** `pnpm db:create-clinic` → `packages/db/src/provision.ts` (D-84).
 
@@ -551,4 +557,6 @@ Consequences to know about:
 | KMS-wrapped master key | ⬜ Not started (D-75) |
 | Billing / plans / self-serve signup | ⬜ Not started |
 | Connect with Facebook / Google Ads (OAuth) `[INT-01, INT-03]` (D-87) | ✅ Built, 7 tests; live Google lead-form update to verify with a real account |
+| Connect WhatsApp — Embedded Signup + coexistence `[WA-01, INT-06]` (D-88) | ✅ Built, 4 tests; verify coexistence with the clinic's real number |
+| Contact-field validation, staff forms strict / ingestion forgiving (D-89) | ✅ Built, 12 tests |
 

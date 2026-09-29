@@ -18,6 +18,7 @@ import {
   createTestApp,
   loginAs,
   resetAuthState,
+  letters,
 } from "./helpers";
 
 const { users, auditEvents, appointments, people } = schema;
@@ -344,7 +345,7 @@ describe("removing staff", () => {
   const invite = async (cookie: string, role: string, suffix: string) => {
     const response = await app.inject({
       method: "POST", url: "/users", headers: { cookie },
-      payload: { email: `remove.${suffix}.${tag}@sunshine-skin.test`, fullName: `Remove ${suffix} ${tag}`, role },
+      payload: { email: `remove.${suffix}.${tag}@sunshine-skin.test`, fullName: `Remove ${suffix} ${letters(Date.now())}`, role },
     });
     expect(response.statusCode).toBe(201);
     return response.json().id as string;

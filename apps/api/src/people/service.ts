@@ -7,6 +7,8 @@ import {
   type DuplicateMatchReason,
   type PersonDto,
   type UpdatePerson,
+  isValidEmail,
+  phoneShapeProblem,
 } from "@skincrm/contracts";
 import { schema, type TenantDatabase } from "@skincrm/db";
 import { getContext, getTx } from "../context";
@@ -37,6 +39,21 @@ export function normalizeContactFields(
     emailRaw: input.email?.trim() || null,
     emailNormalized: email,
   };
+}
+
+/**
+ * Staff-typed phones must be real numbers (D-89). Ingestion (website, CSV, ads)
+ * never calls this: an unreadable number from outside is kept and flagged
+ * rather than losing the lead.
+ */
+export function assertRealPhone(raw: string | null | undefined, clinicCountry: string): void {
+  if (!raw?.trim()) return;
+  const shape = phoneShapeProblem(raw.trim());
+  if (shape) throw badRequest(shape, { phone: [shape] });
+  if (!normalizePhone(raw, clinicCountry).valid) {
+    const message = `That isn't a valid phone number${clinicCountry === "US" ? " for the US" : ""}. For a number from another country, start with + and the country code (e.g. +44 20 7946 0958).`;
+    throw badRequest(message, { phone: [message] });
+  }
 }
 
 /** A person always needs something to show in a list, even with no name given. */
@@ -138,6 +155,7 @@ export async function createPerson(
   const context = getContext();
   const tx = getTx();
 
+  assertRealPhone(input.phone, clinicCountry);
   const contact = normalizeContactFields(input, clinicCountry);
 
   if (!input.allowDuplicate) {
@@ -200,6 +218,13 @@ export async function updatePerson(
 ): Promise<PersonDto> {
   const tx = getTx();
   const before = await getPerson(personId);
+  // Only a phone being changed is checked: editing the city of a patient whose
+  // imported number was unreadable must still work.
+  if (input.phone !== undefined && input.phone !== before.phoneRaw) assertRealPhone(input.phone, clinicCountry);
+  if (input.email !== undefined && input.email !== null && input.email !== before.emailRaw && !isValidEmail(input.email)) {
+    const message = "Enter a full email address, like name@example.com.";
+    throw badRequest(message, { email: [message] });
+  }
 
   const contact = normalizeContactFields(
     {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isoDateTime, longText, optionalShortText, shortText, uuidSchema } from "./common";
+import { optionalNameField, phoneShapeProblem } from "./contact";
 import { CONVERSATION_STATUSES, SUPPRESSION_REASONS } from "./enums";
 
 /** Shared inbox (PRD WA-01…09). */
@@ -76,7 +77,10 @@ export const startConversationSchema = z.object({ personId: uuidSchema });
 
 /** Development only: pretend a patient sent a WhatsApp message (mock connector). */
 export const simulateInboundSchema = z.object({
-  phone: shortText(40),
-  name: optionalShortText(120),
+  phone: shortText(40).superRefine((value, ctx) => {
+    const problem = phoneShapeProblem(value);
+    if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+  }),
+  name: optionalNameField(120),
   body: longText(4_096),
 });

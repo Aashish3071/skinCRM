@@ -7,7 +7,24 @@ import { ApiError, apiFetch } from "./api";
 export type ActionState =
   | { status: "idle" }
   | { status: "success"; message?: string }
-  | { status: "error"; message: string; fieldErrors?: Record<string, string[]> };
+  | {
+      status: "error";
+      message: string;
+      fieldErrors?: Record<string, string[]>;
+      /** What was typed, so the form can show it again (React clears a form after its action runs). */
+      values?: Record<string, string>;
+    };
+
+/** The text fields of a submitted form, for putting them back after an error. */
+function typed(form: FormData): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const [key, value] of form.entries()) if (typeof value === "string" && !key.startsWith("$")) values[key] = value;
+  return values;
+}
+
+function withValues(state: ActionState, form: FormData): ActionState {
+  return state.status === "error" ? { ...state, values: typed(form) } : state;
+}
 
 /** Surface the API's own wording: it is the authority on why something failed. */
 function toError(error: unknown): ActionState {
@@ -55,9 +72,10 @@ export async function createLeadAction(_prev: ActionState, form: FormData): Prom
       return {
         status: "error",
         message: `${error.message} Tick "this is a different person" to continue anyway.`,
+        values: typed(form),
       };
     }
-    return toError(error);
+    return withValues(toError(error), form);
   }
 
   revalidatePath("/leads");
@@ -183,7 +201,7 @@ export async function updatePersonAction(_prev: ActionState, form: FormData): Pr
   try {
     await apiFetch(`/people/${personId}`, { method: "PATCH", body });
   } catch (error) {
-    return toError(error);
+    return withValues(toError(error), form);
   }
   revalidatePath(`/people/${personId}`);
   revalidatePath("/people");

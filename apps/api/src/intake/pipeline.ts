@@ -1,6 +1,7 @@
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import {
   LEAD_SOURCE_LABELS,
+  isValidEmail,
   normalizeEmail,
   normalizePhone,
   type ConsentPurpose,
@@ -105,11 +106,25 @@ export async function ingestSubmission(input: IntakeInput): Promise<IntakeOutcom
   const tx = getTx();
   const clinicId = context.clinicId!;
 
+  // Forgiving on purpose (D-89): a lead from outside is never dropped over a
+  // messy detail. An unreadable phone is kept as written and flagged
+  // (phoneValid=false); an email that isn't an address is not stored as one —
+  // nothing would ever be sent to it — but kept in the inquiry note.
+  const givenEmail = input.email?.trim() || null;
+  const emailUsable = isValidEmail(givenEmail);
+  if (givenEmail && !emailUsable) {
+    input = {
+      ...input,
+      email: null,
+      inquiryNote: [input.inquiryNote?.trim(), `Email given as "${givenEmail.slice(0, 200)}", which isn't a valid address.`].filter(Boolean).join("\n\n"),
+    };
+  }
   const phone = normalizePhone(input.phone, input.clinicCountry);
-  const email = normalizeEmail(input.email);
+  const email = emailUsable ? normalizeEmail(givenEmail) : null;
+  const phoneHasDigits = /\d{3,}/.test(input.phone ?? "");
 
-  if (!phone.e164 && !email && !input.phone?.trim() && !input.email?.trim()) {
-    return { status: "failed", reason: "No phone or email supplied" };
+  if (!phone.e164 && !email && !phoneHasDigits) {
+    return { status: "failed", reason: givenEmail || input.phone?.trim() ? "No usable phone number or email address" : "No phone or email supplied" };
   }
 
   // --- 1. Store the raw payload, encrypted and separate ---------------------

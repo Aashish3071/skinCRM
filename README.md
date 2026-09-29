@@ -140,7 +140,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 | 4 | Messaging core — templates, consent ledger, automations, delivery log `[MSG-01…07]` | ✅ Complete (email connection-test screen outstanding) |
 | 5 | WhatsApp shared inbox `[WA-01…09]` | ✅ WhatsApp-style inbox, assignment, notes, reply lock, window rules, live Cloud API sender + webhooks |
 | 6 | Reporting and exports `[REP-01…04]` | ✅ Complete, in the nav (D-72) |
-| 7 | Real integrations — Meta, Google, WhatsApp Cloud, email `[INT-01…09]` | 🟡 Meta Lead Ads, Google lead forms, WhatsApp Cloud and SMTP built and tested against fakes; needs real accounts to go live |
+| 7 | Real integrations — Meta, Google, WhatsApp Cloud, email `[INT-01…09]` | 🟡 One-click Connect with Facebook / Google Ads / WhatsApp (Embedded Signup, incl. coexistence) and SMTP, tested against fakes; needs the real apps and accounts to go live (DEPLOYMENT §4) |
 | 8 | Conversion feedback — outbox, eligibility gate, adapters `[FB-01…10]` | ✅ Built on mocks; Meta/Google must be tested with the real accounts (D-79, D-80) |
 | 9 | Hardening, backups, monitoring, deployment guide, 15 UAT scenarios | ✅ Done — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/UAT.md](docs/UAT.md) |
 
@@ -149,7 +149,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 ```bash
 pnpm typecheck    # clean
 pnpm lint         # clean
-pnpm test         # 341 tests: 14 RLS isolation, 24 security, 298 API, 5 web
+pnpm test         # 357 tests: 14 RLS isolation, 24 security, 314 API, 5 web
 pnpm --filter @skincrm/web e2e   # browser test; needs `pnpm dev` running (see apps/web/playwright.config.ts)
 ```
 
@@ -370,6 +370,13 @@ http://localhost:8025. Put both back before pointing at a real relay.
   lead form gets our webhook automatically. "Check for new lead forms";
   conversion feedback can reuse the Google connection. Demo mode works locally.
 - **Friendly error screen** when the API is unreachable (was a crash).
+- **Connect WhatsApp** (D-88): Meta's Embedded Signup popup; "the number we
+  already use" keeps the WhatsApp Business app on the phone (coexistence), or a
+  new number is registered for the Cloud API.
+- **Contact-field validation everywhere** (D-89): phone fields refuse letters
+  and must be real numbers; email fields need a whole address; names refuse
+  digits — on every staff form and in the API. Leads from outside are never
+  dropped (bad email → inquiry note). Forms keep what was typed after an error.
 
 ### Going live
 

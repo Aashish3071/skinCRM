@@ -4,7 +4,7 @@ import { eq, inArray, like } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { closeAllConnections, getOwnerDb, schema } from "@skincrm/db";
 import { MockEmailConnector, MockWhatsAppConnector, resetConnectors, setConnectors } from "@skincrm/connectors";
-import { SEED, authenticate, clinicIdBySlug, createTestApp, resetAuthState } from "./helpers";
+import { SEED, authenticate, clinicIdBySlug, createTestApp, resetAuthState, letters } from "./helpers";
 import { processSlaBreaches } from "../leads/sla";
 import { processDueAutomations } from "../worker/jobs";
 
@@ -59,7 +59,7 @@ let n = 0;
 async function newLead(extra: Record<string, unknown> = {}) {
   n += 1;
   const r = await app.inject({ method: "POST", url: "/leads", headers: { cookie: admin },
-    payload: { person: { firstName: `S${n} ${TAG}`, phone: `305-555-${String(4400 + n)}`, email: `s${n}.${TAG}@example.test`, allowDuplicate: true }, source: "walk_in", ...extra } });
+    payload: { person: { firstName: `S${letters(n)} ${TAG}`, phone: `305-555-${String(4400 + n)}`, email: `s${n}.${TAG}@example.test`, allowDuplicate: true }, source: "walk_in", ...extra } });
   expect(r.statusCode).toBe(201);
   return r.json() as { id: string; slaDueAt: string | null; personId: string };
 }

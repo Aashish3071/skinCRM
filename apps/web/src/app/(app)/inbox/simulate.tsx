@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
 import { buttonClasses, inputClasses } from "@/components/ui";
+import { NameInput, PhoneInput } from "@/components/contact-inputs";
 import { simulateInboundAction } from "@/lib/inbox-actions";
 
 /**
@@ -37,8 +38,8 @@ export function SimulateButton() {
         >
           <h2 className="text-base font-semibold">Pretend a patient wrote in</h2>
           <p className="text-sm text-ink-muted">For trying the inbox before WhatsApp is connected. Nothing is sent anywhere.</p>
-          <label className="text-sm font-medium">Their phone number<input name="phone" required placeholder="+1 305 555 0142" className={`${inputClasses} mt-1`} /></label>
-          <label className="text-sm font-medium">Their name (optional)<input name="name" className={`${inputClasses} mt-1`} /></label>
+          <div><label htmlFor="sim-phone" className="text-sm font-medium">Their phone number</label><PhoneInput id="sim-phone" name="phone" required autoComplete="off" placeholder="+1 305 555 0142" className={`${inputClasses} mt-1`} /></div>
+          <div><label htmlFor="sim-name" className="text-sm font-medium">Their name (optional)</label><NameInput id="sim-name" name="name" autoComplete="off" className={`${inputClasses} mt-1`} /></div>
           <label className="text-sm font-medium">Message<textarea name="body" required rows={3} defaultValue="Hi! Do you have any openings next week?" className={`${inputClasses} mt-1`} /></label>
           {error && <p role="alert" className="text-sm text-critical">{error}</p>}
           <div className="flex justify-end gap-2">

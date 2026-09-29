@@ -20,7 +20,7 @@ pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
 pnpm lint                     # clean
-pnpm test                     # expect 341 passing
+pnpm test                     # expect 357 passing
 ```
 
 If those tests pass, the foundation is intact and you can build on it.
@@ -133,17 +133,22 @@ leaves the machine). Both feedback destinations were left **Off**.
 Seventh session (2026-09-29): Connect with Facebook / Google Ads (D-87) and an
 error screen for an unreachable API. 341 tests + browser test passing.
 
+Eighth session (2026-09-29): Connect WhatsApp with Embedded Signup incl.
+coexistence (D-88), and contact-field validation across every form and the API
+(D-89; rules in `packages/contracts/src/contact.ts`, inputs in
+`apps/web/src/components/contact-inputs.tsx`). Nothing is half-done.
+
 ### 1. Pilot with the clinic's real accounts — docs/DEPLOYMENT.md
-0. Create the Meta app and the Google OAuth client + developer token (DEPLOYMENT §4),
-   then have the clinic press Connect with Facebook / Connect with Google Ads.
-   **Verify Google's lead-form webhook update against a real account** before
-   relying on it.
+0. Create the Meta app (incl. WhatsApp + Embedded Signup configuration) and the
+   Google OAuth client + developer token (DEPLOYMENT §4), then have the clinic
+   press Connect with Facebook / Google Ads / WhatsApp. **Verify Google's
+   lead-form webhook update and the WhatsApp coexistence onboarding against real
+   accounts** before relying on them.
 1. Server + `.env` (DEPLOYMENT §1–2), `docker compose … up -d --build`.
 2. `pnpm db:create-clinic …` through the `migrate` service (DEPLOYMENT §3);
    send the admin their invite link.
-3. Connect WhatsApp (coexistence onboarding for the clinic's existing number)
-   and SMTP with SPF/DKIM (DEPLOYMENT §4). A WhatsApp Embedded Signup button,
-   like the Facebook one, is the natural next build.
+3. SMTP with SPF/DKIM (DEPLOYMENT §4). For coexistence numbers, consider
+   requesting Meta's contacts/history sync (not built; D-88).
 4. Feedback: Settings → Ad platform feedback, checklist, **test event against
    the real account** (Google's Data Manager request shape is marked
    verify-before-go-live), confirm in Events Manager / Google Ads, then Go live.

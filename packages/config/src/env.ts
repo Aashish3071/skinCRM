@@ -91,6 +91,8 @@ const schema = z.object({
   META_APP_SECRET: z.string().optional(),
   /** Optional Facebook Login for Business configuration id (carries the permission set). */
   META_LOGIN_CONFIG_ID: z.string().optional(),
+  /** WhatsApp Embedded Signup configuration id (Connect WhatsApp). Public; shown to the browser. */
+  META_WA_CONFIG_ID: z.string().optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().default("dev_meta_verify_token"),
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().default("dev_whatsapp_verify_token"),
 

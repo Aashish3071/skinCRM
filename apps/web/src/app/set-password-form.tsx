@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { PASSWORD_MIN_LENGTH } from "@skincrm/contracts";
 import { Field, inputClasses } from "@/components/ui";
+import { NameInput } from "@/components/contact-inputs";
 import { setPasswordAction, type SetPasswordState } from "./set-password-actions";
 
 export function SetPasswordForm({ mode, token }: { mode: "reset" | "invite"; token: string }) {
@@ -30,7 +31,7 @@ export function SetPasswordForm({ mode, token }: { mode: "reset" | "invite"; tok
       <input type="hidden" name="token" value={token} />
       {mode === "invite" && (
         <Field label="Your name" htmlFor="fullName" errors={errors?.fullName}>
-          <input id="fullName" name="fullName" autoComplete="name" required autoFocus className={inputClasses} />
+          <NameInput id="fullName" name="fullName" autoComplete="name" required autoFocus maxLength={200} />
         </Field>
       )}
       <Field

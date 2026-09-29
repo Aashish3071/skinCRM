@@ -91,9 +91,11 @@ export function setFeedbackConnectors(next: { meta?: MetaCapiConnector; google?:
 
 export * from "./oauth/meta";
 export * from "./oauth/google";
+export * from "./oauth/whatsapp";
 import { ConnectorError } from "./types";
 import { LiveMetaOAuthClient, MockMetaOAuthClient, type MetaOAuthClient } from "./oauth/meta";
 import { LiveGoogleOAuthClient, MockGoogleOAuthClient, type GoogleOAuthClient } from "./oauth/google";
+import { LiveWhatsAppSignupClient, MockWhatsAppSignupClient, type WhatsAppSignupClient } from "./oauth/whatsapp";
 
 let metaOAuth: MetaOAuthClient | undefined;
 let googleOAuth: GoogleOAuthClient | undefined;
@@ -125,4 +127,23 @@ export function getOAuthClients(): { meta: MetaOAuthClient; google: GoogleOAuthC
 export function setOAuthClients(next: { meta?: MetaOAuthClient; google?: GoogleOAuthClient } | undefined): void {
   metaOAuth = next?.meta;
   googleOAuth = next?.google;
+}
+
+let whatsappSignup: WhatsAppSignupClient | undefined;
+
+/** WhatsApp Embedded Signup, from CONNECTOR_WHATSAPP (D-88). */
+export function getWhatsAppSignupClient(): WhatsAppSignupClient {
+  if (whatsappSignup) return whatsappSignup;
+  const env = getEnv();
+  if (env.CONNECTOR_WHATSAPP === "live") {
+    if (!env.META_APP_ID || !env.META_APP_SECRET || !env.META_WA_CONFIG_ID) {
+      throw new ConnectorError("Connect WhatsApp needs META_APP_ID, META_APP_SECRET and META_WA_CONFIG_ID on the server.", { retryable: false, providerCode: "not_configured" });
+    }
+    whatsappSignup = new LiveWhatsAppSignupClient({ appId: env.META_APP_ID, appSecret: env.META_APP_SECRET });
+  } else whatsappSignup = new MockWhatsAppSignupClient();
+  return whatsappSignup;
+}
+
+export function setWhatsAppSignupClient(next: WhatsAppSignupClient | undefined): void {
+  whatsappSignup = next;
 }
