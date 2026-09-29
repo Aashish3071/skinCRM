@@ -383,7 +383,11 @@ describe("removing staff", () => {
     const id = await invite(cookie, "practitioner", "booked");
     const { db } = getOwnerDb();
     const clinicId = await clinicIdBySlug(SEED.clinicA);
-    const [person] = await db.select({ id: people.id }).from(people).where(eq(people.clinicId, clinicId)).limit(1);
+    // Its own patient: a freshly seeded database (CI) has none to borrow.
+    const [person] = await db.insert(people).values({
+      clinicId, firstName: "Booked", lastName: "Patient", displayName: "Booked Patient (auth test)",
+      emailRaw: `booked.${letters(Date.now())}@example.test`,
+    }).returning({ id: people.id });
     const [appointment] = await db.insert(appointments).values({
       clinicId, personId: person!.id, staffUserId: id,
       startsAt: new Date("2031-01-06T15:00:00Z"), endsAt: new Date("2031-01-06T15:30:00Z"),
@@ -396,6 +400,7 @@ describe("removing staff", () => {
       expect(await db.select({ id: users.id }).from(users).where(eq(users.id, id))).toHaveLength(1);
     } finally {
       await db.delete(appointments).where(eq(appointments.id, appointment!.id));
+      await db.delete(people).where(eq(people.id, person!.id));
       await db.delete(users).where(eq(users.id, id));
     }
   });
