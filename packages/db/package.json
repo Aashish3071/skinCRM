@@ -13,6 +13,7 @@
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/scripts/migrate.ts",
     "seed": "tsx src/scripts/seed.ts",
+    "create-clinic": "tsx src/scripts/create-clinic.ts",
     "reset": "tsx src/scripts/reset.ts",
     "studio": "drizzle-kit studio",
     "typecheck": "tsc --noEmit",

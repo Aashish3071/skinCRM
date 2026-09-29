@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import {
   ACTIVITY_GROUPS,
   listActivityQuerySchema,
@@ -10,6 +10,7 @@ import {
 import { schema } from "@skincrm/db";
 import { getContext, getTx } from "../context";
 import { registerRoute } from "../route";
+import { clinicDateRangeToUtc, clinicLocalToUtc } from "../calendar/timezone";
 
 const { generalNotes, people, activities, leads } = schema;
 
@@ -28,6 +29,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance): void {
       const tx = getTx();
       const where: SQL[] = [isNull(generalNotes.archivedAt), isNull(people.archivedAt)];
       if (query.personId) where.push(eq(generalNotes.personId, query.personId));
+      const tz = context.clinicTimezone ?? "UTC";
+      if (query.from) where.push(gte(generalNotes.createdAt, clinicLocalToUtc(query.from, "00:00", tz)));
+      if (query.to) where.push(lt(generalNotes.createdAt, clinicDateRangeToUtc(query.to, query.to, tz).end));
       if (query.pinned) where.push(eq(generalNotes.pinned, true));
       if (query.mine && context.userId) where.push(eq(generalNotes.authorUserId, context.userId));
       if (query.search) {
@@ -73,6 +77,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance): void {
       const tx = getTx();
       const where: SQL[] = [];
       if (query.personId) where.push(eq(activities.personId, query.personId));
+      const tz = context.clinicTimezone ?? "UTC";
+      if (query.from) where.push(gte(activities.occurredAt, clinicLocalToUtc(query.from, "00:00", tz)));
+      if (query.to) where.push(lt(activities.occurredAt, clinicDateRangeToUtc(query.to, query.to, tz).end));
       if (query.group) where.push(inArray(activities.type, [...ACTIVITY_GROUPS[query.group].types]));
       if (query.mine && context.userId) where.push(eq(activities.actorUserId, context.userId));
 
@@ -83,7 +90,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance): void {
       }
 
       const rows = await tx
-        .select({ activity: activities, personName: people.displayName })
+        .select({ activity: activities, personName: people.displayName, leadCreatedAt: leads.createdAt })
         .from(activities)
         .innerJoin(people, eq(people.id, activities.personId))
         .leftJoin(leads, eq(leads.id, activities.leadId))
@@ -94,11 +101,12 @@ export function registerWorkspaceRoutes(app: FastifyInstance): void {
 
       return {
         items: rows.slice(0, query.limit).map(
-          ({ activity, personName }): ActivityFeedItem => ({
+          ({ activity, personName, leadCreatedAt }): ActivityFeedItem => ({
             id: activity.id,
             personId: activity.personId,
             personName,
             leadId: activity.leadId,
+            leadCreatedAt: leadCreatedAt?.toISOString() ?? null,
             type: activity.type,
             summary: activity.summary,
             body: activity.body,

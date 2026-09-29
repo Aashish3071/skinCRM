@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { SearchIcon } from "@/components/icons";
+import type { NoteFeedItem } from "@skincrm/contracts";
+import { FeedFilters } from "@/components/feed-filters";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
-import { clinicClock, groupByDay, initials } from "@/lib/format";
+import { clinicClock, clinicTime, groupByDay, groupByKey, initials } from "@/lib/format";
+import { FeedGroup } from "@/components/feed-group";
 import { getNoteFeed } from "@/lib/workspace";
 import { can, requireCapability } from "@/lib/session";
 import { NoteComposer } from "./composer";
@@ -22,17 +24,25 @@ export default async function NotesPage({ searchParams }: { searchParams: Promis
   const params = await searchParams;
   const search = one(params.search)?.trim() ?? "";
   const show = one(params.show) === "pinned" ? "pinned" : one(params.show) === "mine" ? "mine" : "all";
+  const from = one(params.from) ?? "";
+  const to = one(params.to) ?? "";
+  const view = one(params.view) === "patient" ? "patient" : "date";
+  const personId = one(params.personId);
+  const personName = one(params.personName) ?? "This patient";
   const count = Math.min(400, Math.max(PAGE, Number(one(params.count)) || PAGE));
 
   const query = new URLSearchParams({ limit: String(Math.min(count, 100)) });
   if (search) query.set("search", search);
   if (show === "pinned") query.set("pinned", "true");
   if (show === "mine") query.set("mine", "true");
+  if (personId) query.set("personId", personId);
+  if (from) query.set("from", from);
+  if (to) query.set("to", to);
   const feed = await getNoteFeed(query.toString());
   const tz = session.clinic.timezone;
 
   const href = (next: Record<string, string>) => {
-    const q = new URLSearchParams({ ...(search ? { search } : {}), ...(show !== "all" ? { show } : {}), ...next });
+    const q = new URLSearchParams({ ...(search ? { search } : {}), ...(show !== "all" ? { show } : {}), ...(personId ? { personId, personName } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}), ...(view !== "date" ? { view } : {}), ...next });
     for (const [k, v] of [...q]) if (!v || v === "all") q.delete(k);
     return `/notes${q.size ? `?${q}` : ""}`;
   };
@@ -41,81 +51,42 @@ export default async function NotesPage({ searchParams }: { searchParams: Promis
     <>
       <PageHeader title="Notes" description="What your team has written about each patient. Notes follow the patient everywhere in the CRM." />
 
+      <FeedFilters
+        searchLabel="Search notes"
+        resultLabel={`${feed.items.length}${feed.hasMore ? "+" : ""} ${feed.items.length === 1 ? "note" : "notes"}`}
+        values={{
+          search,
+          patient: personId ? { id: personId, name: personName } : null,
+          selects: [
+            { name: "show", label: "Show", value: show, options: [{ value: "all", label: "All notes" }, { value: "pinned", label: "Pinned only" }, { value: "mine", label: "Written by me" }] },
+          ],
+          from,
+          to,
+          groupBy: { name: "view", label: "Group by", value: view, options: [{ value: "date", label: "Day" }, { value: "patient", label: "Patient" }] },
+        }}
+      />
+
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="order-2 min-w-0 lg:order-1">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-            <form role="search" action="/notes" className="relative flex-1">
-              {show !== "all" && <input type="hidden" name="show" value={show} />}
-              <label htmlFor="notes-search" className="sr-only">
-                Search notes
-              </label>
-              <SearchIcon size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-subtle" />
-              <input
-                id="notes-search"
-                name="search"
-                type="search"
-                defaultValue={search}
-                placeholder="Search notes or patient names"
-                className="min-h-10 w-full rounded-lg border border-line-strong bg-surface pl-9 pr-3 text-sm placeholder:text-ink-subtle"
-              />
-            </form>
-            <div role="group" aria-label="Show" className="inline-flex self-start rounded-lg border border-line-strong bg-surface p-0.5">
-              {[
-                ["all", "All"],
-                ["pinned", "Pinned"],
-                ["mine", "Written by me"],
-              ].map(([key, label]) => (
-                <Link
-                  key={key}
-                  href={href({ show: key! })}
-                  aria-current={show === key ? "true" : undefined}
-                  className={`flex min-h-9 items-center whitespace-nowrap rounded-md px-3 text-sm ${
-                    show === key ? "bg-brand-soft font-medium text-brand" : "text-ink-muted hover:text-ink"
-                  }`}
-                >
-                  {label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
           {feed.items.length === 0 ? (
             <Card>
-              <EmptyState title={search ? `No notes mention “${search}”` : "No notes yet"}>
-                {search ? <Link href={href({ search: "" })} className="text-brand">Clear the search</Link> : "Write the first one using the box on this page."}
+              <EmptyState title={search ? `No notes mention “${search}”` : "No notes match these filters"}>
+                Widen the date range or remove a filter above.
               </EmptyState>
             </Card>
           ) : (
             <div className="flex flex-col gap-6">
-              {groupByDay(feed.items, (n) => n.createdAt, tz).map((group) => (
-                <section key={group.day} aria-label={group.day}>
-                  <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-subtle">{group.day}</h2>
-                  <ul className="flex flex-col gap-2">
-                    {group.items.map((note) => (
-                      <li key={note.id} className="rounded-card border border-line bg-surface p-4 shadow-[var(--shadow-card)]">
-                        <div className="flex items-start gap-3">
-                          <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand">
-                            {initials(note.personName)}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Link href={`/people/${note.personId}`} className="font-semibold hover:text-brand">
-                                {note.personName}
-                              </Link>
-                              {note.pinned && <Badge tone="caution">Pinned</Badge>}
-                            </div>
-                            <p className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-relaxed">{note.body}</p>
-                            <p className="mt-2 text-xs text-ink-subtle">
-                              {note.isMine ? "You" : (note.authorLabel ?? "Someone")} · {clinicClock(note.createdAt, tz)}
-                              {note.editedAt && " · edited"}
-                            </p>
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
+              {view === "patient"
+                ? groupByKey(feed.items, (n) => n.personId).map((group) => (
+                    <FeedGroup key={group.key} title={group.items[0]!.personName} href={`/people/${group.key}`} count={group.items.length} noun={["note", "notes"]}>
+                      <NoteItems notes={group.items} timezone={tz} byPatient />
+                    </FeedGroup>
+                  ))
+                : groupByDay(feed.items, (n) => n.createdAt, tz).map((group) => (
+                    <FeedGroup key={group.day} title={group.day} count={group.items.length} noun={["note", "notes"]}>
+                      <NoteItems notes={group.items} timezone={tz} />
+                    </FeedGroup>
+                  ))}
               {feed.hasMore && count < 100 && (
                 <Link href={href({ count: String(count + PAGE) })} className="self-center text-sm font-medium text-brand">
                   Show older notes
@@ -135,4 +106,19 @@ export default async function NotesPage({ searchParams }: { searchParams: Promis
       </div>
     </>
   );
+}
+
+function NoteItems({ notes, timezone, byPatient = false }: { notes: NoteFeedItem[]; timezone: string; byPatient?: boolean }) {
+  return <ul className="flex flex-col gap-2">{notes.map((note) => (
+    <li key={note.id} className="rounded-card border border-line bg-surface p-4 shadow-[var(--shadow-card)]">
+      <div className="flex items-start gap-3">
+        {!byPatient && <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-semibold text-brand">{initials(note.personName)}</span>}
+        <div className="min-w-0 flex-1">
+          {(!byPatient || note.pinned) && <div className="flex flex-wrap items-center gap-2">{!byPatient && <Link href={`/people/${note.personId}`} className="font-semibold hover:text-brand">{note.personName}</Link>}{note.pinned && <Badge tone="caution">Pinned</Badge>}</div>}
+          <p className={`${byPatient && !note.pinned ? "" : "mt-1 "}whitespace-pre-wrap break-words text-[15px] leading-relaxed`}>{note.body}</p>
+          <p className="mt-2 text-xs text-ink-subtle">{note.isMine ? "You" : (note.authorLabel ?? "Someone")} · {byPatient ? clinicTime(note.createdAt, timezone) : clinicClock(note.createdAt, timezone)}{note.editedAt && " · edited"}</p>
+        </div>
+      </div>
+    </li>
+  ))}</ul>;
 }

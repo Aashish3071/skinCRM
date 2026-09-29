@@ -15,6 +15,7 @@
     "db:generate": "pnpm --filter @skincrm/db generate",
     "db:migrate": "pnpm --filter @skincrm/db migrate",
     "db:seed": "pnpm --filter @skincrm/db seed",
+    "db:create-clinic": "pnpm --filter @skincrm/db create-clinic",
     "db:reset": "pnpm --filter @skincrm/db reset",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",

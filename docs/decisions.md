@@ -518,11 +518,11 @@ backoff and show on Settings → Lead sources & messaging. Credentials are per
 clinic, encrypted with `encryptForClinic`, never returned. Live WhatsApp sends use
 the clinic's own number and token (`WhatsAppCloudConnector`).
 
-**D-72. Reporting is built but parked.**
+**D-72. Reporting was parked, then unparked (2026-09-28).**
 `/reports/summary`, `/reports/export` (CSV, personal columns only for roles with
-`people:read`, formula-injection safe, audited) and the `/reports` page exist and
-are tested, but Reports is not linked in the nav at the client's request. To
-unpark, add it back to `NAV_SECTIONS` in `apps/web/src/components/nav.tsx`.
+`people:read`, formula-injection safe, audited) and the `/reports` page. It was
+hidden from the nav at the client's request for a while; it is back in
+`NAV_SECTIONS` (`apps/web/src/components/nav.tsx`) behind `reports:read`.
 
 **D-73. Response-time SLA per clinic, measured to the first human response.**
 `clinics.first_response_sla_minutes` (0 = off) fixes `leads.sla_due_at` when the
@@ -594,3 +594,50 @@ Google's validate-only.
 email/phone and no enhanced conversions (Google's health policy). The request
 shape is marked "verify before go-live" in `google/data-manager.ts`; the test-mode
 gate exists so it is proven against the real account before real events flow.
+
+**D-81. Staff removal: Archive (reversible) and Delete (permanent, non-admins only).**
+Archive (`DELETE /users/:id`) suspends and hides an account; history stays
+attributable. Delete (`DELETE /users/:id/permanent`) removes the row, and is
+refused for admins ("change their role first") and for yourself. Anyone with
+appointments cannot be deleted (`appointments.staff_user_id` is `ON DELETE
+RESTRICT`, surfaced as a 409 telling you to archive instead). Audit rows keep a
+denormalized `actorLabel`, so the trail survives a delete. Both archive and
+role/status changes share `assertNotLastActiveAdmin`.
+
+**D-82. Session revocation joins the request's transaction.** Changing a role,
+status or capabilities revokes the person's sessions by bumping
+`users.session_epoch`. It used to do this in a *second* transaction while the
+request's transaction still held the row lock from its own update, so the
+request waited forever (Postgres cannot see a wait cycle that runs through the
+application). `revokeAllSessionsForUser` now uses the request transaction when
+there is one. Found by the staff-delete tests; role changes and archive were
+hanging in the UI before this.
+
+**D-83. Notes and Activity share one filter panel.** `FeedFilters`
+(`apps/web/src/components/feed-filters.tsx`): patient (and search, on Notes), a
+row of narrowing selects, a from/to date range in clinic days, and Group by.
+Nothing reloads until **Apply filters**, active filters repeat below as removable
+chips, the result count is announced (`aria-live`), and on phones the panel
+folds away behind a "Filters (n on)" button. Every filter is a URL parameter.
+Groups use one heading component (`FeedGroup`) with a count. The API filters
+dates as whole days in the clinic's time zone (`from`/`to` on `GET /notes` and
+`GET /activities`).
+
+**D-84. New clinics are created with `pnpm db:create-clinic`, which invites the admin.**
+`packages/db/src/provision.ts` creates the clinic, default branch, pipeline, the
+first admin (status `invited`, no password) and a 7-day invite token, in one
+transaction, and prints the accept-invite link once. The operator never chooses
+or sees the clinic's password. The demo seed still refuses production.
+
+**D-85. Readiness is 503 when degraded; alert emails retry until delivered.**
+`/health/ready` returns 503 if the database is down or the worker has not beaten
+for 3 minutes, so probes act on it. `runMonitor` records an alert's hourly quiet
+period only after the email is confirmed sent. `deploy/docker-compose.prod.yml`
+pins `NODE_ENV=production` on every app service, because `.env.example` says
+`development` and the production safety gate only runs in production.
+
+**D-86. Backup scripts read `.env` as data and find Postgres themselves.**
+`scripts/lib/pg.sh` never `eval`s or sources `.env` (passwords with `$`, backticks
+or `;` stay literal), percent-decodes URL credentials, prefers `POSTGRES_*` when
+present (production), and runs the client tools in `PG_CONTAINER`, else the
+production compose `postgres` service, else the dev container, else on the host.

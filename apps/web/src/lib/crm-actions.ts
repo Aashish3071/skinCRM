@@ -162,6 +162,36 @@ export async function completeTaskAction(_prev: ActionState, form: FormData): Pr
 
 // --- People and notes -----------------------------------------------------
 
+export async function updatePersonAction(_prev: ActionState, form: FormData): Promise<ActionState> {
+  const personId = String(form.get("personId"));
+  const nullable = (key: string) => text(form, key) ?? null;
+  const body = {
+    firstName: nullable("firstName"),
+    lastName: nullable("lastName"),
+    phone: nullable("phone"),
+    email: nullable("email"),
+    preferredContactMethod: nullable("preferredContactMethod"),
+    preferredLanguage: nullable("preferredLanguage"),
+    dateOfBirth: nullable("dateOfBirth"),
+    addressLine1: nullable("addressLine1"),
+    addressLine2: nullable("addressLine2"),
+    city: nullable("city"),
+    region: nullable("region"),
+    postalCode: nullable("postalCode"),
+    ...(form.has("branchId") ? { branchId: nullable("branchId") } : {}),
+  };
+  try {
+    await apiFetch(`/people/${personId}`, { method: "PATCH", body });
+  } catch (error) {
+    return toError(error);
+  }
+  revalidatePath(`/people/${personId}`);
+  revalidatePath("/people");
+  revalidatePath("/notes");
+  revalidatePath("/activity");
+  redirect(`/people/${personId}`);
+}
+
 export async function addNoteAction(_prev: ActionState, form: FormData): Promise<ActionState> {
   const personId = String(form.get("personId"));
   try {

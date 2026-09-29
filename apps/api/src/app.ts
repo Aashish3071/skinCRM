@@ -116,14 +116,21 @@ export async function buildApp(): Promise<FastifyInstance> {
     method: "GET",
     url: "/health/ready",
     auth: false,
-    handler: async () => {
+    // 503 whenever the app cannot do its job, so load balancers and container
+    // probes (which only look at the status code) take it out of rotation.
+    handler: async ({ reply }) => {
       // Readiness means the database answers, not merely that the process is up.
-      const { getDb } = await import("@skincrm/db");
-      await getDb().sql`select 1`;
+      try {
+        const { getDb } = await import("@skincrm/db");
+        await getDb().sql`select 1`;
+      } catch {
+        return reply.code(503).send({ status: "unavailable", database: "down", worker: "unknown", workerLastSeen: null });
+      }
       const { lastBeat } = await import("./ops/monitor");
       const worker = await lastBeat("worker");
       const workerOk = worker !== null && Date.now() - worker.getTime() < 3 * 60_000;
-      return { status: workerOk ? "ready" : "degraded", database: "ok", worker: workerOk ? "ok" : "stale", workerLastSeen: worker?.toISOString() ?? null };
+      const body = { status: workerOk ? "ready" : "degraded", database: "ok", worker: workerOk ? "ok" : "stale", workerLastSeen: worker?.toISOString() ?? null };
+      return workerOk ? body : reply.code(503).send(body);
     },
   });
 

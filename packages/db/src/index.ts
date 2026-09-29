@@ -14,3 +14,4 @@ export {
 } from "./client";
 
 export * from "./schema/index";
+export { provisionClinic, validateProvisionInput, type ProvisionClinicInput, type ProvisionedClinic } from "./provision";

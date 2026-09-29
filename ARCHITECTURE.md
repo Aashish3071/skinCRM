@@ -317,6 +317,9 @@ contracts `packages/contracts/src/automations.ts`, UI `apps/web/src/app/(app)/au
   webhook to it.
 - **Notes / Activity** (`apps/api/src/workspace/routes.ts`): read-only feeds over
   `general_notes` and `activities`, joined to people; see D-67 for visibility.
+  `from`/`to` are whole days in the clinic time zone (`calendar/timezone.ts`).
+  The web pages share `components/feed-filters.tsx` (all filters in the URL,
+  applied on submit) and `components/feed-group.tsx` (group headings) — D-83.
 - **Unsubscribe** (`apps/api/src/messaging/unsubscribe-routes.ts`): public, token
   is the authority, uses `runAsSystem`. Fastify `maxParamLength` is raised to
   600 because the tokens are ~160 characters.
@@ -345,7 +348,7 @@ contracts `packages/contracts/src/automations.ts`, UI `apps/web/src/app/(app)/au
 - **Reporting** (`apps/api/src/reports/routes.ts`): funnel from each lead's
   furthest stage in history plus write-once milestones; excludes test leads;
   CSV export audited, personal columns only with `people:read`. Page at
-  `/reports` exists but is not linked (D-72).
+  `/reports`, in the nav behind `reports:read` (D-72).
 
 ---
 
@@ -361,7 +364,11 @@ contracts `packages/contracts/src/automations.ts`, UI `apps/web/src/app/(app)/au
 - **Deployment** (`deploy/`): one Dockerfile with `api`, `web`, `tools`
   targets; `docker-compose.prod.yml`; `Caddyfile`. Web uses Next standalone output.
 - **Backups** (`scripts/`): `backup.sh`, `restore.sh`, `verify-backup.sh`,
-  sharing `scripts/lib/pg.sh` (host tools or the Postgres container).
+  sharing `scripts/lib/pg.sh` (reads `.env` as data, finds the Postgres
+  container itself; D-86).
+- **Readiness** `/health/ready` is 503 when the database or worker is down;
+  `/health` is liveness only (D-85).
+- **New tenants** `pnpm db:create-clinic` → `packages/db/src/provision.ts` (D-84).
 
 ---
 
@@ -388,6 +395,12 @@ Code: `apps/api/src/feedback/` (service + routes), adapters in
   credential. `HttpOnly`, `Secure`, `SameSite=Lax`.
 - **Mass revocation** uses `users.session_epoch`. Bump it on password change,
   role change or suspension and every existing session for that user is rejected.
+  Always through `revokeAllSessionsForUser()`, which joins the request's
+  transaction when there is one — a separate transaction deadlocks against the
+  request's own row lock (D-82).
+- **Removing staff:** Archive = suspend + hide (reversible); Delete = permanent,
+  non-admins only, refused if they have appointments (D-81). Neither may leave a
+  clinic without an active admin.
 - **Passwords** are Argon2id (19 MiB, 2 passes). Cost parameters live in the hash,
   so raising them later triggers a transparent rehash on next login.
 - **Enumeration resistance:** a missing account still burns an Argon2
@@ -518,7 +531,7 @@ Consequences to know about:
 | Meta Lead Ads + Google lead-form ingestion, queue, Settings screen `[INT-01…05]` | ✅ Built, 16 tests |
 | Forward-only stages (D-69) | ✅ Built |
 | WhatsApp-style inbox | ✅ Built (visual check incomplete — see HANDOFF) |
-| Reporting `[REP-01…04]` | 🅿️ Built, 4 tests, parked (D-72) |
+| Reporting `[REP-01…04]` | ✅ Built, 4 tests, in the nav (D-72) |
 | Response-time SLA, escalation, staff email alerts | ✅ Built, 7 tests |
 | Lead rules settings (SLA + assignment UI) | ✅ Built |
 | Audit log viewer `[AUD-01]` | ✅ Built |
@@ -528,4 +541,12 @@ Consequences to know about:
 | Conversion feedback `[FB-01…10]` | ✅ Built, 13 tests (mocks) |
 | Notifications, clinic and personal profiles | ✅ Built, 6 tests |
 | Light theme only | ✅ |
+| Patient edit page (contact, address, city, branch…) | ✅ Built, 1 test |
+| Notes / Activity date range + grouping, shared filter panel (D-83) | ✅ Built, 1 test |
+| Staff permanent delete, last-admin guard on archive (D-81) | ✅ Built, 4 tests |
+| `pnpm db:create-clinic` tenant provisioning (D-84) | ✅ Built, 2 tests |
+| Production gate, readiness 503, alert retry (D-85) | ✅ Built, 5 tests |
+| Playwright end-to-end (walk-in → book → confirm → won) | ✅ 1 test, in CI |
+| KMS-wrapped master key | ⬜ Not started (D-75) |
+| Billing / plans / self-serve signup | ⬜ Not started |
 

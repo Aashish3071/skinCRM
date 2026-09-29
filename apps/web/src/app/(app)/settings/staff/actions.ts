@@ -30,9 +30,7 @@ export async function inviteStaffAction(
   revalidatePath("/settings/staff");
   return {
     status: "success",
-    // Honest about the current state: the email connector arrives in phase 4, so
-    // the invitation link is printed to the API console for now.
-    message: `Invited ${fullName}. Until the email connector is connected, the invitation link is printed in the API server log.`,
+    message: `Invited ${fullName}. They'll get an email with a link to set their password; it expires in 7 days.`,
   };
 }
 

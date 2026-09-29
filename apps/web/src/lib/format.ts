@@ -61,6 +61,18 @@ export function groupByDay<T>(items: T[], at: (item: T) => string, timeZone: str
   return groups;
 }
 
+/** Group a newest-first feed by a stable record id, keeping first-seen group order. */
+export function groupByKey<T>(items: T[], keyOf: (item: T) => string): { key: string; items: T[] }[] {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+  return [...groups].map(([key, grouped]) => ({ key, items: grouped }));
+}
+
 /** Time of day in the clinic's timezone, e.g. "2:30 PM". */
 export function clinicClock(iso: string, timeZone: string): string {
   return new Date(iso).toLocaleTimeString("en-US", { timeZone, hour: "numeric", minute: "2-digit" });

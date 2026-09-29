@@ -1,5 +1,23 @@
 # SkinCRM production readiness review
 
+## Status update — 2026-09-29
+
+| Finding | Status |
+|---|---|
+| P0 KMS setting does not use KMS | ⚠️ Mitigated: `CRYPTO_PROVIDER=aws-kms` is now refused at boot, so nothing claims KMS; the key is a strong secret from a secret manager (D-75). Real KMS wrapping is still open — decide per client (HIPAA covered entities may ask). |
+| P0 Production compose could run in development mode | ✅ Fixed — `NODE_ENV: production` pinned on migrate/api/worker/web (D-85); gate covered by `config.test.ts` |
+| P1 Backup path mismatches | ✅ Fixed — no `eval`, URL-decoding, container auto-detection (D-86); restore drill passed locally. Repeat on the server |
+| P1 Alert marked delivered after email failure | ✅ Fixed — heartbeat only after a confirmed send; `monitor-alerts.test.ts` |
+| P1 Readiness 200 while degraded | ✅ Fixed — 503; `auth.test.ts` health tests |
+| P1 Conversion feedback missing | ✅ Built on mocks (D-79, D-80); needs the real accounts |
+| Reporting hidden | ✅ Back in the nav (D-72) |
+| First clinic/admin needed hand-written SQL | ✅ `pnpm db:create-clinic` (D-84) |
+| Browser-level coverage | ✅ Playwright happy path in CI; more flows welcome |
+| Still open | Real-account pilot (Meta, Google, WhatsApp coexistence, SMTP/SPF/DKIM), UAT pilot column, BAAs, KMS, billing/self-serve signup, legal pages, manual screen-reader pass |
+
+The original review follows unchanged.
+
+
 Reviewed 2026-09-27 against the current working tree, including uncommitted deployment and operations changes. This is a code and configuration review, not a live production or provider-account test.
 
 ## Verdict

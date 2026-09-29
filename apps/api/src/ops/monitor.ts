@@ -122,8 +122,11 @@ export async function runMonitor(now = new Date()): Promise<OpsAlert[]> {
     if (!to) continue;
     const last = await lastBeat(`alert:${alert.key}`);
     if (last && now.getTime() - last.getTime() < 3600_000) continue;
-    await sendSystemEmail({ to, subject: `[SkinCRM ${alert.severity}] ${alert.message.slice(0, 80)}`, text: alert.message });
-    await heartbeat(`alert:${alert.key}`, alert.message);
+    const sent = await sendSystemEmail({ to, subject: `[SkinCRM ${alert.severity}] ${alert.message.slice(0, 80)}`, text: alert.message });
+    // Only a delivered alert starts the hour of quiet; a failed one is retried
+    // on the next monitor run instead of being silently swallowed.
+    if (sent) await heartbeat(`alert:${alert.key}`, alert.message);
+    else logger.error({ alert: alert.key }, "Ops alert email failed; will retry next run");
   }
   return alerts;
 }

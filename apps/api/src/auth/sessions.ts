@@ -5,7 +5,8 @@ import {
   type Capability,
   type SessionUser,
 } from "@skincrm/contracts";
-import { getOwnerDb, schema, sql, withoutTenantScope, withTenant } from "@skincrm/db";
+import { getOwnerDb, schema, sql, withoutTenantScope, withTenant, type TenantDatabase } from "@skincrm/db";
+import { tryGetContext } from "../context";
 import { generateToken, hashToken } from "@skincrm/security";
 import { getEnv } from "@skincrm/config";
 
@@ -192,12 +193,18 @@ export async function revokeSession(clinicId: string, sessionId: string): Promis
  * epoch and leave one of them ineffective.
  */
 export async function revokeAllSessionsForUser(clinicId: string, userId: string): Promise<void> {
-  await withTenant(clinicId, async (tx) => {
-    await tx
-      .update(users)
-      .set({ sessionEpoch: sql`${users.sessionEpoch} + 1` })
-      .where(eq(users.id, userId));
-  });
+  const bump = (tx: TenantDatabase) =>
+    tx.update(users).set({ sessionEpoch: sql`${users.sessionEpoch} + 1` }).where(eq(users.id, userId));
+  // Inside a request, join its transaction. A second transaction would wait
+  // on the row lock the request already holds (after it changed the user's
+  // role or status) and the request would hang forever, a wait Postgres
+  // cannot see as a deadlock because the cycle runs through the app.
+  const requestTx = tryGetContext()?.tx;
+  if (requestTx) {
+    await bump(requestTx);
+    return;
+  }
+  await withTenant(clinicId, bump);
 }
 
 /**

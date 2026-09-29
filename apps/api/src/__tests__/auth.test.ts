@@ -6,7 +6,7 @@
  *   docker compose up -d && pnpm db:migrate && pnpm db:seed
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { closeAllConnections, getOwnerDb, schema } from "@skincrm/db";
 import { TOTP, Secret } from "otpauth";
@@ -20,7 +20,7 @@ import {
   resetAuthState,
 } from "./helpers";
 
-const { users, auditEvents } = schema;
+const { users, auditEvents, appointments, people } = schema;
 
 let app: FastifyInstance;
 
@@ -339,6 +339,79 @@ describe("user administration", () => {
   });
 });
 
+describe("removing staff", () => {
+  const tag = Date.now().toString(36);
+  const invite = async (cookie: string, role: string, suffix: string) => {
+    const response = await app.inject({
+      method: "POST", url: "/users", headers: { cookie },
+      payload: { email: `remove.${suffix}.${tag}@sunshine-skin.test`, fullName: `Remove ${suffix} ${tag}`, role },
+    });
+    expect(response.statusCode).toBe(201);
+    return response.json().id as string;
+  };
+
+  it("deletes a non-admin account, and refuses an admin until their role changes", async () => {
+    const cookie = await authenticate(app, SEED.admin);
+    const id = await invite(cookie, "admin", "admin");
+
+    const refused = await app.inject({ method: "DELETE", url: `/users/${id}/permanent`, headers: { cookie } });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.json().error.message).toContain("Change their role first");
+
+    const demoted = await app.inject({ method: "PATCH", url: `/users/${id}`, headers: { cookie }, payload: { role: "front_desk" } });
+    expect(demoted.statusCode).toBe(200);
+    const deleted = await app.inject({ method: "DELETE", url: `/users/${id}/permanent`, headers: { cookie } });
+    expect(deleted.statusCode).toBe(204);
+
+    const { db } = getOwnerDb();
+    expect(await db.select({ id: users.id }).from(users).where(eq(users.id, id))).toHaveLength(0);
+    const audit = await db.select({ id: auditEvents.id }).from(auditEvents)
+      .where(and(eq(auditEvents.entityId, id), eq(auditEvents.action, "record_deleted")));
+    expect(audit).toHaveLength(1);
+  });
+
+  it("refuses to delete your own account", async () => {
+    const cookie = await authenticate(app, SEED.admin);
+    const session = await app.inject({ method: "GET", url: "/auth/session", headers: { cookie } });
+    const response = await app.inject({ method: "DELETE", url: `/users/${session.json().id}/permanent`, headers: { cookie } });
+    expect(response.statusCode).toBe(403);
+  });
+
+  it("refuses to delete someone with appointments, and leaves them untouched", async () => {
+    const cookie = await authenticate(app, SEED.admin);
+    const id = await invite(cookie, "practitioner", "booked");
+    const { db } = getOwnerDb();
+    const clinicId = await clinicIdBySlug(SEED.clinicA);
+    const [person] = await db.select({ id: people.id }).from(people).where(eq(people.clinicId, clinicId)).limit(1);
+    const [appointment] = await db.insert(appointments).values({
+      clinicId, personId: person!.id, staffUserId: id,
+      startsAt: new Date("2031-01-06T15:00:00Z"), endsAt: new Date("2031-01-06T15:30:00Z"),
+    }).returning({ id: appointments.id });
+
+    try {
+      const response = await app.inject({ method: "DELETE", url: `/users/${id}/permanent`, headers: { cookie } });
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.message).toContain("Archive them instead");
+      expect(await db.select({ id: users.id }).from(users).where(eq(users.id, id))).toHaveLength(1);
+    } finally {
+      await db.delete(appointments).where(eq(appointments.id, appointment!.id));
+      await db.delete(users).where(eq(users.id, id));
+    }
+  });
+
+  it("archives another admin while one remains, but never yourself", async () => {
+    const cookie = await authenticate(app, SEED.admin);
+    const id = await invite(cookie, "admin", "archived");
+    const archived = await app.inject({ method: "DELETE", url: `/users/${id}`, headers: { cookie } });
+    expect(archived.statusCode).toBe(204);
+
+    const session = await app.inject({ method: "GET", url: "/auth/session", headers: { cookie } });
+    const self = await app.inject({ method: "DELETE", url: `/users/${session.json().id}`, headers: { cookie } });
+    expect(self.statusCode).toBe(403);
+    await getOwnerDb().db.delete(users).where(eq(users.id, id));
+  });
+});
+
 describe("multi-factor authentication", () => {
   it("challenges for a code once enabled, and accepts a valid one", async () => {
     const cookie = await authenticate(app, SEED.frontDesk);
@@ -460,10 +533,26 @@ describe("audit trail", () => {
 });
 
 describe("health", () => {
-  it("reports ready only when the database answers", async () => {
-    const response = await app.inject({ method: "GET", url: "/health/ready" });
-    expect(response.statusCode).toBe(200);
-    expect(response.json().status).toBe("ready");
+  it("reports ready only when the database answers and the worker is alive", async () => {
+    const { db } = getOwnerDb();
+    const { opsHeartbeats } = schema;
+    const [previous] = await db.select().from(opsHeartbeats).where(eq(opsHeartbeats.key, "worker"));
+    try {
+      await db.insert(opsHeartbeats).values({ key: "worker", at: new Date() })
+        .onConflictDoUpdate({ target: opsHeartbeats.key, set: { at: new Date() } });
+      const ready = await app.inject({ method: "GET", url: "/health/ready" });
+      expect(ready.statusCode).toBe(200);
+      expect(ready.json().status).toBe("ready");
+
+      // A stopped worker means leads and reminders stop moving: not ready.
+      await db.update(opsHeartbeats).set({ at: new Date(Date.now() - 10 * 60_000) }).where(eq(opsHeartbeats.key, "worker"));
+      const stale = await app.inject({ method: "GET", url: "/health/ready" });
+      expect(stale.statusCode).toBe(503);
+      expect(stale.json()).toMatchObject({ status: "degraded", worker: "stale" });
+    } finally {
+      if (previous) await db.update(opsHeartbeats).set({ at: previous.at }).where(eq(opsHeartbeats.key, "worker"));
+      else await db.delete(opsHeartbeats).where(eq(opsHeartbeats.key, "worker"));
+    }
   });
 
   it("returns the shared error envelope for an unknown route", async () => {

@@ -52,7 +52,7 @@ pnpm install
 cp .env.example .env
 docker compose up -d
 pnpm db:migrate
-pnpm db:seed
+pnpm db:seed                  # demo data; refuses production
 pnpm dev
 ```
 
@@ -94,6 +94,8 @@ they cannot collide with an existing local install.
 | `pnpm db:generate` | Generate migration SQL from the Drizzle schema |
 | `pnpm db:migrate` | Apply extensions, create the app role, migrate, re-apply RLS |
 | `pnpm db:seed` | Insert development data (idempotent) |
+| `pnpm db:create-clinic --name … --slug … --branch … --admin-email … --admin-name …` | Create a real clinic and print its admin's invite link. Safe in production |
+| `pnpm --filter @skincrm/web e2e` | Playwright browser test (app must be running; `E2E_BASE_URL` to point elsewhere) |
 | `pnpm db:reset` | Drop the schema, then migrate and seed. Development only |
 | `pnpm infra:up` / `pnpm infra:down` | Start / stop Postgres, Redis and Mailpit |
 
@@ -137,7 +139,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 | 3 | Calendar — types, booking, conflict prevention, statuses `[CAL-01…05]` | ✅ Complete (reminders via automations) |
 | 4 | Messaging core — templates, consent ledger, automations, delivery log `[MSG-01…07]` | ✅ Complete (email connection-test screen outstanding) |
 | 5 | WhatsApp shared inbox `[WA-01…09]` | ✅ WhatsApp-style inbox, assignment, notes, reply lock, window rules, live Cloud API sender + webhooks |
-| 6 | Reporting and exports `[REP-01…04]` | 🅿️ Built and tested, parked (not in nav) at client request — D-72 |
+| 6 | Reporting and exports `[REP-01…04]` | ✅ Complete, in the nav (D-72) |
 | 7 | Real integrations — Meta, Google, WhatsApp Cloud, email `[INT-01…09]` | 🟡 Meta Lead Ads, Google lead forms, WhatsApp Cloud and SMTP built and tested against fakes; needs real accounts to go live |
 | 8 | Conversion feedback — outbox, eligibility gate, adapters `[FB-01…10]` | ✅ Built on mocks; Meta/Google must be tested with the real accounts (D-79, D-80) |
 | 9 | Hardening, backups, monitoring, deployment guide, 15 UAT scenarios | ✅ Done — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/UAT.md](docs/UAT.md) |
@@ -147,7 +149,8 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 ```bash
 pnpm typecheck    # clean
 pnpm lint         # clean
-pnpm test         # 322 tests: 14 RLS isolation, 24 security, 279 API, 5 web
+pnpm test         # 334 tests: 14 RLS isolation, 24 security, 291 API, 5 web
+pnpm --filter @skincrm/web e2e   # browser test; needs `pnpm dev` running (see apps/web/playwright.config.ts)
 ```
 
 ### Done and verified in phase 1
@@ -310,7 +313,7 @@ http://localhost:8025. Put both back before pointing at a real relay.
   WhatsApp colours and wallpaper, bubble tails, ✓ / ✓✓ / blue ✓✓ ticks,
   Enter-to-send pill composer, team notes as notices.
 - **Reporting** — funnel, sources, campaigns, trend, front-desk numbers, CSV
-  export. Parked: not in the nav (D-72).
+  export. In the nav (D-72).
 
 ### Done in the fourth session
 
@@ -341,6 +344,24 @@ http://localhost:8025. Put both back before pointing at a real relay.
 - **Phase 8 — Ad platform feedback** (Settings): Meta Conversions API and Google
   Data Manager, milestone mapping, checklist, test mode, go-live, pause, revoke,
   masked preview, diagnostics, bidding checklist (D-79, D-80).
+
+### Done in the sixth session (2026-09-28/29)
+
+- **Reports back in the nav**; "← Settings" link on My profile.
+- **Staff Delete** (non-admins, permanent) alongside Archive (D-81).
+- **Fixed: changing a staff member's role, or archiving them, hung forever**
+  (a self-inflicted lock wait; D-82).
+- **Edit patient details** — `/people/[id]/edit`: name, phone, email, contact
+  preference, language, date of birth, branch, address, city, state, postal code.
+  At least a phone or an email must remain.
+- **Notes and Activity rebuilt around one filter panel** — patient, search,
+  who/kind/show, date range, group by day / patient / inquiry, removable chips,
+  folds away on phones (D-83).
+- **Launch blockers fixed:** production compose forces `NODE_ENV=production`;
+  `/health/ready` is 503 when degraded; failed alert emails retry (D-85);
+  backup scripts hardened and the restore drill re-run (D-86).
+- **`pnpm db:create-clinic`** — onboard a real clinic and invite its admin (D-84).
+- **Playwright** — walk-in → book → confirm → Won, run in CI.
 
 ### Going live
 

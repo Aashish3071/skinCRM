@@ -14,7 +14,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -57,6 +57,24 @@ jobs:
       - run: pnpm test
       - run: pnpm --filter @skincrm/api build
       - run: pnpm --filter @skincrm/web build
+      # Browser test of the front-desk happy path against the built app.
+      - run: pnpm --filter @skincrm/web exec playwright install --with-deps chromium
+      - name: End-to-end
+        run: |
+          pnpm --filter @skincrm/api start > api.log 2>&1 &
+          pnpm --filter @skincrm/web start > web.log 2>&1 &
+          for url in http://localhost:4000/health http://localhost:3000/login; do
+            for i in $(seq 1 60); do curl -sf "$url" >/dev/null && break; sleep 2; done
+          done
+          pnpm --filter @skincrm/web e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: |
+            apps/web/test-results
+            api.log
+            web.log
 
   docker:
     runs-on: ubuntu-latest

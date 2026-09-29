@@ -16,7 +16,7 @@ column with the clinic.
 | 7 | Booking/converting stops irrelevant follow-up | `automations.test.ts` ("stops when they book") | ✅ Automated | |
 | 8 | Provider outage, recover, replay, no lead loss | `integrations.test.ts` (retry with backoff); events stay queued and visible | ✅ Automated · Manual: stop Meta access, restore, watch Settings | |
 | 9 | Practitioner / marketing analyst can't see forbidden fields or export | `people.test.ts`, `reports.test.ts`, RBAC tests | ✅ Automated | |
-| 10 | Dashboard counts reconcile with lists and CSV | `reports.test.ts` (Reports parked, D-72) | 🅿️ Built; unpark to run | |
+| 10 | Dashboard counts reconcile with lists and CSV | `reports.test.ts`, Reports screen | ✅ Automated + screen | |
 | 11 | Connect the clinic's existing WhatsApp Business number | Manual only — needs Meta's coexistence onboarding | ⬜ Pilot | |
 | 12 | Duplicate WhatsApp webhooks → one message; free-form in/out of window; template | `inbox.test.ts`, `integrations.test.ts` | ✅ Automated on mocks · Manual with real number | |
 | 13 | Qualified twice + replay → one feedback event | `feedback.test.ts` ("one event per milestone…") | ✅ Automated · Manual with real accounts in test mode | |
@@ -31,7 +31,10 @@ column with the clinic.
 | Freshness — lead within 5 min p95 | ✅ Worker polls every 5 s; alerts if backlog > 10 min |
 | UI response — 2 s p95 | ✅ 68 ms p95 at 20 users (`scripts/load-check.mjs`) |
 | Availability 99.5% | Depends on hosting; uptime monitoring in DEPLOYMENT.md §6 |
-| Backup + restore test | ✅ Scripts written and restore test passed locally; repeat on the server |
+| Backup + restore test | ✅ Restore drill passed 2026-09-29 (all row counts match); repeat on the server |
 | Accessibility — WCAG 2.2 AA | ✅ axe scan: 0 violations on every main screen, light and dark (2026-09-27). Manual screen-reader pass still recommended |
 | Privacy — no real data in dev | ✅ Seed refuses production; production refuses dev secrets |
 | Observability alerts | ✅ `apps/api/src/ops/monitor.ts` + `/health/alerts` |
+
+Browser coverage: `apps/web/e2e/front-desk.spec.ts` (walk-in → book → confirm
+→ Won) runs in CI on every push.

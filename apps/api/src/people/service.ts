@@ -13,7 +13,7 @@ import { getContext, getTx } from "../context";
 import { badRequest, notFound } from "../errors";
 import { diffSummary, recordAudit } from "../audit";
 
-const { people, generalNotes, consentRecords, personMerges, leads, activities, tasks } = schema;
+const { people, branches, generalNotes, consentRecords, personMerges, leads, activities, tasks } = schema;
 
 type PersonRow = typeof people.$inferSelect;
 
@@ -208,6 +208,14 @@ export async function updatePerson(
     },
     clinicCountry,
   );
+  if (!contact.phoneRaw && !contact.emailRaw) {
+    throw badRequest("Keep at least a phone number or an email address.");
+  }
+  if (input.branchId && input.branchId !== before.branchId) {
+    const branch = await tx.select({ id: branches.id }).from(branches)
+      .where(and(eq(branches.id, input.branchId), isNull(branches.archivedAt))).limit(1);
+    if (!branch[0]) throw badRequest("Choose a branch in this clinic.");
+  }
 
   const firstName = input.firstName !== undefined ? input.firstName : before.firstName;
   const lastName = input.lastName !== undefined ? input.lastName : before.lastName;

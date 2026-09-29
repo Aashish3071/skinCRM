@@ -34,6 +34,11 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
         description={`Added ${relativeTime(person.createdAt)}`}
         actions={
           <div className="flex flex-wrap items-center gap-3">
+            {can(session, "people:write") && (
+              <Link href={`/people/${person.id}/edit`} className="inline-flex min-h-10 items-center rounded-lg border border-line-strong bg-surface px-4 text-sm font-medium hover:bg-surface-muted">
+                Edit details
+              </Link>
+            )}
             {can(session, "conversations:read") && person.phoneE164 && <WhatsAppButton personId={person.id} />}
             <Link href="/people" className="text-sm text-ink-muted hover:text-ink">
               Back to patients
@@ -54,7 +59,12 @@ export default async function PersonPage({ params }: { params: Promise<{ id: str
               <Row label="Email" value={person.email} />
               <Row label="Preferred contact" value={person.preferredContactMethod} />
               <Row label="Language" value={person.preferredLanguage} />
+              <Row label="Date of birth" value={person.dateOfBirth} />
+              <Row label="Address" value={person.addressLine1} />
+              <Row label="Address line 2" value={person.addressLine2} />
               <Row label="City" value={person.city} />
+              <Row label="State / region" value={person.region} />
+              <Row label="Postal code" value={person.postalCode} />
             </dl>
             <p className="mt-3 border-t border-line pt-3 text-xs text-ink-subtle">
               Some fields are hidden depending on your role. The API applies the same rule.

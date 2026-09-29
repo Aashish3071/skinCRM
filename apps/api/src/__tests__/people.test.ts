@@ -9,7 +9,7 @@ import type { FastifyInstance } from "fastify";
 import { closeAllConnections, getOwnerDb, schema } from "@skincrm/db";
 import { SEED, authenticate, createTestApp, resetAuthState } from "./helpers";
 
-const { people, generalNotes, consentRecords, personMerges, auditEvents } = schema;
+const { people, generalNotes, consentRecords, personMerges, auditEvents, activities } = schema;
 
 let app: FastifyInstance;
 let adminCookie: string;
@@ -113,6 +113,30 @@ describe("creating a person", () => {
   });
 });
 
+describe("editing a patient", () => {
+  it("updates contact and city, and refuses to remove the last contact method", async () => {
+    const { body: created } = await createPerson({
+      firstName: `Edit ${TAG}`,
+      phone: "305-555-0399",
+    });
+    const id = created.id as string;
+    const updated = await app.inject({
+      method: "PATCH", url: `/people/${id}`, headers: { cookie: adminCookie },
+      payload: { phone: null, email: `edit.${TAG}@example.test`, city: "Tampa" },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({ phone: null, email: `edit.${TAG}@example.test`, city: "Tampa" });
+
+    const invalid = await app.inject({
+      method: "PATCH", url: `/people/${id}`, headers: { cookie: adminCookie },
+      payload: { email: null },
+    });
+    expect(invalid.statusCode).toBe(400);
+    const readBack = await app.inject({ method: "GET", url: `/people/${id}`, headers: { cookie: adminCookie } });
+    expect(readBack.json().email).toBe(`edit.${TAG}@example.test`);
+  });
+});
+
 describe("duplicate detection (PRD ID-06)", () => {
   it("refuses a second person with the same phone and returns the candidates", async () => {
     await createPerson({ firstName: `Ana ${TAG}`, phone: "305-555-0199" });
@@ -179,6 +203,34 @@ describe("duplicate detection (PRD ID-06)", () => {
 });
 
 describe("General Notes (PRD ID-08)", () => {
+  it("filters Notes and Activity by whole days in the clinic timezone", async () => {
+    const { body: person } = await createPerson({ firstName: `Dates ${TAG}`, email: `dates.${TAG}@example.test` });
+    const personId = person.id as string;
+    const createNote = (body: string) => app.inject({
+      method: "POST", url: `/people/${personId}/notes`, headers: { cookie: adminCookie }, payload: { body },
+    });
+    const before = await createNote("Before the clinic day");
+    const during = await createNote("During the clinic day");
+    const { db } = getOwnerDb();
+    await db.update(generalNotes).set({ createdAt: new Date("2026-03-08T04:30:00Z") })
+      .where(eq(generalNotes.id, before.json().id));
+    await db.update(generalNotes).set({ createdAt: new Date("2026-03-08T05:30:00Z") })
+      .where(eq(generalNotes.id, during.json().id));
+    const [record] = await db.select({ clinicId: people.clinicId }).from(people).where(eq(people.id, personId));
+    await db.insert(activities).values([
+      { clinicId: record!.clinicId, personId, type: "note", summary: "Before", occurredAt: new Date("2026-03-08T04:30:00Z") },
+      { clinicId: record!.clinicId, personId, type: "note", summary: "During", occurredAt: new Date("2026-03-08T05:30:00Z") },
+    ]);
+
+    const range = "from=2026-03-08&to=2026-03-08";
+    const notes = await app.inject({ method: "GET", url: `/notes?personId=${personId}&${range}`, headers: { cookie: adminCookie } });
+    expect(notes.statusCode).toBe(200);
+    expect((notes.json().items as { body: string }[]).map((item) => item.body)).toEqual(["During the clinic day"]);
+    const activity = await app.inject({ method: "GET", url: `/activities?personId=${personId}&${range}`, headers: { cookie: adminCookie } });
+    expect(activity.statusCode).toBe(200);
+    expect((activity.json().items as { summary: string }[]).map((item) => item.summary)).toEqual(["During"]);
+  });
+
   it("belongs to the person and is visible from any of their inquiries", async () => {
     const { body: person } = await createPerson({
       firstName: `Noted ${TAG}`,

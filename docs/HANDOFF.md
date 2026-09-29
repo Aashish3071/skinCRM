@@ -1,8 +1,8 @@
 # Handoff — resume point
 
-**Updated:** 2026-09-26
-**Phase:** All 9 phases built. Remaining: go-live with real accounts, Reporting unpark.
-**Overall:** ~95% of the build
+**Updated:** 2026-09-29
+**Phase:** All 9 phases built, launch blockers fixed. Remaining: pilot with the clinic's real accounts.
+**Overall:** ~97% of the build; the rest needs the client's accounts
 
 Read [README.md](../README.md) to run it and [ARCHITECTURE.md](../ARCHITECTURE.md)
 for the rules that must not be broken. This file says only what to do next.
@@ -20,10 +20,10 @@ pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
 pnpm lint                     # clean
-pnpm test                     # expect 322 passing
+pnpm test                     # expect 334 passing
 ```
 
-If those 289 tests pass, the foundation is intact and you can build on it.
+If those tests pass, the foundation is intact and you can build on it.
 
 To run everything (the API also runs the background worker when
 `WORKER_IN_API=true`, the development default):
@@ -108,37 +108,49 @@ Sign-in with all three login branches, authenticated shell with capability-drive
 navigation, Home wired to live counts, Leads list and Kanban, lead detail with
 timeline and tasks, People search and profile with General Notes, duplicate
 review and merge, and Settings → Staff. Inbox, Calendar, Automations, Notes,
-Activity, and integration settings are implemented. Reports are implemented
-but parked outside the navigation at the client's request.
+Activity, Reports and integration settings are implemented. Patient details
+are edited at `/people/[id]/edit`. Notes and Activity share one filter panel
+(`components/feed-filters.tsx`).
 
 The browser never calls the API directly: reads go through server components and
 writes through Server Actions, both forwarding the session cookie.
 
-The next planned work is conversion feedback and deployment hardening.
+Browser test: `apps/web/e2e/front-desk.spec.ts` (`pnpm --filter @skincrm/web e2e`
+with the app running; CI runs it against the production builds).
 
 ---
 
 ## Do this next, in order
 
-Fifth session (2026-09-27): UI fix, light theme, Home, clinic/personal profiles,
-notifications, and phase 8 conversion feedback. 322 tests passing.
+Sixth session (2026-09-28/29): Reports unparked, staff Delete, patient edit,
+Notes/Activity filter panel, a role-change hang fixed (D-82), launch blockers
+from docs/PRODUCTION_READINESS_REVIEW.md fixed, `pnpm db:create-clinic`,
+Playwright in CI. 334 tests + 1 browser test passing. Nothing is half-done.
 
-Local `.env` now also has `CONVERSION_FEEDBACK_ENABLED=true` (mock connectors,
-nothing leaves the machine). Both feedback destinations were left **Off**.
+Local `.env` has `CONVERSION_FEEDBACK_ENABLED=true` (mock connectors, nothing
+leaves the machine). Both feedback destinations were left **Off**.
 
-### 1. Go live with the clinic — docs/DEPLOYMENT.md
-Plus, for feedback: connect Meta (dataset id, CAPI token, test event code) and
-Google (customer id, OAuth client, refresh token, conversion action ids) in
-Settings → Ad platform feedback, run the checklist, **send a test event against
-the real account** (Google's Data Manager request shape is marked verify-before-
-go-live), check it in Events Manager / Google Ads, then Go live.
+### 1. Pilot with the clinic's real accounts — docs/DEPLOYMENT.md
+1. Server + `.env` (DEPLOYMENT §1–2), `docker compose … up -d --build`.
+2. `pnpm db:create-clinic …` through the `migrate` service (DEPLOYMENT §3);
+   send the admin their invite link.
+3. Connect Meta lead ads, Google lead forms, WhatsApp (coexistence onboarding
+   for the clinic's existing number) and SMTP with SPF/DKIM (DEPLOYMENT §4).
+4. Feedback: Settings → Ad platform feedback, checklist, **test event against
+   the real account** (Google's Data Manager request shape is marked
+   verify-before-go-live), confirm in Events Manager / Google Ads, then Go live.
+5. Backup cron + off-host copy, then `scripts/verify-backup.sh` on the server.
+6. Walk the 15 scenarios in docs/UAT.md with the clinic; fill "Pilot result".
 
-### 2. Smaller follow-ups
-- Unpark Reporting when asked (D-72).
-- A production "create first clinic and admin" script (DEPLOYMENT.md §3).
-- KMS-wrapped master key (D-75); business-hours SLA (D-73).
-- Email copies of notifications, if staff ask (today: in-app bell + the
-  "Email the team" automation).
+### 2. Before selling to more clinics
+- KMS-wrapped master key if a client requires it (D-75).
+- Billing / plans / self-serve signup (today: `pnpm db:create-clinic`).
+- Privacy policy and terms pages in the app.
+- More Playwright flows (inbox reply, export matches filters).
+
+### 3. Smaller follow-ups
+- Business-hours SLA (D-73); email copies of notifications if staff ask.
+- Email connection-test screen (MSG-01).
 - Manual screen-reader pass.
 
 ---
@@ -231,6 +243,13 @@ go-live), check it in Events Manager / Google Ads, then Go live.
    in `apps/web` so the running dev server's `.next` is not clobbered. It rewrites
    `apps/web/tsconfig.json` and `next-env.d.ts` to point at `.next-build` —
    `git checkout` both afterwards.
+33. **Never open a second transaction for a row the request already updated.**
+   Inside a route, use `getTx()` (or a helper that joins it, like
+   `revokeAllSessionsForUser`); `withTenant()` from inside a request that holds
+   a row lock hangs forever (D-82).
+34. **The Playwright test leaves an "E2E Walkin …" lead and an appointment three
+   weeks out** in the database it runs against. Harmless on dev/CI; don't point
+   it at a real clinic.
 
 ---
 
@@ -243,8 +262,8 @@ go-live), check it in Events Manager / Google Ads, then Go live.
 | Automations run once per lead per rule (dedupe key `lead:<id>`), so a "stage changed" rule does not re-fire if a lead re-enters that stage | `apps/api/src/automations/engine.ts` | Revisit if clinics ask for it |
 | The "Qualified" feedback milestone is unreachable after D-57 | `packages/contracts/src/enums.ts` | Phase 8, if Qualified-based optimisation is wanted |
 | Dead-letter/replay view for failed automation runs | runs page shows `Failed` + reason only | Phase 9 |
-| Inbox and Reports are hidden from the nav until built | `apps/web/src/components/nav.tsx` | Phases 5 and 6 |
-| `people.branchId` is stored but nothing filters on it yet | `apps/api/src/people/routes.ts` | With branch permissions |
+| `people.branchId` is stored (editable on the patient edit page) but nothing filters on it yet | `apps/api/src/people/routes.ts` | With branch permissions |
+| Notes/Activity group-by works on the loaded page (up to 100 items), so a patient's group can continue after "Show more" | `apps/web/src/app/(app)/notes`, `activity` | If clinics need server-side grouping |
 | Client self-service booking link `[CAL-06]` and external calendar sync `[CAL-07]` | — | P1, after MVP |
 
 ---

@@ -26,7 +26,11 @@ services:
   migrate:
     build: { context: .., dockerfile: deploy/Dockerfile, target: tools }
     env_file: ../.env
+    # NODE_ENV is pinned here, not left to .env: .env.example says
+    # "development", and in development the production safety checks
+    # (dev secrets, weak keys, localhost mail) are skipped.
     environment: &db
+      NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER:-skincrm}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-skincrm}
       DATABASE_APP_URL: postgresql://skincrm_app:${DATABASE_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-skincrm}
     depends_on: { postgres: { condition: service_healthy } }
@@ -62,6 +66,7 @@ services:
     restart: unless-stopped
     env_file: ../.env
     environment:
+      NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://api:4000
     depends_on: [api]
 

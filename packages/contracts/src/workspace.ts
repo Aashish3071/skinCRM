@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isoDateTime, queryBoolean, uuidSchema } from "./common";
+import { isoDate, isoDateTime, queryBoolean, uuidSchema } from "./common";
 import type { ActivityType } from "./enums";
 
 /**
@@ -8,13 +8,21 @@ import type { ActivityType } from "./enums";
  * patients one by one to catch up.
  */
 
+const dateRange = {
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+};
+
 export const listNotesQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
   personId: uuidSchema.optional(),
+  ...dateRange,
   pinned: queryBoolean(false),
   mine: queryBoolean(false),
   limit: z.coerce.number().int().min(1).max(100).default(40),
   offset: z.coerce.number().int().min(0).default(0),
+}).refine((value) => !value.from || !value.to || value.from <= value.to, {
+  path: ["to"], message: "End date must be on or after start date",
 });
 
 export const noteFeedItemSchema = z.object({
@@ -46,11 +54,14 @@ export type ActivityGroup = keyof typeof ACTIVITY_GROUPS;
 
 export const listActivityQuerySchema = z.object({
   personId: uuidSchema.optional(),
+  ...dateRange,
   group: z.enum(Object.keys(ACTIVITY_GROUPS) as [ActivityGroup, ...ActivityGroup[]]).optional(),
   /** Only things the signed-in user did. */
   mine: queryBoolean(false),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
+}).refine((value) => !value.from || !value.to || value.from <= value.to, {
+  path: ["to"], message: "End date must be on or after start date",
 });
 
 export const activityFeedItemSchema = z.object({
@@ -58,6 +69,7 @@ export const activityFeedItemSchema = z.object({
   personId: uuidSchema,
   personName: z.string(),
   leadId: uuidSchema.nullable(),
+  leadCreatedAt: isoDateTime.nullable(),
   type: z.string(),
   summary: z.string(),
   body: z.string().nullable(),

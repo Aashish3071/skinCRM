@@ -31,7 +31,7 @@ Edit `.env` — every value below matters in production:
 
 | Variable | Value |
 |---|---|
-| `NODE_ENV` | `production` |
+| `NODE_ENV` | `production` (the compose file also forces it) |
 | `APP_DOMAIN` | `crm.yourclinic.com` (Caddy gets the certificate) |
 | `PUBLIC_WEB_URL`, `PUBLIC_API_URL` | `https://crm.yourclinic.com` (both — Caddy routes webhooks to the API) |
 | `POSTGRES_PASSWORD`, `DATABASE_APP_PASSWORD` | `openssl rand -base64 32` each |
@@ -61,12 +61,20 @@ docker compose -f docker-compose.prod.yml logs -f api worker
 security) and must succeed before `api` and `worker` start. Then open
 `https://crm.yourclinic.com`.
 
-**First admin account:** the seed script refuses to run in production (it
-contains demo data). Create the clinic and first admin with a one-off SQL
-insert or a short script run through the `tools` image — see
-`packages/db/src/scripts/seed.ts` for the exact rows (clinic, branch, stages,
-admin user with an Argon2id hash). Then invite everyone else from
-Settings → Staff.
+**First clinic and admin:** the demo seed refuses to run in production. Create
+the clinic with the tools image; it prints a one-time invite link for the admin
+(valid 7 days) and never asks you for their password:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file ../.env run --rm migrate \
+  pnpm db:create-clinic --name "Bright Skin Miami" --slug bright-skin-miami \
+  --timezone America/New_York --branch "Miami — Brickell" \
+  --admin-email owner@brightskin.com --admin-name "Jamie Rivera"
+```
+
+Send the link to the admin; they set a password and two-step sign-in, then
+invite everyone else from Settings → Staff. Run the same command for each
+additional clinic on this server.
 
 ## 4. Connect the accounts (Settings → Lead sources & messaging)
 
@@ -83,9 +91,11 @@ Settings → Staff.
 ## 5. Backups (PRD 9)
 
 ```cron
-15 3 * * *  cd /srv/skincrm && BACKUP_PASSPHRASE=... PG_CONTAINER=skincrm-postgres-1 scripts/backup.sh >> /var/log/skincrm-backup.log 2>&1
+15 3 * * *  cd /srv/skincrm && BACKUP_PASSPHRASE=... scripts/backup.sh >> /var/log/skincrm-backup.log 2>&1
 ```
 
+- The scripts find the database container on their own (set `PG_CONTAINER`
+  only if you renamed it) and read `POSTGRES_*` from `.env` as plain data.
 - `scripts/backup.sh` streams `pg_dump` through AES-256 into `backups/`,
   keeps 14 days, and records success so the monitor alerts if backups stop.
 - **Copy `backups/` off the server** (e.g. `aws s3 sync` to a bucket with
@@ -103,7 +113,7 @@ Settings → Staff.
 - **Email alerts** to `OPS_ALERT_EMAIL`, at most hourly per problem: worker
   stopped, incoming leads/messages backed up or failing, a connected account
   in error, an ad account silent for 7 days, email failures, missed backups.
-- **Readiness:** `/health/ready` reports database and worker status.
+- **Readiness:** `/health/ready` returns 503 when the database or the worker is down (use it for load balancers); `/health` is liveness only.
 - Logs are JSON on stdout with personal data redacted; ship them to your log
   service if it has a BAA.
 
