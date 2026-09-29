@@ -59,3 +59,7 @@ export async function previewFeedbackAction(d: Dest): Promise<{ ok: true; previe
     return { ok: false, message: error instanceof ApiError ? error.message : "Could not load the preview." };
   }
 }
+
+export async function applyGoogleConnectionAction(): Promise<FbResult> {
+  return run(async () => { await apiFetch("/feedback/google/credentials/from-connection", { method: "POST" }); });
+}

@@ -39,6 +39,10 @@ export const connectionSchema = z.object({
   lastEventAt: isoDateTime.nullable(),
   lastError: z.string().nullable(),
   createdAt: isoDateTime,
+  /** "oauth" when made with Connect with Facebook / Google; "manual" when pasted. */
+  connectedVia: z.enum(["oauth", "manual"]),
+  /** Google: how many lead forms carry our webhook. */
+  leadForms: z.number().int().nullable(),
 });
 export type ConnectionDto = z.infer<typeof connectionSchema>;
 
@@ -59,7 +63,7 @@ export interface IntegrationsOverview {
   events: InboundEventDto[];
   webhooks: { meta: string; whatsapp: string; google: string };
   verifyTokens: { meta: string; whatsapp: string };
-  modes: { email: "mock" | "live"; whatsapp: "mock" | "live"; meta: "mock" | "live" };
+  modes: { email: "mock" | "live"; whatsapp: "mock" | "live"; meta: "mock" | "live"; google: "mock" | "live" };
   sending: {
     enabled: boolean;
     promotionalApproved: boolean;
@@ -68,4 +72,37 @@ export interface IntegrationsOverview {
     supportEmail: string | null;
     emailFrom: string;
   };
+}
+
+/** "Connect with Facebook / Google" (D-87). */
+export const OAUTH_PROVIDERS = ["meta", "google"] as const;
+export type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
+export const oauthProviderSchema = z.enum(OAUTH_PROVIDERS);
+
+export const oauthCallbackSchema = z.object({
+  code: z.string().min(1).max(2_000),
+  state: z.string().min(20).max(200),
+});
+
+export const oauthChoiceSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  detail: z.string().nullable(),
+  /** Why it can't be picked, when it can't. */
+  unavailableReason: z.string().nullable(),
+});
+export type OAuthChoice = z.infer<typeof oauthChoiceSchema>;
+
+export interface OAuthPendingDto {
+  id: string;
+  provider: OAuthProvider;
+  choices: OAuthChoice[];
+  expiresAt: string;
+}
+
+export const completeOAuthSchema = z.object({ choiceId: z.string().min(1).max(100) });
+
+export interface OAuthCompleteResult {
+  connection: ConnectionDto;
+  detail: string;
 }

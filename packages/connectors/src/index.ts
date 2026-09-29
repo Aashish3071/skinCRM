@@ -88,3 +88,41 @@ export function setFeedbackConnectors(next: { meta?: MetaCapiConnector; google?:
   capi = next?.meta;
   googleFeedback = next?.google;
 }
+
+export * from "./oauth/meta";
+export * from "./oauth/google";
+import { ConnectorError } from "./types";
+import { LiveMetaOAuthClient, MockMetaOAuthClient, type MetaOAuthClient } from "./oauth/meta";
+import { LiveGoogleOAuthClient, MockGoogleOAuthClient, type GoogleOAuthClient } from "./oauth/google";
+
+let metaOAuth: MetaOAuthClient | undefined;
+let googleOAuth: GoogleOAuthClient | undefined;
+
+/**
+ * "Connect with Facebook / Google" clients, from CONNECTOR_META / CONNECTOR_GOOGLE.
+ * Live mode with the app credentials missing throws a message for the operator
+ * rather than silently falling back to the demo flow.
+ */
+export function getOAuthClients(): { meta: MetaOAuthClient; google: GoogleOAuthClient } {
+  const env = getEnv();
+  if (!metaOAuth) {
+    if (env.CONNECTOR_META === "live") {
+      if (!env.META_APP_ID || !env.META_APP_SECRET) throw new ConnectorError("Connect with Facebook needs META_APP_ID and META_APP_SECRET on the server.", { retryable: false, providerCode: "not_configured" });
+      metaOAuth = new LiveMetaOAuthClient({ appId: env.META_APP_ID, appSecret: env.META_APP_SECRET, loginConfigId: env.META_LOGIN_CONFIG_ID ?? null });
+    } else metaOAuth = new MockMetaOAuthClient();
+  }
+  if (!googleOAuth) {
+    if (env.CONNECTOR_GOOGLE === "live") {
+      if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !env.GOOGLE_ADS_DEVELOPER_TOKEN)
+        throw new ConnectorError("Connect with Google needs GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET and GOOGLE_ADS_DEVELOPER_TOKEN on the server.", { retryable: false, providerCode: "not_configured" });
+      googleOAuth = new LiveGoogleOAuthClient({ clientId: env.GOOGLE_OAUTH_CLIENT_ID, clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET, developerToken: env.GOOGLE_ADS_DEVELOPER_TOKEN });
+    } else googleOAuth = new MockGoogleOAuthClient();
+  }
+  return { meta: metaOAuth, google: googleOAuth };
+}
+
+/** Tests swap in fakes; undefined resets to the env-selected clients. */
+export function setOAuthClients(next: { meta?: MetaOAuthClient; google?: GoogleOAuthClient } | undefined): void {
+  metaOAuth = next?.meta;
+  googleOAuth = next?.google;
+}

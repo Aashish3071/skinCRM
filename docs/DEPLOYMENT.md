@@ -39,8 +39,9 @@ Edit `.env` — every value below matters in production:
 | `CRYPTO_PROVIDER` | `local` (D-75; the app refuses to start with a weak key) |
 | `OUTBOUND_SENDING_ENABLED` | `true` once the clinic has signed off |
 | `CONNECTOR_EMAIL`, `SMTP_*`, `EMAIL_FROM_*` | `live` and your relay (SES, Postmark…). Not `localhost` — the app refuses |
-| `CONNECTOR_WHATSAPP`, `CONNECTOR_META` | `live` once the accounts are connected |
-| `META_APP_ID`, `META_APP_SECRET` | from the Meta app. The secret is what verifies webhook signatures |
+| `CONNECTOR_WHATSAPP`, `CONNECTOR_META`, `CONNECTOR_GOOGLE` | `live` once the apps in §4 exist |
+| `META_APP_ID`, `META_APP_SECRET` | from the Meta app (§4). The secret also verifies webhook signatures |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN` | for Connect with Google Ads (§4) |
 | `OPS_ALERT_EMAIL` | where operational alerts go |
 | `MONITOR_TOKEN` | `openssl rand -base64 32`, for your uptime monitor |
 | `BACKUPS_EXPECTED` | `true` once the backup cron is in place |
@@ -78,11 +79,44 @@ additional clinic on this server.
 
 ## 4. Connect the accounts (Settings → Lead sources & messaging)
 
-- **Facebook / Instagram lead ads:** page ID + page access token. In the Meta app,
-  subscribe the page to `leadgen` with the Callback URL and Verify token shown
-  under "Technical details". Test with Meta's Lead Ads Testing Tool.
-- **Google Ads lead forms:** Create key → paste the webhook URL and key into the
-  lead form asset → "Send test data".
+Clinics connect Facebook and Google themselves with **Connect with Facebook** and
+**Connect with Google Ads** — sign in, pick the Page / ad account, done. For
+that to work, you (the operator) set up two apps **once per deployment**:
+
+**Meta app (Connect with Facebook)** — developers.facebook.com
+1. Create a Business-type app; add **Facebook Login for Business** and **Webhooks**.
+2. Valid OAuth redirect URI: `https://crm.yourclinic.com/settings/integrations/oauth/meta/callback`.
+3. Permissions: `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`,
+   `leads_retrieval`, `business_management`. Complete **Business Verification** and
+   **App Review** for Advanced Access — until then only people with a role on the
+   app can connect (fine for a first pilot clinic whose admin you add as a tester).
+   Optionally create a Login for Business configuration with these permissions
+   and set `META_LOGIN_CONFIG_ID`.
+4. Webhooks → Page → subscribe `leadgen` with the Callback URL and Verify token
+   shown under "Technical details". Each clinic's Page is then subscribed
+   automatically when they connect.
+5. `.env`: `CONNECTOR_META=live`, `META_APP_ID`, `META_APP_SECRET`.
+6. Test with Meta's Lead Ads Testing Tool after a clinic connects.
+
+**Google (Connect with Google Ads)** — console.cloud.google.com + ads.google.com
+1. Enable the **Google Ads API**. Create an **OAuth client (Web application)**
+   with redirect URI `https://crm.yourclinic.com/settings/integrations/oauth/google/callback`.
+   Configure the consent screen (scope `…/auth/adwords`) and publish it.
+2. In a Google Ads manager account, API Center → apply for a **developer token**
+   (Basic access is enough).
+3. `.env`: `CONNECTOR_GOOGLE=live`, `GOOGLE_OAUTH_CLIENT_ID`,
+   `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`.
+4. **Verify before go-live:** connect a real test account and press "Send test
+   data" on one of its lead forms in Google Ads; the lead must appear in Leads.
+   The lead-form webhook update is written against the API reference and has
+   only run against fakes (`packages/connectors/src/oauth/google.ts`).
+5. The same connection can supply conversion-feedback credentials
+   (Settings → Ad platform feedback → "Use this account").
+
+A form that already sends leads to another system (a previous CRM, Zapier) is
+left alone and listed, never overwritten. The manual routes — pasting a Page
+token, or a webhook key into the form — remain under "…by hand instead".
+
 - **WhatsApp:** phone-number ID + permanent token; subscribe `messages` with the
   URL and token shown. Approve message templates in WhatsApp Manager.
 - **Email:** "Send yourself a test". Set up SPF/DKIM for the sending domain

@@ -368,6 +368,7 @@ contracts `packages/contracts/src/automations.ts`, UI `apps/web/src/app/(app)/au
   container itself; D-86).
 - **Readiness** `/health/ready` is 503 when the database or worker is down;
   `/health` is liveness only (D-85).
+- **Connect with Facebook / Google** (`integrations/oauth.ts`): start → provider sign-in → web callback route → pending choice (encrypted, one-time) → complete. States and pending ids are hashed rows in `auth_tokens` (D-87).
 - **New tenants** `pnpm db:create-clinic` → `packages/db/src/provision.ts` (D-84).
 
 ---
@@ -549,4 +550,5 @@ Consequences to know about:
 | Playwright end-to-end (walk-in → book → confirm → won) | ✅ 1 test, in CI |
 | KMS-wrapped master key | ⬜ Not started (D-75) |
 | Billing / plans / self-serve signup | ⬜ Not started |
+| Connect with Facebook / Google Ads (OAuth) `[INT-01, INT-03]` (D-87) | ✅ Built, 7 tests; live Google lead-form update to verify with a real account |
 

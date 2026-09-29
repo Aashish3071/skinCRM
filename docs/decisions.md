@@ -641,3 +641,21 @@ pins `NODE_ENV=production` on every app service, because `.env.example` says
 or `;` stay literal), percent-decodes URL credentials, prefers `POSTGRES_*` when
 present (production), and runs the client tools in `PG_CONTAINER`, else the
 production compose `postgres` service, else the dev container, else on the host.
+
+**D-87. Connect with Facebook / Google instead of pasted tokens.**
+OAuth code flow run by the API (`apps/api/src/integrations/oauth.ts`), clients in
+`packages/connectors/src/oauth/`. `start` stores a one-time state in
+`auth_tokens` (hash only, 10 min, bound to clinic + person); the web callback
+route forwards code + state; the API burns the state, exchanges the code, and
+keeps the token plus the list of Pages / ad accounts encrypted behind a one-time
+"pending" id (15 min). The person picks one; only then is anything saved. Meta:
+long-lived user token → Page token (non-expiring) → `subscribed_apps?leadgen`,
+subscribed *before* saving so a silent connection can't happen. Google: refresh
+token (offline, consent) → accounts via `listAccessibleCustomers` +
+`customer_client` (manager accounts handled with `login-customer-id`) → our
+webhook + per-clinic key added to every lead form; forms delivering to another
+system are skipped, never overwritten (Google does not return their secret).
+The Google refresh token is reused for conversion feedback on request. Demo mode
+(`CONNECTOR_*=mock`) returns a relative callback path so the flow works on any
+local port. Manual paste paths remain as a fallback.
+

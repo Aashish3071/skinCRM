@@ -15,7 +15,12 @@ const EVENT_LABEL: Record<string, string> = {
   whatsapp_status: "WhatsApp delivery update",
 };
 
-export default async function IntegrationsPage() {
+export default async function IntegrationsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const params = await searchParams;
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const connected = one(params.connected);
+  const oauthError = one(params.oauth_error);
+  const detail = one(params.detail);
   const session = await requireCapability("integrations:read");
   const data = await apiFetch<IntegrationsOverview>("/integrations");
   const by = (p: string) => data.connections.find((c) => c.provider === p);
@@ -26,10 +31,16 @@ export default async function IntegrationsPage() {
       <Link href="/settings" className="text-sm text-ink-muted hover:text-ink">← Settings</Link>
       <PageHeader title="Lead sources & messaging" description="Connect your ad accounts and WhatsApp number, and control what the CRM sends." />
       {!writable && <p className="mb-4 text-sm text-ink-muted">Only an admin can change these.</p>}
+      {(connected === "meta" || connected === "google") && (
+        <p role="status" className="mb-4 rounded-lg bg-positive-soft px-4 py-3 text-sm text-positive">
+          <strong>{connected === "meta" ? "Facebook connected." : "Google Ads connected."}</strong> {detail}
+        </p>
+      )}
+      {oauthError && <p role="alert" className="mb-4 rounded-lg bg-critical-soft px-4 py-3 text-sm text-critical">{oauthError}</p>}
       <div className="flex flex-col gap-4">
         <SendingCard sending={data.sending} modes={data.modes} />
         <MetaCard connection={by("meta_lead_ads")} webhook={data.webhooks.meta} verifyToken={data.verifyTokens.meta} live={data.modes.meta === "live"} />
-        <GoogleCard connection={by("google_lead_forms")} webhook={data.webhooks.google} />
+        <GoogleCard connection={by("google_lead_forms")} webhook={data.webhooks.google} live={data.modes.google === "live"} />
         <WhatsAppCard connection={by("whatsapp_cloud")} webhook={data.webhooks.whatsapp} verifyToken={data.verifyTokens.whatsapp} live={data.modes.whatsapp === "live"} />
 
         <Card title="Recently received" description="The last 30 things your connected accounts sent in.">

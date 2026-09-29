@@ -89,9 +89,15 @@ const schema = z.object({
 
   META_APP_ID: z.string().optional(),
   META_APP_SECRET: z.string().optional(),
+  /** Optional Facebook Login for Business configuration id (carries the permission set). */
+  META_LOGIN_CONFIG_ID: z.string().optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().default("dev_meta_verify_token"),
   WHATSAPP_WEBHOOK_VERIFY_TOKEN: z.string().default("dev_whatsapp_verify_token"),
 
+  /** "Connect with Google Ads": the deployment's OAuth client and Ads developer token. */
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_ADS_DEVELOPER_TOKEN: z.string().optional(),
   GOOGLE_LEAD_FORM_KEY: z.string().default("dev_google_key"),
 
   /** Where operational alerts go (queue backlog, failing webhooks, backups…). */

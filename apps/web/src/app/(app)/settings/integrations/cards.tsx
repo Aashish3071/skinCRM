@@ -10,6 +10,8 @@ import {
   disconnectAction,
   saveMessagingAction,
   sendTestLeadAction,
+  startOAuthAction,
+  syncGoogleFormsAction,
   testSendAction,
   type Result,
 } from "@/lib/integration-actions";
@@ -77,30 +79,68 @@ function useRunner() {
   return { pending, result, run };
 }
 
+/** Sends the browser to Facebook / Google to sign in (or straight back, in demo mode). */
+function ConnectButton({ provider, label, subtle = false, run, pending }: {
+  provider: "meta" | "google";
+  label: string;
+  subtle?: boolean;
+  pending: boolean;
+  run: (fn: () => Promise<Result>) => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => run(async () => {
+        const result = await startOAuthAction(provider);
+        if (result.ok && result.url) window.location.assign(result.url);
+        return result.ok ? { ok: true, detail: "Opening sign-in…" } : result;
+      })}
+      className={buttonClasses(subtle ? "secondary" : "primary", subtle ? "sm" : "md")}
+    >
+      {pending ? "Opening sign-in…" : label}
+    </button>
+  );
+}
+
 export function MetaCard({ connection, webhook, verifyToken, live }: { connection?: ConnectionDto; webhook: string; verifyToken: string; live: boolean }) {
   const { pending, result, run } = useRunner();
   return (
     <Section title="Facebook & Instagram lead ads" status={<Status connection={connection} />}
       intro="New leads from your Meta lead forms arrive in Leads within seconds, with the ad and campaign they came from.">
       {connection ? (
-        <ConnectionFooter connection={connection} testProvider="meta" pending={pending} run={run} />
-      ) : (
-        <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); run(() => connectMetaAction(String(f.get("pageId")), String(f.get("token")))); }}>
-          <Steps items={[
-            "In Meta Business Suite, open your Facebook page's settings and copy its Page ID.",
-            "Create a page access token with the leads_retrieval and pages_manage_metadata permissions (your Meta partner or developer can do this).",
-            "Paste both below and press Connect.",
-          ]} />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Page ID" htmlFor="meta-page"><input id="meta-page" name="pageId" required inputMode="numeric" className={inputClasses} /></Field>
-            <Field label="Page access token" htmlFor="meta-token" hint="Stored encrypted. Never shown again."><input id="meta-token" name="token" type="password" required autoComplete="off" className={inputClasses} /></Field>
+        <>
+          <ConnectionFooter connection={connection} testProvider="meta" pending={pending} run={run} />
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="mr-auto text-xs text-ink-subtle">
+              {connection.connectedVia === "oauth" ? "Connected with Facebook." : "Connected with a pasted token."} Changed Page, or Facebook asked you to sign in again?
+            </p>
+            <ConnectButton provider="meta" label="Reconnect with Facebook" subtle pending={pending} run={run} />
           </div>
-          <div><button disabled={pending} className={buttonClasses("primary")}>{pending ? "Checking…" : "Connect"}</button></div>
-          {!live && <p className="text-xs text-ink-subtle">Demo mode: any Page ID and token are accepted and test leads are generated locally.</p>}
-        </form>
+        </>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <Steps items={[
+            "Press Connect with Facebook and sign in with the account that manages the clinic's Facebook Page.",
+            "Allow SkinCRM to see the Page's leads, then choose the Page.",
+            "That's it — Instagram lead ads come through the same Page.",
+          ]} />
+          <div><ConnectButton provider="meta" label="Connect with Facebook" pending={pending} run={run} /></div>
+          {!live && <p className="text-xs text-ink-subtle">Demo mode: you won't leave SkinCRM; two made-up Pages are offered.</p>}
+          <details className="rounded-lg border border-line p-3">
+            <summary className="cursor-pointer text-sm font-medium">Enter a Page ID and token by hand instead</summary>
+            <form className="mt-3 flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); run(() => connectMetaAction(String(f.get("pageId")), String(f.get("token")))); }}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Page ID" htmlFor="meta-page"><input id="meta-page" name="pageId" required inputMode="numeric" className={inputClasses} /></Field>
+                <Field label="Page access token" htmlFor="meta-token" hint="Needs leads_retrieval and pages_manage_metadata. Stored encrypted; never shown again."><input id="meta-token" name="token" type="password" required autoComplete="off" className={inputClasses} /></Field>
+              </div>
+              <div><button disabled={pending} className={buttonClasses("secondary")}>{pending ? "Checking…" : "Connect"}</button></div>
+            </form>
+          </details>
+        </div>
       )}
       <Advanced>
-        <p className="text-sm text-ink-muted">For whoever sets up the Meta app: subscribe the page to the <strong>leadgen</strong> field with these details.</p>
+        <p className="text-sm text-ink-muted">For whoever runs the Meta app: the app's <strong>leadgen</strong> webhook must point here. Connect with Facebook subscribes each Page automatically.</p>
         <CopyField label="Callback URL" value={webhook} />
         <CopyField label="Verify token" value={verifyToken} />
       </Advanced>
@@ -109,12 +149,13 @@ export function MetaCard({ connection, webhook, verifyToken, live }: { connectio
   );
 }
 
-export function GoogleCard({ connection, webhook }: { connection?: ConnectionDto; webhook: string }) {
+export function GoogleCard({ connection, webhook, live }: { connection?: ConnectionDto; webhook: string; live: boolean }) {
   const { pending, result, run } = useRunner();
   const key = result?.ok ? result.key : undefined;
-  return (
-    <Section title="Google Ads lead forms" status={<Status connection={connection} />}
-      intro="Leads from Google Ads lead-form assets arrive in Leads with the campaign and click id.">
+  const viaOAuth = connection?.connectedVia === "oauth";
+
+  const manual = (
+    <div className="flex flex-col gap-4">
       <Steps items={[
         "Press Create key below and keep this page open.",
         "In Google Ads, open your lead form asset → Export leads → Webhook integration.",
@@ -126,12 +167,47 @@ export function GoogleCard({ connection, webhook }: { connection?: ConnectionDto
           <CopyField label="Key — copy it now, it won't be shown again" value={key} />
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={pending} onClick={() => { if (!connection || window.confirm("Create a new key? The old one stops working, so update Google Ads too.")) run(() => createGoogleKeyAction()); }} className={buttonClasses(connection ? "secondary" : "primary", connection ? "sm" : "md")}>
+      <div>
+        <button type="button" disabled={pending} onClick={() => { if (!connection || window.confirm("Create a new key? The old one stops working, so update Google Ads too.")) run(() => createGoogleKeyAction()); }} className={buttonClasses("secondary", "sm")}>
           {connection ? "Replace key" : "Create key"}
         </button>
-        {connection && <button type="button" disabled={pending} onClick={() => run(() => sendTestLeadAction("google"))} className={buttonClasses("secondary", "sm")}>Send a test lead</button>}
       </div>
+    </div>
+  );
+
+  return (
+    <Section title="Google Ads lead forms" status={<Status connection={connection} />}
+      intro="Leads from Google Ads lead-form assets arrive in Leads with the campaign and click id.">
+      {connection ? (
+        <>
+          {viaOAuth && (
+            <p className="text-sm">
+              {connection.leadForms === 0 ? "No lead forms send to SkinCRM yet." : `${connection.leadForms} lead ${connection.leadForms === 1 ? "form sends" : "forms send"} leads to SkinCRM.`}{" "}
+              <span className="text-ink-muted">Made a new form in Google Ads? Check for it so its leads come here too.</span>
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {viaOAuth && <button type="button" disabled={pending} onClick={() => run(() => syncGoogleFormsAction())} className={buttonClasses("secondary", "sm")}>Check for new lead forms</button>}
+            <ConnectButton provider="google" label={viaOAuth ? "Reconnect with Google" : "Switch to Connect with Google"} subtle pending={pending} run={run} />
+          </div>
+          <ConnectionFooter connection={{ ...connection, displayName: `${connection.displayName ?? "Google Ads"}${connection.accountLabel ? ` (${connection.accountLabel})` : ""}` }} testProvider="google" pending={pending} run={run} />
+          {!viaOAuth && <Advanced>{manual}</Advanced>}
+        </>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <Steps items={[
+            "Press Connect with Google Ads and sign in with the Google account that manages the clinic's ads.",
+            "Choose the ad account.",
+            "SkinCRM adds itself to every lead form in that account — no copying keys.",
+          ]} />
+          <div><ConnectButton provider="google" label="Connect with Google Ads" pending={pending} run={run} /></div>
+          {!live && <p className="text-xs text-ink-subtle">Demo mode: you won't leave SkinCRM; a made-up account with two lead forms is offered.</p>}
+          <details className="rounded-lg border border-line p-3">
+            <summary className="cursor-pointer text-sm font-medium">Set up a webhook key by hand instead</summary>
+            <div className="mt-3">{manual}</div>
+          </details>
+        </div>
+      )}
       {result && !key && <Outcome result={result} />}
     </Section>
   );

@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { ApiError, apiFetch } from "./api";
 
-export type Result = { ok: true; detail?: string; key?: string } | { ok: false; message: string; fieldErrors?: Record<string, string[]> };
+export type Result = { ok: true; detail?: string; key?: string; url?: string } | { ok: false; message: string; fieldErrors?: Record<string, string[]> };
 
-async function run(work: () => Promise<{ detail?: string; key?: string } | void>): Promise<Result> {
+async function run(work: () => Promise<{ detail?: string; key?: string; url?: string } | void>): Promise<Result> {
   try {
     const r = (await work()) ?? {};
     revalidatePath("/settings/integrations");
@@ -53,4 +53,21 @@ export async function testSendAction(channel: "email" | "whatsapp", to: string):
 
 export async function saveMessagingAction(input: { promotionalSendingApproved?: boolean; postalAddress?: string; sendingDomain?: string; supportEmail?: string }): Promise<Result> {
   return run(async () => { await apiFetch("/settings/messaging", { method: "PATCH", body: input }); });
+}
+
+/** "Connect with Facebook / Google": where to send the browser to sign in. */
+export async function startOAuthAction(provider: "meta" | "google"): Promise<Result> {
+  return run(async () => ({ url: (await apiFetch<{ url: string }>(`/integrations/oauth/${provider}/start`, { method: "POST" })).url }));
+}
+
+/** They picked a Page / ad account on the connect screen. */
+export async function completeOAuthAction(pendingId: string, choiceId: string): Promise<Result> {
+  return run(async () => {
+    const r = await apiFetch<{ detail: string }>(`/integrations/oauth/pending/${encodeURIComponent(pendingId)}/complete`, { method: "POST", body: { choiceId } });
+    return { detail: r.detail };
+  });
+}
+
+export async function syncGoogleFormsAction(): Promise<Result> {
+  return run(async () => ({ detail: (await apiFetch<{ detail: string }>("/integrations/google/sync-forms", { method: "POST" })).detail }));
 }

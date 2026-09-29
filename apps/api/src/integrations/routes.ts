@@ -56,7 +56,7 @@ export function registerIntegrationRoutes(app: FastifyInstance): void {
         })),
         webhooks: { meta: `${api}/webhooks/meta`, whatsapp: `${api}/webhooks/whatsapp`, google: `${api}/webhooks/google/lead-form` },
         verifyTokens: { meta: env.META_WEBHOOK_VERIFY_TOKEN, whatsapp: env.WHATSAPP_WEBHOOK_VERIFY_TOKEN },
-        modes: { email: env.CONNECTOR_EMAIL, whatsapp: env.CONNECTOR_WHATSAPP, meta: env.CONNECTOR_META },
+        modes: { email: env.CONNECTOR_EMAIL, whatsapp: env.CONNECTOR_WHATSAPP, meta: env.CONNECTOR_META, google: env.CONNECTOR_GOOGLE },
         sending: {
           enabled: env.OUTBOUND_SENDING_ENABLED,
           promotionalApproved: c.promotionalSendingApproved,
@@ -245,7 +245,7 @@ export function registerIntegrationRoutes(app: FastifyInstance): void {
   });
 }
 
-async function upsertConnection(
+export async function upsertConnection(
   provider: "meta_lead_ads" | "whatsapp_cloud" | "google_lead_forms",
   externalAccountId: string,
   displayName: string,
@@ -284,16 +284,21 @@ async function upsertConnection(
   }
 }
 
-function serializeConnection(c: typeof integrationConnections.$inferSelect): ConnectionDto {
+export function serializeConnection(c: typeof integrationConnections.$inferSelect): ConnectionDto {
   return {
     id: c.id,
     provider: c.provider,
     status: c.status,
     displayName: c.displayName,
-    accountLabel: c.provider === "google_lead_forms" ? null : c.externalAccountId,
+    // The Google connection's external id is the key's hash: never shown.
+    accountLabel: c.provider === "google_lead_forms"
+      ? (c.config.customerId ? String(c.config.customerId).replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3") : null)
+      : c.externalAccountId,
     hasSecret: Boolean(c.encryptedSecret),
     lastEventAt: c.lastEventAt?.toISOString() ?? null,
     lastError: c.lastError,
     createdAt: c.createdAt.toISOString(),
+    connectedVia: c.config.via === "oauth" ? "oauth" : "manual",
+    leadForms: c.provider === "google_lead_forms" && c.config.leadForms != null ? Number(c.config.leadForms) : null,
   };
 }

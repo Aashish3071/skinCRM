@@ -149,7 +149,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 ```bash
 pnpm typecheck    # clean
 pnpm lint         # clean
-pnpm test         # 334 tests: 14 RLS isolation, 24 security, 291 API, 5 web
+pnpm test         # 341 tests: 14 RLS isolation, 24 security, 298 API, 5 web
 pnpm --filter @skincrm/web e2e   # browser test; needs `pnpm dev` running (see apps/web/playwright.config.ts)
 ```
 
@@ -362,6 +362,14 @@ http://localhost:8025. Put both back before pointing at a real relay.
   backup scripts hardened and the restore drill re-run (D-86).
 - **`pnpm db:create-clinic`** — onboard a real clinic and invite its admin (D-84).
 - **Playwright** — walk-in → book → confirm → Won, run in CI.
+
+### Done in the seventh session (2026-09-29)
+
+- **Connect with Facebook** and **Connect with Google Ads** (D-87): sign in, pick
+  the Page / ad account; the Page is subscribed to lead events and every Google
+  lead form gets our webhook automatically. "Check for new lead forms";
+  conversion feedback can reuse the Google connection. Demo mode works locally.
+- **Friendly error screen** when the API is unreachable (was a crash).
 
 ### Going live
 

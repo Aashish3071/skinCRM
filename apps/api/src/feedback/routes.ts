@@ -21,6 +21,7 @@ import { getContext, getTx } from "../context";
 import { badRequest } from "../errors";
 import { recordAudit } from "../audit";
 import { registerRoute } from "../route";
+import { getConnection, secretOf } from "../integrations/connections";
 import {
   buildPayload,
   cancelQueued,
@@ -93,6 +94,8 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
       ]);
       return {
         globallyEnabled: getEnv().CONVERSION_FEEDBACK_ENABLED,
+        // Name and id only; the refresh token never leaves the server.
+        connectedGoogleAds: await connectedGoogleAds().then((a) => (a ? { customerId: a.customerId, name: a.name } : null)),
         modes: { meta: getFeedbackConnectors().meta.mode, google: getFeedbackConnectors().google.mode },
         destinations: dests.map(serialize),
         volume,
@@ -164,6 +167,34 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
         encryptedSecret: encryptForClinic(getContext().clinicId!, JSON.stringify({ clientId: body.clientId, clientSecret: body.clientSecret, refreshToken: body.refreshToken, loginCustomerId: body.loginCustomerId ?? null })),
         lastTestOk: null,
       }, { credentials: "set" }),
+  });
+
+  /**
+   * Reuse the account from "Connect with Google Ads" (D-87): the deployment's
+   * OAuth client plus the refresh token the clinic already granted, instead of
+   * asking an admin to paste a client id, secret and token.
+   */
+  registerRoute(app, {
+    method: "POST",
+    url: "/feedback/google/credentials/from-connection",
+    auth: { capability: "feedback:write" },
+    handler: async () => {
+      const found = await connectedGoogleAds();
+      if (!found) throw badRequest("Connect with Google Ads first, under Settings → Lead sources & messaging.");
+      const env = getEnv();
+      const live = env.CONNECTOR_GOOGLE === "live";
+      if (live && (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET)) throw badRequest("The server is missing GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET.");
+      return update("google", {
+        config: { customerId: found.customerId },
+        encryptedSecret: encryptForClinic(getContext().clinicId!, JSON.stringify({
+          clientId: live ? env.GOOGLE_OAUTH_CLIENT_ID : "mock-client",
+          clientSecret: live ? env.GOOGLE_OAUTH_CLIENT_SECRET : "mock-secret",
+          refreshToken: found.refreshToken,
+          loginCustomerId: found.loginCustomerId,
+        })),
+        lastTestOk: null,
+      }, { credentials: "set", via: "google_connection" });
+    },
   });
 
   /** Revoke (FB-07): forget the credentials, cancel what's waiting, back to unreviewed. */
@@ -311,4 +342,13 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
       return { ok, detail };
     },
   });
+}
+
+/** The ad account connected with "Connect with Google Ads", if any. */
+async function connectedGoogleAds() {
+  const connection = await getConnection("google_lead_forms");
+  if (!connection || connection.config.via !== "oauth") return null;
+  const stored = JSON.parse(secretOf(connection) ?? "{}") as { refreshToken?: string; account?: { customerId: string; name: string; loginCustomerId: string | null } };
+  if (!stored.refreshToken || !stored.account) return null;
+  return { ...stored.account, refreshToken: stored.refreshToken };
 }

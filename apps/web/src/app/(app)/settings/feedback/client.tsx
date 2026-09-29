@@ -14,6 +14,7 @@ import {
 import { Badge, Field, buttonClasses, inputClasses } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
 import {
+  applyGoogleConnectionAction,
   confirmChecklistAction,
   connectFeedbackAction,
   goLiveAction,
@@ -45,6 +46,17 @@ function statusBadge(d: FeedbackDestinationDto) {
   }
 }
 
+/** Folds the pasted-credentials form away when a connected account can be used instead. */
+function Collapsible({ collapsed, summary, children }: { collapsed: boolean; summary: string; children: React.ReactNode }) {
+  if (!collapsed) return <>{children}</>;
+  return (
+    <details className="rounded-lg border border-line p-3">
+      <summary className="cursor-pointer text-sm font-medium">{summary}</summary>
+      {children}
+    </details>
+  );
+}
+
 function Step({ n, title, done, children }: { n: number; title: string; done: boolean; children: React.ReactNode }) {
   return (
     <div className="flex gap-3 border-t border-line pt-4">
@@ -59,8 +71,10 @@ function Step({ n, title, done, children }: { n: number; title: string; done: bo
   );
 }
 
-export function DestinationCard({ dest, writable, demo, volume }: {
+export function DestinationCard({ dest, writable, demo, volume, googleAds = null }: {
   dest: FeedbackDestinationDto;
+  /** The account from "Connect with Google Ads", offered instead of pasted credentials. */
+  googleAds?: { customerId: string; name: string } | null;
   writable: boolean;
   demo: boolean;
   volume: { milestone: string; state: string; n: number }[];
@@ -107,7 +121,19 @@ export function DestinationCard({ dest, writable, demo, volume }: {
               {writable && <button type="button" disabled={pending} onClick={() => { if (window.confirm("Disconnect? Stored credentials are deleted and anything waiting is cancelled.")) act(() => revokeFeedbackAction(d)); }} className={buttonClasses("ghost", "sm")}>Disconnect</button>}
             </div>
           ) : writable ? (
-            <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>; act(() => connectFeedbackAction(d, f)); }}>
+            <>
+            {d === "google" && (googleAds ? (
+              <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-brand bg-brand-soft p-3 text-sm">
+                <p className="mr-auto">Use <strong>{googleAds.name}</strong> ({googleAds.customerId.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3")}), already connected for lead forms.</p>
+                <button type="button" disabled={pending} onClick={() => act(() => applyGoogleConnectionAction())} className={buttonClasses("primary", "sm")}>Use this account</button>
+              </div>
+            ) : (
+              <p className="mb-3 text-sm text-ink-muted">
+                Easiest: <Link href="/settings/integrations" className="font-medium text-brand">Connect with Google Ads</Link> under Lead sources, then come back — nothing to paste. Or enter the details below.
+              </p>
+            ))}
+            <Collapsible collapsed={d === "google" && Boolean(googleAds)} summary="Enter different credentials by hand">
+            <form className="mt-2 flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); const f = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>; act(() => connectFeedbackAction(d, f)); }}>
               {d === "meta" ? (
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Dataset (pixel) ID" htmlFor="fb-ds"><input id="fb-ds" name="datasetId" required inputMode="numeric" className={inputClasses} /></Field>
@@ -126,6 +152,8 @@ export function DestinationCard({ dest, writable, demo, volume }: {
               <div><button disabled={pending} className={buttonClasses("primary")}>Connect</button></div>
               {demo && <p className="text-xs text-ink-subtle">Demo mode: nothing is sent to {d === "meta" ? "Meta" : "Google"}; any values work.</p>}
             </form>
+            </Collapsible>
+            </>
           ) : <p className="text-sm text-ink-muted">Not connected.</p>}
         </Step>
 

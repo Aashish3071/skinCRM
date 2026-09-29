@@ -82,13 +82,20 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     if (token) requestHeaders.cookie = `${SESSION_COOKIE}=${token}`;
   }
 
-  const response = await fetch(`${apiBaseUrl()}${path}`, {
-    method: options.method ?? "GET",
-    headers: requestHeaders,
-    ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
-    // Never reuse a cached response across users or clinics.
-    cache: options.cache ?? "no-store",
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl()}${path}`, {
+      method: options.method ?? "GET",
+      headers: requestHeaders,
+      ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+      // Never reuse a cached response across users or clinics.
+      cache: options.cache ?? "no-store",
+    });
+  } catch {
+    // API down or restarting. Forms show this message; pages fall through to
+    // the error screen (app/(app)/error.tsx) with a "Try again" button.
+    throw new ApiError(503, "api_unreachable", "SkinCRM's server isn't responding. Wait a moment and try again.");
+  }
 
   const setCookie = response.headers.get("set-cookie");
   if (setCookie && options.onSetCookie) options.onSetCookie(setCookie);
