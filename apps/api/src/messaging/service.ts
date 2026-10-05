@@ -5,7 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import type { SendableChannel, TemplateClassification } from "@skincrm/contracts";
 import { schema } from "@skincrm/db";
 import { ConnectorError, getConnectors } from "@skincrm/connectors";
-import { unsubscribeUrl } from "@skincrm/security";
+import { replyAddress, unsubscribeUrl } from "@skincrm/security";
 import { getContext, getTx } from "../context";
 import { logger } from "../logger";
 import { recordAudit } from "../audit";
@@ -82,9 +82,14 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
 
   // Every WhatsApp message, automated or not, belongs to the patient's inbox
   // thread — including ones that were blocked, so staff can see why.
+  // Email joins an existing email thread (one starts when a patient replies,
+  // D-96) but never opens one: reminders alone shouldn't fill the Inbox.
   const conversationId =
     request.conversationId ??
-    (channel === "whatsapp" ? await ensureConversation(request.personId, "whatsapp", request.leadId ?? null) : null);
+    (channel === "whatsapp"
+      ? await ensureConversation(request.personId, "whatsapp", request.leadId ?? null)
+      : (await tx.select({ id: schema.conversations.id }).from(schema.conversations)
+          .where(and(eq(schema.conversations.personId, request.personId), eq(schema.conversations.channel, "email"))).limit(1))[0]?.id ?? null);
 
   // --- The gate. Evaluated now, not when this was scheduled. ---------------
   const decision = await evaluateSend({
@@ -240,6 +245,11 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
             // their own one-click unsubscribe button.
             unsubscribeUrl: classification === "promotional" ? variables["link.unsubscribe"] ?? undefined : undefined,
             idempotencyKey: request.idempotencyKey,
+            // Postmark (D-96): replies come back to this patient's conversation,
+            // and bounces/complaints find this clinic through the metadata.
+            replyTo: emailReplyTo(request.personId),
+            classification,
+            metadata: { clinicId: context.clinicId! },
           })
         : await (await whatsappConnector()).send(
             template?.whatsappTemplateName
@@ -446,3 +456,11 @@ export async function recordOptOut(params: {
     changeSummary: { optedOut: true, channel: params.channel },
   });
 }
+
+/** The patient's personal Reply-To on Postmark's inbound address, when set up (D-96). */
+function emailReplyTo(personId: string): string | undefined {
+  const env = getEnv();
+  if (env.EMAIL_PROVIDER !== "postmark" || !env.POSTMARK_INBOUND_ADDRESS) return undefined;
+  return replyAddress(env.POSTMARK_INBOUND_ADDRESS, personId);
+}
+

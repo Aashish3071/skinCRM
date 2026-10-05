@@ -45,7 +45,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         <p className="mt-1 text-ink-muted">New Google lead forms are checked hourly. Messages and lead submissions keep their original provider IDs to prevent duplicates.</p>
       </div>
       <div className="flex flex-col gap-4">
-        <SendingCard sending={data.sending} modes={data.modes} />
+        <SendingCard sending={data.sending} modes={data.modes} email={data.email} />
         <MetaCard connection={by("meta_lead_ads")} webhook={data.webhooks.meta} verifyToken={data.verifyTokens.meta} live={data.modes.meta === "live"} />
         <GoogleCard connection={by("google_lead_forms")} webhook={data.webhooks.google} live={data.modes.google === "live"} />
         <WhatsAppCard connection={by("whatsapp_cloud")} webhook={data.webhooks.whatsapp} verifyToken={data.verifyTokens.whatsapp} live={data.modes.whatsapp === "live"} />

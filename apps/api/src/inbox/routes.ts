@@ -289,7 +289,10 @@ export function registerInboxRoutes(app: FastifyInstance): void {
         leadId: convo.leadId,
         conversationId: convo.id,
         templateKey: body.templateKey ?? undefined,
-        adHoc: body.templateKey ? undefined : { channel: "whatsapp", body: body.body! },
+        // Reply on the thread's own channel: an email thread answers by email (D-96).
+        adHoc: body.templateKey ? undefined : convo.channel === "email"
+          ? { channel: "email", subject: await replySubject(convo.id), body: body.body! }
+          : { channel: "whatsapp", body: body.body! },
         idempotencyKey: `inbox:${convo.id}:${body.requestId ?? randomUUID()}`,
         // Staff are answering a person who wrote to them; quiet hours are for
         // automated messages, not a conversation happening now.
@@ -356,6 +359,7 @@ function summarize(
     id: c.id,
     personId: c.personId,
     personName,
+    channel: c.channel === "email" ? "email" : "whatsapp",
     tags: c.tags,
     leadId: c.leadId,
     status: c.status,
@@ -367,5 +371,14 @@ function summarize(
     unreadCount: c.unreadCount,
     windowOpenUntil: until && until > new Date() ? until.toISOString() : null,
   };
+}
+
+/** "Re: <their last subject>" for an email thread. */
+async function replySubject(conversationId: string): Promise<string> {
+  const [last] = await getTx().select({ subject: schema.messages.renderedSubject }).from(schema.messages)
+    .where(and(eq(schema.messages.conversationId, conversationId), eq(schema.messages.direction, "inbound")))
+    .orderBy(desc(schema.messages.createdAt)).limit(1);
+  const subject = last?.subject?.trim() || "Your message";
+  return /^re:/i.test(subject) ? subject : `Re: ${subject}`;
 }
 

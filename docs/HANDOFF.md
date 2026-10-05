@@ -9,6 +9,19 @@ for the rules that must not be broken. This file says only what to do next.
 
 ---
 
+## Latest — 2026-10-05 (second half)
+
+Built and pushed: legal pages, saved lead views + bulk assign, online booking
++ patient manage links (D-92), AWS KMS root key + rotation (D-93), two-way
+Google/Outlook calendar sync (D-94), Advertising: spend, campaign controls,
+audiences, past-lead and WhatsApp-app history import (D-95), Postmark replies
+and bounces (D-96). Migrations 0017–0022 (apply with `pnpm db:migrate`).
+Verified on a fresh DB: 430 unit/API tests and 4 browser tests (run e2e
+against a production build — `next start -p 3200` — the dev server compiles
+too slowly). Docs for D-96 setup in DEPLOYMENT.md are still minimal: add a
+Postmark section (server token, inbound address, webhooks with basic auth,
+broadcast stream). Real-provider pilots for all new integrations are pending.
+
 ## Verification — 2026-10-05
 
 Finished the D-90/D-91 work: a WhatsApp **STOP** from a known patient opened a

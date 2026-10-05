@@ -91,6 +91,16 @@ const schema = z.object({
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
+  /** With CONNECTOR_EMAIL=live: plain SMTP relay, or Postmark's API with replies and bounces (D-96). */
+  EMAIL_PROVIDER: z.enum(["smtp", "postmark"]).default("smtp"),
+  POSTMARK_SERVER_TOKEN: z.string().optional(),
+  /** The server's inbound address, e.g. abc123@inbound.postmarkapp.com (Servers → Inbound). */
+  POSTMARK_INBOUND_ADDRESS: z.string().email().optional(),
+  /** Basic-auth credentials put in Postmark's webhook URLs. */
+  POSTMARK_WEBHOOK_USER: z.string().optional(),
+  POSTMARK_WEBHOOK_PASSWORD: z.string().optional(),
+  POSTMARK_TRANSACTIONAL_STREAM: z.string().default("outbound"),
+  POSTMARK_BROADCAST_STREAM: z.string().default("broadcast"),
   EMAIL_FROM_ADDRESS: z.string().email().default("noreply@example-clinic.test"),
   EMAIL_FROM_NAME: z.string().default("Example Clinic"),
 
@@ -175,8 +185,13 @@ function assertProductionSafety(env: Env): void {
   }
   if (env.SESSION_SECRET.length < 32) problems.push("SESSION_SECRET must be at least 32 characters (openssl rand -base64 32)");
   if (env.CRYPTO_MASTER_KEY && env.CRYPTO_MASTER_KEY === env.SESSION_SECRET) problems.push("CRYPTO_MASTER_KEY and SESSION_SECRET must be different");
-  if (env.OUTBOUND_SENDING_ENABLED && env.CONNECTOR_EMAIL === "live" && ["localhost", "127.0.0.1"].includes(env.SMTP_HOST))
+  if (env.OUTBOUND_SENDING_ENABLED && env.CONNECTOR_EMAIL === "live" && env.EMAIL_PROVIDER === "smtp" && ["localhost", "127.0.0.1"].includes(env.SMTP_HOST))
     problems.push("SMTP_HOST points at localhost (the development mail catcher); set your real email relay");
+  if (env.CONNECTOR_EMAIL === "live" && env.EMAIL_PROVIDER === "postmark") {
+    if (!env.POSTMARK_SERVER_TOKEN) problems.push("EMAIL_PROVIDER=postmark needs POSTMARK_SERVER_TOKEN");
+    if (!env.POSTMARK_WEBHOOK_USER || !env.POSTMARK_WEBHOOK_PASSWORD || env.POSTMARK_WEBHOOK_PASSWORD.length < 16)
+      problems.push("EMAIL_PROVIDER=postmark needs POSTMARK_WEBHOOK_USER and a POSTMARK_WEBHOOK_PASSWORD of 16+ characters (the webhooks check them)");
+  }
   if (!env.DATABASE_APP_URL)
     problems.push("DATABASE_APP_URL is required in production so runtime queries are subject to row-level security");
   if (problems.length > 0) {

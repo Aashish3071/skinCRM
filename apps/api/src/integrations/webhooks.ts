@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { and, eq } from "drizzle-orm";
 import { getEnv } from "@skincrm/config";
 import { schema, withoutTenantScope } from "@skincrm/db";
+import { verifyReplyToken } from "@skincrm/security";
 import { logger } from "../logger";
 import { runAsSystem } from "../automations/system-context";
 import {
@@ -87,6 +88,43 @@ export function registerWebhooks(app: FastifyInstance): void {
         });
       }
     }
+    return reply.send({ ok: true });
+  });
+
+  // --- Postmark (D-96): deliveries, bounces, complaints, unsubscribes, replies ---
+  // Postmark calls these with the basic-auth credentials set in its webhook URLs.
+  app.post("/webhooks/postmark/events", { config: { rateLimit: { max: 1200, timeWindow: "1 minute" } } }, async (request, reply) => {
+    if (!postmarkAuthorized(request)) return reply.code(401).send({ error: { code: "unauthorized", message: "Unauthorized" } });
+    const body = request.body as { RecordType?: string; MessageID?: string; ID?: number | string; Metadata?: Record<string, string> };
+    const clinicId = body.Metadata?.clinicId;
+    if (!body.RecordType || !body.MessageID || !clinicId || !/^[0-9a-f-]{36}$/.test(clinicId)) return reply.send({ ok: true, ignored: true });
+    // Only clinics that exist; the event is checked against the message in the processor.
+    const [clinic] = await withoutTenantScope("postmark: resolve clinic", (db) => db.select({ id: schema.clinics.id }).from(schema.clinics).where(eq(schema.clinics.id, clinicId)).limit(1));
+    if (!clinic) return reply.send({ ok: true, ignored: true });
+    await runAsSystem(clinic.id, () => enqueueEvent({ connectionId: null, type: "email_event", externalId: `${body.RecordType}:${body.MessageID}:${body.ID ?? ""}`.slice(0, 200), payload: body }), { correlationId: "webhook-postmark" });
+    return reply.send({ ok: true });
+  });
+
+  app.post("/webhooks/postmark/inbound", { config: { rateLimit: { max: 600, timeWindow: "1 minute" } } }, async (request, reply) => {
+    if (!postmarkAuthorized(request)) return reply.code(401).send({ error: { code: "unauthorized", message: "Unauthorized" } });
+    const body = request.body as { MessageID?: string; MailboxHash?: string; FromFull?: { Email?: string }; From?: string };
+    if (!body.MessageID) return reply.send({ ok: true, ignored: true });
+    const from = (body.FromFull?.Email ?? body.From ?? "").trim().toLowerCase();
+    // Whose conversation: the signed token in the Reply-To address, else the
+    // sender's address when exactly one patient anywhere has it.
+    const tokenPerson = body.MailboxHash ? verifyReplyToken(body.MailboxHash) : null;
+    const match = await withoutTenantScope("postmark inbound: resolve patient", async (db) =>
+      tokenPerson
+        ? db.select({ id: schema.people.id, clinicId: schema.people.clinicId }).from(schema.people).where(eq(schema.people.id, tokenPerson)).limit(1)
+        : from
+          ? db.select({ id: schema.people.id, clinicId: schema.people.clinicId }).from(schema.people).where(eq(schema.people.emailNormalized, from)).limit(2)
+          : [],
+    );
+    if (match.length !== 1) {
+      logger.info({ matched: match.length }, "Inbound email with no single matching patient; ignored");
+      return reply.send({ ok: true, ignored: true });
+    }
+    await runAsSystem(match[0]!.clinicId, () => enqueueEvent({ connectionId: null, type: "email_inbound", externalId: body.MessageID!, payload: { ...body, personId: match[0]!.id } }), { correlationId: "webhook-postmark" });
     return reply.send({ ok: true });
   });
 
@@ -187,5 +225,15 @@ async function enqueueAppEvents(connectionId: string, field: string, value: AppV
       await enqueueEvent({ connectionId, type: "whatsapp_contact", externalId: `${item.contact.phone_number}:${item.contact.full_name ?? ""}:${i}`.slice(0, 200), payload: item.contact });
     }
   }
+}
+
+/** Basic auth from the webhook URL. Without configured credentials only development accepts calls. */
+function postmarkAuthorized(request: FastifyRequest): boolean {
+  const env = getEnv();
+  if (!env.POSTMARK_WEBHOOK_USER || !env.POSTMARK_WEBHOOK_PASSWORD) return env.NODE_ENV !== "production";
+  const header = request.headers.authorization ?? "";
+  const expected = Buffer.from(`Basic ${Buffer.from(`${env.POSTMARK_WEBHOOK_USER}:${env.POSTMARK_WEBHOOK_PASSWORD}`).toString("base64")}`);
+  const given = Buffer.from(header);
+  return given.length === expected.length && timingSafeEqual(given, expected);
 }
 

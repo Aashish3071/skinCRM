@@ -79,6 +79,8 @@ export interface IntegrationsOverview {
   connections: ConnectionDto[];
   events: InboundEventDto[];
   webhooks: { meta: string; whatsapp: string; google: string };
+  /** Email provider (D-96): Postmark brings replies and bounces back in. */
+  email: { provider: "mock" | "smtp" | "postmark"; inboundAddress: string | null; eventsWebhook: string; inboundWebhook: string };
   verifyTokens: { meta: string; whatsapp: string };
   modes: { email: "mock" | "live"; whatsapp: "mock" | "live"; meta: "mock" | "live"; google: "mock" | "live" };
   sending: {

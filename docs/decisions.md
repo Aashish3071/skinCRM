@@ -814,3 +814,17 @@ into the patient's thread with their real time (no lead, not unread), and
 `smb_app_state_sync` fills in missing names only. Not provided: campaign
 creation or ad/creative editing (done in the platforms' own tools).
 
+**D-96. Postmark email with replies and bounces (2026-10-05).**
+`EMAIL_PROVIDER=postmark` sends through Postmark's API (transactional "outbound"
+and marketing "broadcast" streams, no open/link tracking, Metadata clinicId).
+Patient emails carry Reply-To `inbox+<signed person token>@inbound…`; Postmark's
+inbound webhook returns it as MailboxHash, so replies land in that patient's
+email thread in the Inbox (unread, notified, timeline entry, counts for "stop
+when they reply"); "unsubscribe/stop" replies opt out. Email threads start only
+when a patient replies; later emails to them join it; Inbox replies on an email
+thread go by email with "Re:". Events webhook: Delivery → delivered; hard
+Bounce → bounced + `hard_bounce` suppression; SpamComplaint → `spam_complaint`
+suppression + marketing consent withdrawn; SubscriptionChange → opted out.
+Both webhooks require basic auth (POSTMARK_WEBHOOK_USER/PASSWORD; required in
+production) and go through the inbound_events queue. Migration 0022.
+

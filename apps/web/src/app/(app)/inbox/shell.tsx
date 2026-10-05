@@ -116,7 +116,7 @@ function Row({ c, active, href }: { c: ConversationSummary; active: boolean; hre
         <Avatar name={c.personName} />
         <span className="flex min-w-0 flex-1 flex-col justify-center border-b border-line py-3 pr-4">
           <span className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-[16px]">{c.personName}</span>
+            <span className="truncate text-[16px]">{c.personName}{c.channel === "email" && <span className="ml-1.5 rounded bg-surface-muted px-1.5 py-0.5 align-middle text-[11px] font-medium text-ink-muted">Email</span>}</span>
             {c.lastMessageAt && (
               <span className={`shrink-0 text-xs ${unread ? "font-medium text-[var(--wa-green)]" : "text-[var(--wa-meta)]"}`}>{listTime(c.lastMessageAt)}</span>
             )}

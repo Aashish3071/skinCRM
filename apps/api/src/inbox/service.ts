@@ -280,3 +280,66 @@ export async function applyWhatsAppAppContact(input: { phone: string; fullName: 
     await tx.update(people).set({ firstName: first ?? null, lastName: rest.join(" ") || null, displayName: input.fullName.trim(), updatedAt: new Date() }).where(eq(people.id, person.id));
   }
 }
+
+/**
+ * A patient's email reply, via Postmark inbound (D-96). It joins their email
+ * thread in the Inbox (starting one if needed), is unread, notifies whoever
+ * handles the thread, and counts as a reply for "stop when they reply". A
+ * reply that is just "unsubscribe"/"stop" opts them out of marketing email.
+ */
+export async function receiveInboundEmail(input: {
+  personId: string;
+  fromAddress: string;
+  subject: string | null;
+  body: string;
+  providerMessageId: string;
+  at: Date;
+}): Promise<{ conversationId: string; duplicate: boolean }> {
+  const context = getContext();
+  const tx = getTx();
+  const idempotencyKey = `email-in:${input.providerMessageId}`;
+  const seen = await tx.select({ conversationId: messages.conversationId }).from(messages).where(eq(messages.idempotencyKey, idempotencyKey)).limit(1);
+  if (seen[0]?.conversationId) return { conversationId: seen[0].conversationId, duplicate: true };
+
+  const personId = await canonicalPersonId(input.personId);
+  const open = await tx.select({ id: leads.id }).from(leads)
+    .where(and(eq(leads.personId, personId), isNull(leads.closedAt), isNull(leads.archivedAt))).orderBy(desc(leads.createdAt)).limit(1);
+  const leadId = open[0]?.id ?? null;
+  const conversationId = await ensureConversation(personId, "email", leadId);
+  const body = input.body.trim().slice(0, 20_000) || "(empty email)";
+
+  await tx.insert(messages).values({
+    clinicId: context.clinicId!,
+    personId,
+    leadId,
+    channel: "email",
+    direction: "inbound",
+    classification: "operational",
+    recipient: input.fromAddress.toLowerCase(),
+    renderedSubject: input.subject?.slice(0, 500) ?? null,
+    renderedBody: body,
+    state: "delivered",
+    providerMessageId: input.providerMessageId,
+    idempotencyKey,
+    conversationId,
+    sentAt: input.at,
+    deliveredAt: input.at,
+  });
+  await touchConversation(conversationId, { direction: "inbound", body, at: input.at });
+
+  if (/^(unsubscribe|stop|remove me|opt out)[.!\s]*$/i.test(body.split("\n")[0]!.trim())) {
+    await recordOptOut({ personId, channel: "email", destination: input.fromAddress.trim().toLowerCase(), detail: "Replied asking to stop emails" });
+  }
+
+  const convo = (await tx.select({ assignee: schema.conversations.assignedUserId }).from(schema.conversations).where(eq(schema.conversations.id, conversationId)).limit(1))[0];
+  const who = (await tx.select({ name: people.displayName }).from(people).where(eq(people.id, personId)).limit(1))[0];
+  await notifyUsers(convo?.assignee ? [convo.assignee] : await usersWith("conversations:assign"), {
+    type: "whatsapp_message",
+    title: `Email from ${who?.name ?? "a patient"}`,
+    body: (input.subject ?? body.split("\n")[0]!).slice(0, 80),
+    link: `/inbox/${conversationId}`,
+    dedupeKey: `email:${conversationId}`,
+  });
+  await addActivity({ personId, leadId, type: "email_received", summary: `Email received${input.subject ? `: ${input.subject.slice(0, 120)}` : ""}`, entityType: "conversation", entityId: conversationId });
+  return { conversationId, duplicate: false };
+}

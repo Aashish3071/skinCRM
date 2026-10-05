@@ -325,6 +325,9 @@ export const SUPPRESSION_REASONS = [
   "global_sending_disabled",
   "provider_paused",
   "duplicate_idempotency_key",
+  // Reported by the email provider (D-96).
+  "hard_bounce",
+  "spam_complaint",
 ] as const;
 export type SuppressionReason = (typeof SUPPRESSION_REASONS)[number];
 
@@ -483,6 +486,9 @@ export const INBOUND_EVENT_TYPES = [
   "whatsapp_history",
   "whatsapp_echo",
   "whatsapp_contact",
+  // Postmark (D-96): replies, and delivery/bounce/complaint/unsubscribe events.
+  "email_inbound",
+  "email_event",
 ] as const;
 export type InboundEventType = (typeof INBOUND_EVENT_TYPES)[number];
 
@@ -507,5 +513,5 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, { title: string;
   appointment_soon: { title: "My upcoming appointments", description: "An hour before each of your appointments." },
   task_due: { title: "My tasks coming due", description: "When one of your tasks is due." },
   sla_missed: { title: "Missed response times", description: "Nobody responded to a new lead in time." },
-  whatsapp_message: { title: "WhatsApp messages", description: "A patient wrote in (chats you handle, or unassigned ones)." },
+  whatsapp_message: { title: "Patient messages", description: "A patient wrote in on WhatsApp or replied by email (chats you handle, or unassigned ones)." },
 };

@@ -131,6 +131,8 @@ export const SUPPRESSION_REASON_LABELS: Record<(typeof SUPPRESSION_REASONS)[numb
   global_sending_disabled: "Outbound sending is switched off for this deployment",
   provider_paused: "The provider connection is paused or unavailable",
   duplicate_idempotency_key: "An equivalent message already exists",
+  hard_bounce: "Their email address bounced permanently",
+  spam_complaint: "They marked an email from the clinic as spam",
 };
 
 export const optOutSchema = z.object({

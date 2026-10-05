@@ -19,6 +19,8 @@ export const conversationSummarySchema = z.object({
   id: uuidSchema,
   personId: uuidSchema,
   personName: z.string(),
+  /** WhatsApp, or an email thread started by a patient's reply (D-96). */
+  channel: z.enum(["whatsapp", "email"]),
   tags: z.array(z.string()),
   leadId: uuidSchema.nullable(),
   status: z.enum(CONVERSATION_STATUSES),

@@ -193,6 +193,28 @@ async function processEvent(eventId: string): Promise<void> {
       break;
     }
 
+    case "email_inbound": {
+      const p = payload as { personId: string; MessageID: string; FromFull?: { Email?: string }; From?: string; Subject?: string; TextBody?: string; StrippedTextReply?: string; Date?: string };
+      const { receiveInboundEmail } = await import("../inbox/service");
+      const outcome = await receiveInboundEmail({
+        personId: p.personId,
+        fromAddress: (p.FromFull?.Email ?? p.From ?? "").trim(),
+        subject: p.Subject ?? null,
+        // Postmark strips the quoted earlier messages for us when it can.
+        body: p.StrippedTextReply?.trim() || p.TextBody || "",
+        providerMessageId: p.MessageID,
+        at: p.Date && !Number.isNaN(Date.parse(p.Date)) ? new Date(p.Date) : new Date(),
+      });
+      result = `conversation:${outcome.conversationId}`;
+      break;
+    }
+
+    case "email_event": {
+      const { applyEmailEvent } = await import("../messaging/email-events");
+      result = await applyEmailEvent(payload as Parameters<typeof applyEmailEvent>[0]);
+      break;
+    }
+
     case "whatsapp_contact": {
       const p = payload as { full_name?: string; phone_number?: string };
       const { applyWhatsAppAppContact } = await import("../inbox/service");

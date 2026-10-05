@@ -56,6 +56,13 @@ export function registerIntegrationRoutes(app: FastifyInstance): void {
           receivedAt: e.receivedAt.toISOString(),
         })),
         webhooks: { meta: `${api}/webhooks/meta`, whatsapp: `${api}/webhooks/whatsapp`, google: `${api}/webhooks/google/lead-form` },
+        email: {
+          provider: env.CONNECTOR_EMAIL === "mock" ? "mock" : env.EMAIL_PROVIDER,
+          inboundAddress: env.EMAIL_PROVIDER === "postmark" ? env.POSTMARK_INBOUND_ADDRESS ?? null : null,
+          // Credentials go in the URL as user:password@; never shown here.
+          eventsWebhook: `${api}/webhooks/postmark/events`,
+          inboundWebhook: `${api}/webhooks/postmark/inbound`,
+        },
         verifyTokens: { meta: env.META_WEBHOOK_VERIFY_TOKEN, whatsapp: env.WHATSAPP_WEBHOOK_VERIFY_TOKEN },
         modes: { email: env.CONNECTOR_EMAIL, whatsapp: env.CONNECTOR_WHATSAPP, meta: env.CONNECTOR_META, google: env.CONNECTOR_GOOGLE },
         sending: {

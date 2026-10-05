@@ -1,12 +1,14 @@
 import { getEnv } from "@skincrm/config";
 import { MockEmailConnector } from "./email/mock";
 import { SmtpEmailConnector } from "./email/smtp";
+import { PostmarkEmailConnector } from "./email/postmark";
 import { MockWhatsAppConnector } from "./whatsapp/mock";
 import type { Connectors } from "./types";
 
 export * from "./types";
 export { MockEmailConnector } from "./email/mock";
 export { SmtpEmailConnector } from "./email/smtp";
+export { PostmarkEmailConnector } from "./email/postmark";
 export { MockWhatsAppConnector } from "./whatsapp/mock";
 export { WhatsAppCloudConnector } from "./whatsapp/cloud";
 export * from "./meta/leads";
@@ -31,12 +33,18 @@ export function getConnectors(): Connectors {
     email:
       env.CONNECTOR_EMAIL === "mock"
         ? new MockEmailConnector()
-        : new SmtpEmailConnector({
-            host: env.SMTP_HOST,
-            port: env.SMTP_PORT,
-            user: env.SMTP_USER,
-            password: env.SMTP_PASSWORD,
-          }),
+        : env.EMAIL_PROVIDER === "postmark"
+          ? new PostmarkEmailConnector({
+              serverToken: env.POSTMARK_SERVER_TOKEN ?? "",
+              transactionalStream: env.POSTMARK_TRANSACTIONAL_STREAM,
+              broadcastStream: env.POSTMARK_BROADCAST_STREAM,
+            })
+          : new SmtpEmailConnector({
+              host: env.SMTP_HOST,
+              port: env.SMTP_PORT,
+              user: env.SMTP_USER,
+              password: env.SMTP_PASSWORD,
+            }),
     whatsapp:
       // Live WhatsApp is per clinic (its own number and token) and is built by
       // the API from the clinic's connection; this process-wide slot is the mock.

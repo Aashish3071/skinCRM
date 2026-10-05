@@ -277,9 +277,10 @@ export function WhatsAppCard({ connection, webhook, verifyToken, live }: { conne
   );
 }
 
-export function SendingCard({ sending, modes }: {
+export function SendingCard({ sending, modes, email }: {
   sending: { enabled: boolean; promotionalApproved: boolean; postalAddress: string | null; sendingDomain: string | null; supportEmail: string | null; emailFrom: string };
   modes: { email: string; whatsapp: string };
+  email: { provider: "mock" | "smtp" | "postmark"; inboundAddress: string | null; eventsWebhook: string; inboundWebhook: string };
 }) {
   const { pending, result, run } = useRunner();
   const test = useRunner();
@@ -320,6 +321,25 @@ export function SendingCard({ sending, modes }: {
         <div><button disabled={pending} className={buttonClasses("primary")}>{pending ? "Saving…" : "Save"}</button></div>
         <Outcome result={result} />
       </form>
+
+      <div className="flex flex-col gap-2 border-t border-line pt-4 text-sm">
+        <p className="font-medium">Email provider: {email.provider === "postmark" ? "Postmark" : email.provider === "smtp" ? "SMTP relay" : "Demo (nothing leaves this machine)"}</p>
+        {email.provider === "postmark" ? (
+          <>
+            <p className="text-ink-muted">
+              Patients&rsquo; replies come back into the Inbox{email.inboundAddress ? "" : " once POSTMARK_INBOUND_ADDRESS is set"}; bounces, spam complaints and unsubscribes stop further email automatically.
+            </p>
+            <Advanced>
+              <p className="text-sm text-ink-muted">In Postmark: Servers → your server → Webhooks (Delivery, Bounce, Spam complaint, Subscription change) and Inbound. Put the webhook user and password from the server settings into the URLs as <code>https://user:password@…</code>.</p>
+              <CopyField label="Events webhook" value={email.eventsWebhook} />
+              <CopyField label="Inbound webhook" value={email.inboundWebhook} />
+              {email.inboundAddress && <CopyField label="Inbound address (replies go here)" value={email.inboundAddress} />}
+            </Advanced>
+          </>
+        ) : email.provider === "smtp" ? (
+          <p className="text-ink-muted">Sends through your SMTP relay. Replies and bounces aren&rsquo;t tracked — switch to Postmark (EMAIL_PROVIDER=postmark) to get them in SkinCRM.</p>
+        ) : null}
+      </div>
 
       <form className="flex flex-col gap-3 border-t border-line pt-4" onSubmit={(e) => { e.preventDefault(); const to = String(new FormData(e.currentTarget).get("to")); test.run(() => testSendAction(channel, to)); }}>
         <p className="text-sm font-medium">Send yourself a test</p>

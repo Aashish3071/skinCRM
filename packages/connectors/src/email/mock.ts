@@ -53,6 +53,8 @@ export class MockEmailConnector implements EmailConnector {
       idempotencyKey: message.idempotencyKey,
       sentAt: new Date(),
       providerMessageId,
+      replyTo: message.replyTo,
+      classification: message.classification,
     });
 
     return { providerMessageId, acceptedAt: new Date(), providerMeta: { mock: true } };

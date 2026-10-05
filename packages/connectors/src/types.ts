@@ -60,6 +60,10 @@ export interface EmailMessage {
    * unique index is the real guard; this is belt and braces.
    */
   idempotencyKey: string;
+  /** Postmark sends marketing and service mail on separate streams (D-96). */
+  classification?: "operational" | "promotional";
+  /** Echoed back in Postmark's delivery, bounce and complaint webhooks. */
+  metadata?: Record<string, string>;
 }
 
 export interface EmailConnector {
@@ -108,4 +112,6 @@ export interface CapturedMessage {
   idempotencyKey: string;
   sentAt: Date;
   providerMessageId: string;
+  replyTo?: string;
+  classification?: "operational" | "promotional";
 }

@@ -59,9 +59,11 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
     } catch { setError("Could not load older messages. Try again."); }
     finally { setLoadingOlder(false); }
   };
-  const windowOpen = Boolean(convo.windowOpenUntil);
+  // Email threads (D-96) have no 24-hour window and use no WhatsApp templates.
+  const isEmail = convo.channel === "email";
+  const windowOpen = isEmail || Boolean(convo.windowOpenUntil);
   const approved = templates.filter((t) => t.whatsappTemplateName && t.whatsappStatus === "approved");
-  const usableTemplates = windowOpen ? templates : approved;
+  const usableTemplates = isEmail ? [] : windowOpen ? templates : approved;
   const needsTemplate = mode === "reply" && !windowOpen;
 
   useEffect(() => {
@@ -214,7 +216,9 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
             </div>
             {mode === "reply" && (
               <span className="text-[11px] text-[var(--wa-meta)]">
-                {windowOpen
+                {isEmail
+                  ? "Email thread — your reply goes to their email"
+                  : windowOpen
                   ? `Free replies until ${clinicClock(convo.windowOpenUntil!, timezone)}${dayLabel(convo.windowOpenUntil!, timezone) === "Today" ? "" : ` ${dayLabel(convo.windowOpenUntil!, timezone)}`}`
                   : "Over 24 hours since they wrote — send an approved template"}
               </span>
@@ -257,7 +261,7 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
                   send();
                 }
               }}
-              placeholder={mode === "note" ? "Write a note only your team will see" : templateKey ? "The template will be sent" : needsTemplate ? "Choose a template above" : "Type a message"}
+              placeholder={mode === "note" ? "Write a note only your team will see" : isEmail ? "Type an email reply — it goes to their inbox" : templateKey ? "The template will be sent" : needsTemplate ? "Choose a template above" : "Type a message"}
               className={`max-h-[132px] min-h-11 flex-1 resize-none rounded-lg border-0 px-4 py-2.5 text-[15px] leading-6 text-[var(--wa-text)] placeholder:text-[var(--wa-meta)] disabled:opacity-70 ${mode === "note" ? "bg-[var(--wa-note)]" : "bg-[var(--wa-input)]"}`}
             />
             <button type="submit" disabled={!canSend} aria-label={mode === "note" ? "Save note" : "Send"}
