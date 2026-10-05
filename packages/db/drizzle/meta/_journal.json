@@ -141,6 +141,20 @@
       "when": 1791211116412,
       "tag": "0019_serious_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791211724104,
+      "tag": "0020_magical_plazm",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791212280270,
+      "tag": "0021_rich_storm",
+      "breakpoints": true
     }
   ]
 }

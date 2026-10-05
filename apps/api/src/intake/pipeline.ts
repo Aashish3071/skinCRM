@@ -94,6 +94,12 @@ export interface IntakeInput {
   rawPayload?: unknown;
   /** Provider flagged this as a test; it must not pollute reporting (INT-03). */
   isTest?: boolean;
+  /**
+   * Imported from the platform's history (D-95): keeps its original date and
+   * starts no automations, alerts or response-time clock — a months-old
+   * inquiry must not get a "thanks for your inquiry" email today.
+   */
+  historical?: boolean;
   clinicCountry: string;
 }
 
@@ -280,7 +286,8 @@ export async function ingestSubmission(input: IntakeInput): Promise<IntakeOutcom
       serviceInterest: input.serviceInterest ?? null,
       inquiryNote: input.inquiryNote ?? null,
       isTest: input.isTest ?? false,
-      slaDueAt: await slaDueFor(new Date()),
+      slaDueAt: input.historical ? null : await slaDueFor(new Date()),
+      ...(input.historical && input.submittedAt ? { createdAt: input.submittedAt } : {}),
     })
     .returning({ id: leads.id });
 
@@ -304,7 +311,7 @@ export async function ingestSubmission(input: IntakeInput): Promise<IntakeOutcom
     personId,
     leadId,
     type: "source_submission",
-    summary: `Inquiry received from ${input.source.replace(/_/g, " ")}`,
+    summary: input.historical ? `Past inquiry imported from ${input.source.replace(/_/g, " ")}` : `Inquiry received from ${input.source.replace(/_/g, " ")}`,
     body: input.inquiryNote ?? null,
     entityType: "source_submission",
     entityId: submissionId,
@@ -328,6 +335,7 @@ export async function ingestSubmission(input: IntakeInput): Promise<IntakeOutcom
     },
   });
 
+  if (input.historical) return { status: "created", submissionId, personId, leadId, ownerUserId: routing.ownerUserId };
   await emitAutomationEvent({ type: "lead_created", leadId, personId, source: input.source });
   const personRow = (await tx.select({ name: people.displayName }).from(people).where(eq(people.id, personId)).limit(1))[0];
   await notifyNewLead({ id: leadId, ownerUserId: routing.ownerUserId }, personRow?.name ?? "Someone", LEAD_SOURCE_LABELS[input.source]);

@@ -13,6 +13,9 @@ const EVENT_LABEL: Record<string, string> = {
   google_lead: "Google Ads lead",
   whatsapp_message: "WhatsApp message",
   whatsapp_status: "WhatsApp delivery update",
+  whatsapp_history: "Past WhatsApp chat (from the phone app)",
+  whatsapp_echo: "WhatsApp reply sent from the phone app",
+  whatsapp_contact: "WhatsApp contact (from the phone app)",
 };
 
 export default async function IntegrationsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

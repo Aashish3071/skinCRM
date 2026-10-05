@@ -163,9 +163,11 @@ async function summary(query: ReportQuery): Promise<ReportSummary> {
     from reached group by source order by leads desc
   `);
 
-  const campaigns = await tx.execute<{ platform: string; campaign: string; leads: number; qualified: number; won: number }>(sql`
+  const leadRows = await tx.execute<{ platform: string; campaign: string; campaign_id: string | null; leads: number; qualified: number; won: number }>(sql`
     ${cte}
-    select s.platform::text as platform, coalesce(s.campaign_name, s.campaign_id, s.form_name, s.form_id, s.ad_id, 'Not recorded') as campaign,
+    select s.platform::text as platform,
+      coalesce(s.campaign_name, s.campaign_id, s.form_name, s.form_id, s.ad_id, 'Not recorded') as campaign,
+      s.campaign_id,
       count(*)::int as leads,
       count(*) filter (where r.furthest >= ${pos("consultation_booked")} or r.won)::int as qualified,
       count(*) filter (where r.won)::int as won
@@ -178,8 +180,26 @@ async function summary(query: ReportQuery): Promise<ReportSummary> {
       order by ss.received_at desc limit 1
     ) s on true
     where s.platform in ('meta', 'google', 'whatsapp') and s.source <> 'whatsapp_organic'
-    group by 1, 2 order by leads desc limit 50
+    group by 1, 2, 3 order by leads desc limit 50
   `);
+  // Spend copied from the connected ad accounts (D-95), same clinic-local days.
+  const spendRows = await tx.execute<{ platform: string; campaign_id: string; campaign_name: string; spend: string; currency: string }>(sql`
+    select platform, campaign_id, max(campaign_name) as campaign_name, sum(spend_micros)::text as spend, max(currency) as currency
+    from ad_spend_daily where day between ${query.from}::date and ${query.to}::date
+    group by 1, 2
+  `);
+  const spendById = new Map([...spendRows].map((r) => [r.campaign_id, r]));
+  const campaigns = [...leadRows].map((r) => {
+    const spend = r.campaign_id ? spendById.get(r.campaign_id) : undefined;
+    if (spend) spendById.delete(r.campaign_id!);
+    return { platform: r.platform, campaign: r.campaign, campaignId: r.campaign_id, leads: r.leads, qualified: r.qualified, won: r.won,
+      spendMicros: spend ? Number(spend.spend) : null, currency: spend?.currency ?? null };
+  });
+  // Campaigns that spent money but brought no leads matter most.
+  for (const spend of spendById.values()) {
+    if (Number(spend.spend) <= 0) continue;
+    campaigns.push({ platform: spend.platform, campaign: spend.campaign_name, campaignId: spend.campaign_id, leads: 0, qualified: 0, won: 0, spendMicros: Number(spend.spend), currency: spend.currency });
+  }
 
   const trend = await tx.execute<{ day: string; leads: number; qualified: number }>(sql`
     ${cte}
@@ -231,7 +251,7 @@ async function summary(query: ReportQuery): Promise<ReportSummary> {
     funnel,
     lost: funnelRow.lost,
     sources: [...sources].map((s) => ({ ...s, label: LEAD_SOURCE_LABELS[s.source as LeadSource] ?? s.source })),
-    campaigns: [...campaigns],
+    campaigns,
     trend: [...trend],
     operations: {
       medianMinutesToFirstContact: ops.median_minutes === null ? null : Math.round(Number(ops.median_minutes)),

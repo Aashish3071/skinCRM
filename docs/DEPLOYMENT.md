@@ -140,6 +140,19 @@ token, or a webhook key into the form — remain under "…by hand instead".
 - **Email:** "Send yourself a test". Set up SPF/DKIM for the sending domain
   with your relay first, or mail will land in spam.
 
+## Advertising (D-95)
+
+Settings → Advertising manages spend, campaign pause/resume, daily budgets,
+customer-list audiences and past-lead import, with the Facebook and Google
+connections above. Extra provider setup:
+
+- **Meta:** `ads_management` (already in the scope list) needs Advanced Access in
+  App Review; audiences also need the ad account's Custom Audience terms accepted
+  in Ads Manager. For coexistence history, subscribe the app's WhatsApp webhook
+  to `history`, `smb_message_echoes` and `smb_app_state_sync`.
+- **Google:** Customer Match needs an account in good standing with Google's
+  Customer Match policy; health-related targeting is restricted there.
+
 ## Staff calendar sync (D-94)
 
 Each staff member connects their own calendar in **My profile → Calendar sync**.

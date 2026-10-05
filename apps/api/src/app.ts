@@ -22,6 +22,7 @@ import { registerOAuthRoutes } from "./integrations/oauth";
 import { registerSavedViewRoutes } from "./leads/views-routes";
 import { registerBookingRoutes } from "./calendar/booking";
 import { registerCalendarSyncRoutes } from "./calendar/sync";
+import { registerAdvertisingRoutes } from "./advertising/routes";
 import { registerWebhooks } from "./integrations/webhooks";
 import { registerIntakeRoutes } from "./intake/routes";
 import { registerLeadRoutes } from "./leads/routes";
@@ -179,6 +180,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerSavedViewRoutes(app);
   registerBookingRoutes(app);
   registerCalendarSyncRoutes(app);
+  registerAdvertisingRoutes(app);
   registerWebhooks(app);
   registerReportRoutes(app);
   registerAuditLogRoutes(app);

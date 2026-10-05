@@ -296,3 +296,33 @@ export function setCalendarClient(provider: CalendarProvider, client: CalendarCl
   if (client) calendarClients.set(provider, client);
   else calendarClients.delete(provider);
 }
+
+export * from "./ads/index";
+import { GoogleAdsClient, MetaAdsClient, MockAdsClient, type AdPlatform } from "./ads/index";
+
+type AnyAdsClient = MetaAdsClient | GoogleAdsClient | MockAdsClient;
+const adsClients = new Map<AdPlatform, AnyAdsClient>();
+
+/** Ad-account management clients (D-95), from CONNECTOR_META / CONNECTOR_GOOGLE. */
+export function getAdsClient(platform: "meta"): MetaAdsClient | MockAdsClient;
+export function getAdsClient(platform: "google"): GoogleAdsClient | MockAdsClient;
+export function getAdsClient(platform: AdPlatform): AnyAdsClient;
+export function getAdsClient(platform: AdPlatform): AnyAdsClient {
+  const existing = adsClients.get(platform);
+  if (existing) return existing;
+  const env = getEnv();
+  let client: AnyAdsClient;
+  if (platform === "meta") client = env.CONNECTOR_META === "live" ? new MetaAdsClient() : new MockAdsClient("meta");
+  else if (env.CONNECTOR_GOOGLE !== "live") client = new MockAdsClient("google");
+  else {
+    if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET) throw new ConnectorError("Google Ads management needs GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET.", { retryable: false, providerCode: "not_configured" });
+    client = new GoogleAdsClient({ clientId: env.GOOGLE_OAUTH_CLIENT_ID, clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET, developerToken: env.GOOGLE_ADS_DEVELOPER_TOKEN });
+  }
+  adsClients.set(platform, client);
+  return client;
+}
+
+export function setAdsClient(platform: AdPlatform, client: AnyAdsClient | undefined): void {
+  if (client) adsClients.set(platform, client);
+  else adsClients.delete(platform);
+}

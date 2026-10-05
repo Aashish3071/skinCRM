@@ -80,7 +80,10 @@ declare
     -- Calendar sync (D-94)
     'calendar_connections',
     'calendar_event_links',
-    'external_busy'
+    'external_busy',
+    -- Ad account management (D-95)
+    'ad_spend_daily',
+    'ad_audiences'
   ];
 begin
   foreach tbl in array tenant_tables loop

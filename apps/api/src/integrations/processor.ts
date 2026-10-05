@@ -117,6 +117,7 @@ async function processEvent(eventId: string): Promise<void> {
           consent: [{ channel: "email", purpose: "operational", source: "ad_platform_form" }],
           rawPayload: { webhook: p, lead },
           isTest: event.isTest === 1,
+          historical: (p as { historical?: boolean }).historical === true,
           clinicCountry: country,
         },
       );
@@ -147,6 +148,8 @@ async function processEvent(eventId: string): Promise<void> {
         consent: [{ channel: "email", purpose: "operational", source: "ad_platform_form" }],
         rawPayload: p,
         isTest: Boolean(p.is_test) || event.isTest === 1,
+        historical: (p as { historical?: boolean }).historical === true,
+        submittedAt: (p as { submitted_at?: string }).submitted_at ? new Date((p as { submitted_at?: string }).submitted_at!) : null,
         clinicCountry: country,
       });
       if (event.connectionId) await markConnection(event.connectionId, { ok: true });
@@ -170,6 +173,31 @@ async function processEvent(eventId: string): Promise<void> {
       });
       result = `conversation:${outcome.conversationId}`;
       if (event.connectionId) await markConnection(event.connectionId, { ok: true });
+      break;
+    }
+
+    case "whatsapp_history":
+    case "whatsapp_echo": {
+      const p = payload as { waId: string; direction: "inbound" | "outbound"; message: { id: string; timestamp?: string; type?: string; text?: { body?: string } } };
+      const { recordWhatsAppAppMessage } = await import("../inbox/service");
+      const body = p.message.type === "text" || p.message.text ? (p.message.text?.body ?? "") : `[${p.message.type ?? "message"} — open WhatsApp on the phone to see it]`;
+      const outcome = await recordWhatsAppAppMessage({
+        waId: p.waId,
+        direction: p.direction,
+        body,
+        providerMessageId: p.message.id,
+        at: p.message.timestamp ? new Date(Number(p.message.timestamp) * 1000) : new Date(),
+        kind: event.type === "whatsapp_history" ? "history" : "echo",
+      });
+      result = `conversation:${outcome.conversationId}`;
+      break;
+    }
+
+    case "whatsapp_contact": {
+      const p = payload as { full_name?: string; phone_number?: string };
+      const { applyWhatsAppAppContact } = await import("../inbox/service");
+      if (p.phone_number) await applyWhatsAppAppContact({ phone: p.phone_number, fullName: p.full_name ?? null });
+      result = "contact";
       break;
     }
 

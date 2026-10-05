@@ -35,6 +35,12 @@ export interface WhatsAppSignupClient {
   /** A new number must be registered for the Cloud API, with a 6-digit PIN. */
   registerNumber(phoneNumberId: string, token: string, pin: string): Promise<void>;
   numberDetails(phoneNumberId: string, token: string, wabaId?: string): Promise<WhatsAppNumberDetails>;
+  /**
+   * Coexistence (D-95): ask Meta to send the app's contacts and past chats
+   * (`smb_app_state_sync`, then `history` webhooks). Meta only accepts this
+   * shortly after onboarding, and the business can decline history sharing.
+   */
+  requestAppSync(phoneNumberId: string, token: string): Promise<void>;
 }
 
 export class LiveWhatsAppSignupClient implements WhatsAppSignupClient {
@@ -69,6 +75,13 @@ export class LiveWhatsAppSignupClient implements WhatsAppSignupClient {
     await graphRequest(this.fetchImpl, `${phoneNumberId}/register`, token, { method: "POST", body: { messaging_product: "whatsapp", pin } });
   }
 
+  async requestAppSync(phoneNumberId: string, token: string): Promise<void> {
+    if (!/^\d+$/.test(phoneNumberId)) throw new ConnectorError("Invalid phone number id", { retryable: false });
+    for (const sync_type of ["smb_app_state_sync", "history"]) {
+      await graphRequest(this.fetchImpl, `${phoneNumberId}/smb_app_data`, token, { method: "POST", body: { messaging_product: "whatsapp", sync_type } });
+    }
+  }
+
   async numberDetails(phoneNumberId: string, token: string, wabaId?: string): Promise<WhatsAppNumberDetails> {
     if (!/^\d+$/.test(phoneNumberId) || (wabaId && !/^\d+$/.test(wabaId))) throw new ConnectorError("Invalid WhatsApp account or number", { retryable: false });
     if (wabaId) {
@@ -100,6 +113,10 @@ export class MockWhatsAppSignupClient implements WhatsAppSignupClient {
   async subscribeApp(): Promise<void> {}
   async registerNumber(phoneNumberId: string): Promise<void> {
     this.registered.add(phoneNumberId);
+  }
+  readonly syncRequested = new Set<string>();
+  async requestAppSync(phoneNumberId: string): Promise<void> {
+    this.syncRequested.add(phoneNumberId);
   }
   async numberDetails(): Promise<WhatsAppNumberDetails> {
     return { displayPhone: "+1 305-555-0100", verifiedName: "Demo Skin Clinic" };

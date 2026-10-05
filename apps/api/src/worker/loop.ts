@@ -8,6 +8,7 @@ import { heartbeat, runMonitor } from "../ops/monitor";
 import { processTimedNotifications } from "../notifications/service";
 import { processFeedbackOutbox } from "../feedback/service";
 import { syncDueCalendars } from "../calendar/sync";
+import { syncAdvertisingForAllClinics } from "../advertising/service";
 
 const HOUSEKEEPING_MS = 60 * 60 * 1000;
 const MONITOR_MS = 5 * 60 * 1000;
@@ -22,6 +23,7 @@ export function startWorker(pollMs: number): () => Promise<void> {
   let lastHousekeeping = 0;
   let lastMonitor = 0;
   let lastTimed = 0;
+  let lastAudiences = 0;
   let wake: (() => void) | null = null;
 
   const done = (async () => {
@@ -55,6 +57,10 @@ export function startWorker(pollMs: number): () => Promise<void> {
         if (Date.now() - lastHousekeeping > HOUSEKEEPING_MS) {
           lastHousekeeping = Date.now();
           await housekeeping();
+          // Ad spend hourly; audiences once a day (D-95).
+          const audiencesDue = Date.now() - lastAudiences > 24 * HOUSEKEEPING_MS;
+          if (audiencesDue) lastAudiences = Date.now();
+          await syncAdvertisingForAllClinics({ audiences: audiencesDue });
         }
       } catch (error) {
         logger.error({ err: error instanceof Error ? error.message : String(error) }, "Worker tick failed");

@@ -363,11 +363,22 @@ export function registerOAuthRoutes(app: FastifyInstance): void {
           pinSealed: body.coexistence ? null : encryptForClinic(context.clinicId!, pin),
         },
       );
+      // Coexistence: ask for the app's contacts and past chats (D-95). Best effort —
+      // the number works without it, and the clinic may have declined sharing.
+      let historyNote = "";
+      if (body.coexistence) {
+        try {
+          await client.requestAppSync(body.phoneNumberId, token);
+          historyNote = " Past chats from the app will appear in the Inbox over the next few hours.";
+        } catch (error) {
+          historyNote = ` (Past chats couldn't be requested: ${error instanceof Error ? error.message : "unknown error"}.)`;
+        }
+      }
       const name = details.verifiedName ? `${details.verifiedName} (${details.displayPhone ?? body.phoneNumberId})` : details.displayPhone ?? body.phoneNumberId;
       return {
         connection,
         detail: body.coexistence
-          ? `Connected ${name}. Keep using the WhatsApp Business app on the phone; messages also appear in the Inbox.`
+          ? `Connected ${name}. Keep using the WhatsApp Business app on the phone; messages also appear in the Inbox.${historyNote}`
           : `Connected ${name}. Patients' WhatsApp messages now arrive in the Inbox.`,
       };
     },

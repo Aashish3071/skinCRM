@@ -790,3 +790,27 @@ staff booking and online booking. They don't block the database constraint, so
 an admin can still force a booking. Microsoft rotates refresh tokens; the newest
 is stored each run. Disconnect removes our events. Demo client for local/tests.
 
+**D-95. Managing the ad accounts from SkinCRM (2026-10-05).**
+Settings → Advertising, using Connect with Facebook's long-lived user token
+(ads_management; the clinic picks the ad account) and Connect with Google Ads'
+refresh token. *Spend:* per campaign per day copied hourly into
+`ad_spend_daily` (micros); Reports and Advertising show spend, cost per lead,
+booking and client. *Campaign controls:* pause/resume and campaign-level daily
+budgets (refused when the budget lives on ad sets or is shared; 1–10,000 a day;
+confirm when more than doubling); every change audited. *Audiences:* Meta Custom
+Audiences / Google Customer Match lists for four segments (everyone who agreed
+to marketing; clients; booked but not clients; open inquiries not booked),
+replaced in full daily. Every segment is limited to people whose latest
+promotional consent on that channel is granted and who aren't suppressed, and
+only SHA-256 hashes of email (lower-cased) and phone (Meta: digits; Google:
+E.164) leave SkinCRM — never names, services or notes. The clinic chose to
+build this without an extra legal gate; HIPAA-covered clinics should have
+counsel confirm before creating audiences. *History:* past lead-form leads (≤ 90
+days) are queued through the normal intake as `historical` — original date, no
+automations, alerts or SLA; Google webhook leads are matched by click id to
+avoid duplicates. Coexistence WhatsApp numbers request the app's contacts and
+history at signup; `history` and `smb_message_echoes` webhooks file messages
+into the patient's thread with their real time (no lead, not unread), and
+`smb_app_state_sync` fills in missing names only. Not provided: campaign
+creation or ad/creative editing (done in the platforms' own tools).
+

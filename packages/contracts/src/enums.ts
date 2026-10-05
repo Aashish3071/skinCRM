@@ -474,7 +474,16 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
 // --- Inbound provider events (phase 7) ------------------------------------
 
-export const INBOUND_EVENT_TYPES = ["meta_leadgen", "google_lead", "whatsapp_message", "whatsapp_status"] as const;
+export const INBOUND_EVENT_TYPES = [
+  "meta_leadgen",
+  "google_lead",
+  "whatsapp_message",
+  "whatsapp_status",
+  // WhatsApp Business app on the clinic's phone (coexistence, D-95).
+  "whatsapp_history",
+  "whatsapp_echo",
+  "whatsapp_contact",
+] as const;
 export type InboundEventType = (typeof INBOUND_EVENT_TYPES)[number];
 
 export const INBOUND_EVENT_STATES = ["pending", "processed", "failed", "ignored"] as const;

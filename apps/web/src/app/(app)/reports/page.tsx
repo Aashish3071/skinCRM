@@ -32,6 +32,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
   const data = await apiFetch<ReportSummary>(`/reports/summary?${q}`);
   const total = data.funnel[0]!.count;
   const ops = data.operations;
+  const hasSpend = data.campaigns.some((c) => c.spendMicros !== null);
   const maxTrend = Math.max(1, ...data.trend.map((t) => t.leads));
 
   return (
@@ -120,7 +121,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           </Card>
 
           {data.campaigns.length > 0 && (
-            <Card title="Ad campaigns" description="Leads by their latest recorded ad inquiry, including WhatsApp.">
+            <Card title="Ad campaigns" description={`Leads by their latest recorded ad inquiry, including WhatsApp.${hasSpend ? " Spend comes from your connected ad accounts (Advertising)." : ""}`}>
               <table className="stack-table w-full text-sm">
                 <thead>
                   <tr className="border-b border-line text-left text-xs text-ink-subtle">
@@ -129,16 +130,24 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
                     <th scope="col" className="py-2 text-right font-medium">Leads</th>
                     <th scope="col" className="py-2 text-right font-medium">Qualified</th>
                     <th scope="col" className="py-2 text-right font-medium">Won</th>
+                    {hasSpend && <th scope="col" className="py-2 text-right font-medium">Spend</th>}
+                    {hasSpend && <th scope="col" className="py-2 text-right font-medium">Per lead</th>}
+                    {hasSpend && <th scope="col" className="py-2 text-right font-medium">Per booking</th>}
+                    {hasSpend && <th scope="col" className="py-2 text-right font-medium">Per client</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {data.campaigns.map((c) => (
-                    <tr key={`${c.platform}-${c.campaign}`} className="border-b border-line last:border-0">
+                    <tr key={`${c.platform}-${c.campaignId ?? c.campaign}`} className="border-b border-line last:border-0">
                       <td className="max-w-64 truncate py-2.5 font-medium">{c.campaign}</td>
                       <td data-label="Platform" className="py-2.5 text-ink-muted">{c.platform === "meta" ? "Facebook / Instagram" : "Google"}</td>
                       <td data-label="Leads" className="py-2.5 text-right tabular-nums">{c.leads}</td>
                       <td data-label="Qualified" className="py-2.5 text-right tabular-nums">{c.qualified}</td>
                       <td data-label="Won" className="py-2.5 text-right tabular-nums">{c.won}</td>
+                      {hasSpend && <td data-label="Spend" className="py-2.5 text-right tabular-nums">{money(c.spendMicros, c.currency)}</td>}
+                      {hasSpend && <td data-label="Per lead" className="py-2.5 text-right tabular-nums">{per(c.spendMicros, c.leads, c.currency)}</td>}
+                      {hasSpend && <td data-label="Per booking" className="py-2.5 text-right tabular-nums">{per(c.spendMicros, c.qualified, c.currency)}</td>}
+                      {hasSpend && <td data-label="Per client" className="py-2.5 text-right tabular-nums">{per(c.spendMicros, c.won, c.currency)}</td>}
                     </tr>
                   ))}
                 </tbody>
@@ -188,4 +197,15 @@ function formatMinutes(m: number | null): string {
   if (m < 60) return `${m} min`;
   if (m < 60 * 48) return `${Math.round(m / 60)} h`;
   return `${Math.round(m / 1440)} days`;
+}
+
+/** Micros → "$1,234" in the account currency. */
+function money(micros: number | null, currency: string | null): string {
+  if (micros === null) return "—";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency ?? "USD", maximumFractionDigits: 0 }).format(micros / 1_000_000);
+}
+
+function per(micros: number | null, count: number, currency: string | null): string {
+  if (micros === null || count === 0) return "—";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency ?? "USD", maximumFractionDigits: 0 }).format(micros / 1_000_000 / count);
 }

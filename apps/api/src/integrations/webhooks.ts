@@ -69,7 +69,13 @@ export function registerWebhooks(app: FastifyInstance): void {
       for (const change of entry.changes ?? []) {
         const value = change.value;
         const phoneNumberId = value?.metadata?.phone_number_id;
-        if (change.field !== "messages" || !value || !phoneNumberId) continue;
+        if (!value || !phoneNumberId) continue;
+        // Coexistence (D-95): the WhatsApp Business app on the clinic's phone.
+        if (change.field === "history" || change.field === "smb_message_echoes" || change.field === "smb_app_state_sync") {
+          await routeToClinic("whatsapp_cloud", phoneNumberId, (connectionId) => enqueueAppEvents(connectionId, change.field!, value as AppValue));
+          continue;
+        }
+        if (change.field !== "messages") continue;
         await routeToClinic("whatsapp_cloud", phoneNumberId, async (connectionId) => {
           for (const m of value.messages ?? []) {
             const profileName = value.contacts?.find((c) => c.wa_id === m.from)?.profile?.name ?? null;
@@ -150,3 +156,36 @@ function safeEqual(a: string, b: string): boolean {
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
 }
+
+type AppMessage = { id: string; from?: string; to?: string; timestamp?: string; type?: string; text?: { body?: string } };
+type AppValue = {
+  metadata?: { display_phone_number?: string };
+  history?: { threads?: { id: string; messages?: AppMessage[] }[] }[];
+  message_echoes?: AppMessage[];
+  state_sync?: { type?: string; action?: string; contact?: { full_name?: string; phone_number?: string } }[];
+};
+
+/** One queued event per message or contact, so a retry never repeats the rest. */
+async function enqueueAppEvents(connectionId: string, field: string, value: AppValue): Promise<void> {
+  const business = (value.metadata?.display_phone_number ?? "").replace(/\D/g, "");
+  if (field === "history") {
+    for (const chunk of value.history ?? []) {
+      for (const thread of chunk.threads ?? []) {
+        for (const m of thread.messages ?? []) {
+          const fromPatient = (m.from ?? "").replace(/\D/g, "") !== business;
+          await enqueueEvent({ connectionId, type: "whatsapp_history", externalId: m.id, payload: { waId: thread.id, direction: fromPatient ? "inbound" : "outbound", message: m } });
+        }
+      }
+    }
+  } else if (field === "smb_message_echoes") {
+    for (const m of value.message_echoes ?? []) {
+      if (m.to) await enqueueEvent({ connectionId, type: "whatsapp_echo", externalId: m.id, payload: { waId: m.to, direction: "outbound", message: m } });
+    }
+  } else {
+    for (const [i, item] of (value.state_sync ?? []).entries()) {
+      if (item.type !== "contact" || item.action === "remove" || !item.contact?.phone_number) continue;
+      await enqueueEvent({ connectionId, type: "whatsapp_contact", externalId: `${item.contact.phone_number}:${item.contact.full_name ?? ""}:${i}`.slice(0, 200), payload: item.contact });
+    }
+  }
+}
+

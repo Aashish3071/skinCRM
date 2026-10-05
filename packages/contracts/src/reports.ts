@@ -35,9 +35,13 @@ export interface SourceRow {
 export interface CampaignRow {
   platform: string;
   campaign: string;
+  campaignId: string | null;
   leads: number;
   qualified: number;
   won: number;
+  /** Ad spend in the range, from the connected ad account (D-95); null when not synced. */
+  spendMicros: number | null;
+  currency: string | null;
 }
 
 export interface ReportSummary {

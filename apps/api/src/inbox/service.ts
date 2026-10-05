@@ -191,3 +191,92 @@ async function findByPhone(e164: string) {
     .limit(1);
   return rows[0] ? { id: await canonicalPersonId(rows[0].id) } : null;
 }
+
+/**
+ * A message from the WhatsApp Business app on the clinic's phone (coexistence,
+ * D-95): past chats Meta shares after onboarding (`history`) and replies staff
+ * send from the phone now (`smb_message_echoes`). They join the patient's
+ * thread with their real time. They never create a lead, start automations,
+ * notify anyone, or count as unread — they are the record of what was said.
+ */
+export async function recordWhatsAppAppMessage(input: {
+  /** The patient's WhatsApp id. */
+  waId: string;
+  direction: "inbound" | "outbound";
+  body: string;
+  providerMessageId: string;
+  at: Date;
+  profileName?: string | null;
+  kind: "history" | "echo";
+}): Promise<{ conversationId: string; duplicate: boolean }> {
+  const context = getContext();
+  const tx = getTx();
+  const idempotencyKey = `wa-${input.kind}:${input.providerMessageId}`;
+  const [clinic] = await tx.select({ country: clinics.country }).from(clinics).limit(1);
+  const phone = normalizeWhatsAppId(input.waId, clinic?.country ?? "US");
+  if (!phone.e164) throw new Error("WhatsApp message with an unreadable contact id");
+
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`${context.clinicId}:${phone.e164}`}, 0))`);
+  const seen = await tx.select({ conversationId: messages.conversationId }).from(messages)
+    .where(and(eq(messages.providerMessageId, input.providerMessageId), eq(messages.channel, "whatsapp"))).limit(1);
+  if (seen[0]?.conversationId) return { conversationId: seen[0].conversationId, duplicate: true };
+
+  let person = await findByPhone(phone.e164);
+  if (!person) {
+    // A contact from the phone's history: a person to file the chat under, not a sales lead.
+    const [row] = await tx.insert(people).values({
+      clinicId: context.clinicId!, displayName: input.profileName?.trim() || phone.e164, phoneRaw: phone.e164, phoneE164: phone.e164, phoneValid: true,
+    }).returning({ id: people.id });
+    person = row!;
+  }
+  const open = await tx.select({ id: leads.id }).from(leads)
+    .where(and(eq(leads.personId, person.id), isNull(leads.closedAt), isNull(leads.archivedAt))).orderBy(desc(leads.createdAt)).limit(1);
+  const conversationId = await ensureConversation(person.id, "whatsapp", open[0]?.id ?? null);
+
+  await tx.insert(messages).values({
+    clinicId: context.clinicId!,
+    personId: person.id,
+    leadId: open[0]?.id ?? null,
+    channel: "whatsapp",
+    direction: input.direction,
+    classification: "operational",
+    recipient: phone.e164.replace(/^\+/, ""),
+    renderedBody: input.body,
+    state: input.direction === "inbound" ? "delivered" : "sent",
+    providerMessageId: input.providerMessageId,
+    idempotencyKey,
+    conversationId,
+    sentAt: input.at,
+    ...(input.direction === "inbound" ? { deliveredAt: input.at } : {}),
+    createdAt: input.at,
+  });
+
+  // Only ever move the thread's summary forwards; old history never counts as unread.
+  const at = sql`${input.at.toISOString()}::timestamptz`;
+  const preview = input.body.split("\n").find((l) => l.trim())?.slice(0, 140) ?? null;
+  await tx.update(schema.conversations).set({
+    lastMessageAt: sql`greatest(coalesce(${schema.conversations.lastMessageAt}, ${at}), ${at})`,
+    lastPreview: sql`case when ${schema.conversations.lastMessageAt} is null or ${schema.conversations.lastMessageAt} <= ${at} then ${preview} else ${schema.conversations.lastPreview} end`,
+    lastDirection: sql`case when ${schema.conversations.lastMessageAt} is null or ${schema.conversations.lastMessageAt} <= ${at} then ${input.direction} else ${schema.conversations.lastDirection} end`,
+    ...(input.direction === "inbound" ? { lastInboundAt: sql`greatest(coalesce(${schema.conversations.lastInboundAt}, ${at}), ${at})` } : {}),
+    updatedAt: new Date(),
+  }).where(eq(schema.conversations.id, conversationId));
+  return { conversationId, duplicate: false };
+}
+
+/** A contact saved in the WhatsApp Business app: fills in a missing name, never creates people. */
+export async function applyWhatsAppAppContact(input: { phone: string; fullName: string | null }): Promise<void> {
+  if (!input.fullName?.trim()) return;
+  const tx = getTx();
+  const [clinic] = await tx.select({ country: clinics.country }).from(clinics).limit(1);
+  const phone = normalizeWhatsAppId(input.phone, clinic?.country ?? "US");
+  if (!phone.e164) return;
+  const person = await findByPhone(phone.e164);
+  if (!person) return;
+  const [row] = await tx.select({ firstName: people.firstName, lastName: people.lastName, displayName: people.displayName }).from(people).where(eq(people.id, person.id));
+  // Only a nameless record (shown as its number) gets the app's name.
+  if (row && !row.firstName && !row.lastName && row.displayName.startsWith("+")) {
+    const [first, ...rest] = input.fullName.trim().split(/\s+/);
+    await tx.update(people).set({ firstName: first ?? null, lastName: rest.join(" ") || null, displayName: input.fullName.trim(), updatedAt: new Date() }).where(eq(people.id, person.id));
+  }
+}
