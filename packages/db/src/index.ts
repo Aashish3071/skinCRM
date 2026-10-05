@@ -16,3 +16,4 @@ export {
 
 export * from "./schema/index";
 export { provisionClinic, validateProvisionInput, type ProvisionClinicInput, type ProvisionedClinic } from "./provision";
+export { rotateEncryptionKeys, type RotationReport } from "./rotate-keys";

@@ -36,7 +36,7 @@ Edit `.env` — every value below matters in production:
 | `PUBLIC_WEB_URL`, `PUBLIC_API_URL` | `https://crm.yourclinic.com` (both — Caddy routes webhooks to the API) |
 | `POSTGRES_PASSWORD`, `DATABASE_APP_PASSWORD` | `openssl rand -base64 32` each |
 | `SESSION_SECRET`, `CRYPTO_MASTER_KEY` | `openssl rand -base64 32` each, **different**. Keep `CRYPTO_MASTER_KEY` in a password manager too: losing it makes every stored integration token unreadable |
-| `CRYPTO_PROVIDER` | `local` (D-75; the app refuses to start with a weak key) |
+| `CRYPTO_PROVIDER` | `local` with a strong `CRYPTO_MASTER_KEY`, or `aws-kms` with `CRYPTO_WRAPPED_KEY` (see *Encryption keys* below; D-75, D-93) |
 | `OUTBOUND_SENDING_ENABLED` | `true` once the clinic has signed off |
 | `CONNECTOR_EMAIL`, `SMTP_*`, `EMAIL_FROM_*` | `live` and your relay (SES, Postmark…). Not `localhost` — the app refuses |
 | `CONNECTOR_WHATSAPP`, `CONNECTOR_META`, `CONNECTOR_GOOGLE` | `live` once the apps in §4 exist |
@@ -139,6 +139,33 @@ token, or a webhook key into the form — remain under "…by hand instead".
 
 - **Email:** "Send yourself a test". Set up SPF/DKIM for the sending domain
   with your relay first, or mail will land in spam.
+
+## Encryption keys (D-93)
+
+Connected-account tokens, two-step sign-in secrets and raw provider payloads are
+encrypted with a root key. Two ways to hold it:
+
+- **`local`** — `CRYPTO_MASTER_KEY` from your secret manager. Simple; whoever can
+  read the server's environment can read the key.
+- **`aws-kms`** (recommended for HIPAA-covered clinics) — the key exists only
+  wrapped by an AWS KMS key. The API and worker ask KMS to unwrap it once at
+  start-up and keep it in memory. Every unwrap is in CloudTrail, and revoking the
+  server's `kms:Decrypt` permission locks all stored secrets.
+
+Switching an existing install to KMS (or rotating any key):
+
+1. Create a KMS symmetric key; give the server's IAM role `kms:Decrypt` on it,
+   and your operator account `kms:GenerateDataKeyWithoutPlaintext`.
+2. `KMS_KEY_ID=<key ARN> pnpm crypto:new-key` → prints `CRYPTO_WRAPPED_KEY=…`.
+3. In `.env`: `CRYPTO_PROVIDER=aws-kms`, the new `CRYPTO_WRAPPED_KEY`, and move the
+   old key to `CRYPTO_PREVIOUS_MASTER_KEYS` (from local) or
+   `CRYPTO_PREVIOUS_WRAPPED_KEYS` (KMS → KMS). Restart API and worker.
+4. `pnpm db:rotate-keys` (through the `migrate` service on the server). When it
+   reports nothing unreadable, remove the previous key and restart.
+
+Unsubscribe and appointment links made under the old key keep working while it
+is listed as previous; after it is removed, links older than the rotation stop
+working, so wait a few weeks before removing it if marketing links matter.
 
 ## 5. Backups (PRD 9)
 

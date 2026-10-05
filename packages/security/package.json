@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.1146.0",
     "@node-rs/argon2": "^2.0.2",
     "@skincrm/config": "workspace:*",
     "otpauth": "^9.3.6"

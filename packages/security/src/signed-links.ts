@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { getEnv } from "@skincrm/config";
+import { linkSigningSecrets } from "./encryption";
 
 /**
  * Stateless, signed links that grant one narrow thing to whoever holds them —
@@ -9,17 +9,18 @@ import { getEnv } from "@skincrm/config";
  * The purpose is part of what is signed, so a link made for one thing can
  * never be replayed as another. Fields may not contain ".".
  */
-function sign(canonical: string): string {
-  // A distinct key per use, derived from the master key, so these links and
-  // unsubscribe links can't be confused even with identical field values.
-  const key = createHmac("sha256", getEnv().CRYPTO_MASTER_KEY).update("signed-links/v1").digest();
+function sign(canonical: string, secret: Buffer): string {
+  // A distinct key per use, derived from the root key's signing secret, so
+  // these links and unsubscribe links can't be confused even with identical
+  // field values. Previous keys still verify after a rotation (D-93).
+  const key = createHmac("sha256", secret).update("signed-links/v1").digest();
   return createHmac("sha256", key).update(canonical).digest("base64url");
 }
 
 export function createSignedLink(purpose: string, fields: readonly string[]): string {
   if ([purpose, ...fields].some((f) => f.includes("."))) throw new Error("Signed link fields cannot contain '.'");
   const canonical = [purpose, ...fields].join(".");
-  return `${Buffer.from(canonical).toString("base64url")}.${sign(canonical)}`;
+  return `${Buffer.from(canonical).toString("base64url")}.${sign(canonical, linkSigningSecrets()[0]!)}`;
 }
 
 /** The fields, or null when the link was edited, forged, or made for another purpose. */
@@ -33,9 +34,12 @@ export function verifySignedLink(purpose: string, token: string, fieldCount: num
   } catch {
     return null;
   }
-  const expected = Buffer.from(sign(canonical));
   const given = Buffer.from(signature);
-  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
+  const valid = linkSigningSecrets().some((secret) => {
+    const expected = Buffer.from(sign(canonical, secret));
+    return expected.length === given.length && timingSafeEqual(expected, given);
+  });
+  if (!valid) return null;
   const fields = canonical.split(".");
   if (fields[0] !== purpose || fields.length !== fieldCount + 1) return null;
   return fields.slice(1);

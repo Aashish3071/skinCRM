@@ -761,3 +761,18 @@ Online changes close `booking_change_cutoff_hours` before the start (default
 24). 90-day horizon, rate limits, honeypot, real-phone check. Staff names are
 never exposed publicly. System context (no signed-in user) may load any
 appointment; staff still only see their own without `appointments:read_all`.
+
+**D-93. AWS KMS root key and key rotation (2026-10-05).**
+`CRYPTO_PROVIDER=aws-kms` keeps the 256-bit root key only as a KMS-wrapped blob
+(`CRYPTO_WRAPPED_KEY`, made by `pnpm crypto:new-key` with
+GenerateDataKeyWithoutPlaintext). `initCrypto()` unwraps it once at API/worker
+start-up (one KMS call per process, so encryption stays synchronous and fast);
+without kms:Decrypt the process refuses to start. Per-clinic keys are still HKDF
+from the root with the clinic id as AAD. Ciphertexts name their derived key, so
+decryption tries the named key from the ring (current + previous) first.
+`pnpm db:rotate-keys` re-encrypts text columns and ciphertext strings inside
+JSON columns under the current key; it only rewrites values it can decrypt, so
+it never damages rows from an unknown key (it reports them). Link signing
+(unsubscribe, appointment links) uses the root key's signing secret, byte-
+compatible with the old local scheme, and verifies against previous keys too.
+

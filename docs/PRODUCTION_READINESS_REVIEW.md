@@ -4,7 +4,7 @@
 
 | Finding | Status |
 |---|---|
-| P0 KMS setting does not use KMS | ⚠️ Mitigated: `CRYPTO_PROVIDER=aws-kms` is now refused at boot, so nothing claims KMS; the key is a strong secret from a secret manager (D-75). Real KMS wrapping is still open — decide per client (HIPAA covered entities may ask). |
+| P0 KMS setting does not use KMS | ✅ Built 2026-10-05 (D-93): `CRYPTO_PROVIDER=aws-kms` unwraps a KMS-wrapped root key at start-up; rotation with `pnpm db:rotate-keys`. Earlier note — Mitigated: `CRYPTO_PROVIDER=aws-kms` is now refused at boot, so nothing claims KMS; the key is a strong secret from a secret manager (D-75). Real KMS wrapping is still open — decide per client (HIPAA covered entities may ask). |
 | P0 Production compose could run in development mode | ✅ Fixed — `NODE_ENV: production` pinned on migrate/api/worker/web (D-85); gate covered by `config.test.ts` |
 | P1 Backup path mismatches | ✅ Fixed — no `eval`, URL-decoding, container auto-detection (D-86); restore drill passed locally. Repeat on the server |
 | P1 Alert marked delivered after email failure | ✅ Fixed — heartbeat only after a confirmed send; `monitor-alerts.test.ts` |

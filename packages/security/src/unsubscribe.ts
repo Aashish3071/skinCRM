@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { getEnv } from "@skincrm/config";
+import { linkSigningSecrets } from "./encryption";
 
 /**
  * Unsubscribe links (PRD MSG-04, and CAN-SPAM's requirement that promotional
@@ -23,8 +24,9 @@ interface UnsubscribePayload {
   channel: string;
 }
 
-function sign(canonical: string): string {
-  return createHmac("sha256", getEnv().CRYPTO_MASTER_KEY).update(canonical).digest("base64url");
+/** Signed with the current key; links made under a previous key still verify (D-93). */
+function sign(canonical: string, secret = linkSigningSecrets()[0]!): string {
+  return createHmac("sha256", secret).update(canonical).digest("base64url");
 }
 
 export function createUnsubscribeToken(payload: UnsubscribePayload): string {
@@ -44,8 +46,7 @@ export function verifyUnsubscribeToken(token: string): UnsubscribePayload | null
     return null;
   }
 
-  const expected = sign(canonical);
-  if (!constantTimeEqual(signature, expected)) return null;
+  if (!linkSigningSecrets().some((secret) => constantTimeEqual(signature, sign(canonical, secret)))) return null;
 
   const fields = canonical.split(".");
   if (fields.length !== 4 || fields[0] !== VERSION) return null;

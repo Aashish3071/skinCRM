@@ -7,6 +7,7 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import { getEnv } from "@skincrm/config";
+import { initCrypto } from "@skincrm/security";
 import { registerAuthRoutes } from "./auth/routes";
 import { registerAuditLogRoutes } from "./audit-log/routes";
 import { registerErrorHandler } from "./errors";
@@ -35,6 +36,8 @@ import { registerWorkspaceRoutes } from "./workspace/routes";
 
 export async function buildApp(): Promise<FastifyInstance> {
   const env = getEnv();
+  // With AWS KMS the root key is unwrapped once, before anything is decrypted (D-93).
+  await initCrypto();
 
   const app = Fastify({
     /**

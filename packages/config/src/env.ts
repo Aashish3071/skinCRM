@@ -61,8 +61,15 @@ const schema = z.object({
 
   SESSION_SECRET: z.string().min(16),
   CRYPTO_PROVIDER: z.enum(["local", "aws-kms"]).default("local"),
-  CRYPTO_MASTER_KEY: z.string().min(16),
+  /** Root key passphrase (CRYPTO_PROVIDER=local). Not used with aws-kms. */
+  CRYPTO_MASTER_KEY: z.string().min(16).optional(),
+  /** AWS KMS key that wraps the root key (aws-kms). Optional: the wrapped blob names it. */
   KMS_KEY_ID: z.string().optional(),
+  /** The root key, wrapped by KMS, base64 (`pnpm crypto:new-key`). */
+  CRYPTO_WRAPPED_KEY: z.string().optional(),
+  /** Decrypt-only keys after a rotation, comma-separated (D-93). */
+  CRYPTO_PREVIOUS_WRAPPED_KEYS: z.string().optional(),
+  CRYPTO_PREVIOUS_MASTER_KEYS: z.string().optional(),
 
   CONNECTOR_EMAIL: connectorMode,
   CONNECTOR_WHATSAPP: connectorMode,
@@ -132,6 +139,9 @@ export function getEnv(): Env {
     );
   }
   const env = parsed.data;
+  if (env.CRYPTO_PROVIDER === "local" && !env.CRYPTO_MASTER_KEY) {
+    throw new Error("Invalid environment configuration.\n  - CRYPTO_MASTER_KEY: required when CRYPTO_PROVIDER=local");
+  }
 
   if (env.NODE_ENV === "production") {
     assertProductionSafety(env);
@@ -148,16 +158,19 @@ export function getEnv(): Env {
 function assertProductionSafety(env: Env): void {
   const problems: string[] = [];
   if (env.SESSION_SECRET.includes("dev_only")) problems.push("SESSION_SECRET is still the dev placeholder");
-  if (env.CRYPTO_MASTER_KEY.includes("dev_only")) problems.push("CRYPTO_MASTER_KEY is still the dev placeholder");
-  // D-75: the master key comes from the host's secret manager (AWS Secrets
-  // Manager, Doppler, 1Password…) and must be strong. A KMS-wrapped key is a
-  // later hardening step; selecting aws-kms before it exists fails loudly.
-  if (env.CRYPTO_PROVIDER === "aws-kms")
-    problems.push("CRYPTO_PROVIDER=aws-kms is not implemented yet; use local with a strong CRYPTO_MASTER_KEY from your secret manager");
-  if (env.CRYPTO_MASTER_KEY.length < 32)
-    problems.push("CRYPTO_MASTER_KEY must be at least 32 characters (openssl rand -base64 32)");
+  if (env.CRYPTO_PROVIDER === "local") {
+    // D-75: a strong secret from the host's secret manager.
+    if (!env.CRYPTO_MASTER_KEY) problems.push("CRYPTO_MASTER_KEY is required with CRYPTO_PROVIDER=local");
+    else {
+      if (env.CRYPTO_MASTER_KEY.includes("dev_only")) problems.push("CRYPTO_MASTER_KEY is still the dev placeholder");
+      if (env.CRYPTO_MASTER_KEY.length < 32) problems.push("CRYPTO_MASTER_KEY must be at least 32 characters (openssl rand -base64 32)");
+    }
+  } else if (!env.CRYPTO_WRAPPED_KEY) {
+    // D-93: the root key exists only wrapped by AWS KMS.
+    problems.push("CRYPTO_PROVIDER=aws-kms needs CRYPTO_WRAPPED_KEY (run `pnpm crypto:new-key`)");
+  }
   if (env.SESSION_SECRET.length < 32) problems.push("SESSION_SECRET must be at least 32 characters (openssl rand -base64 32)");
-  if (env.CRYPTO_MASTER_KEY === env.SESSION_SECRET) problems.push("CRYPTO_MASTER_KEY and SESSION_SECRET must be different");
+  if (env.CRYPTO_MASTER_KEY && env.CRYPTO_MASTER_KEY === env.SESSION_SECRET) problems.push("CRYPTO_MASTER_KEY and SESSION_SECRET must be different");
   if (env.OUTBOUND_SENDING_ENABLED && env.CONNECTOR_EMAIL === "live" && ["localhost", "127.0.0.1"].includes(env.SMTP_HOST))
     problems.push("SMTP_HOST points at localhost (the development mail catcher); set your real email relay");
   if (!env.DATABASE_APP_URL)

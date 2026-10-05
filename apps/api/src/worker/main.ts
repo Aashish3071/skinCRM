@@ -1,5 +1,6 @@
 import { getEnv } from "@skincrm/config";
 import { closeAllConnections } from "@skincrm/db";
+import { initCrypto } from "@skincrm/security";
 import { logger } from "../logger";
 import { startWorker } from "./loop";
 
@@ -15,6 +16,8 @@ import { startWorker } from "./loop";
  * the event that caused it: nothing is enqueued for a lead that was rolled
  * back, and nothing is lost if a separate queue restarts.
  */
+// Keys first: with AWS KMS the root key is unwrapped once here (D-93).
+await initCrypto();
 const stop = startWorker(getEnv().WORKER_POLL_MS);
 
 const shutdown = async (signal: string): Promise<void> => {
