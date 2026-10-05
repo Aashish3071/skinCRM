@@ -127,6 +127,13 @@
       "when": 1791209147532,
       "tag": "0017_low_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791209774597,
+      "tag": "0018_thankful_norrin_radd",
+      "breakpoints": true
     }
   ]
 }

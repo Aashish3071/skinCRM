@@ -406,6 +406,9 @@ export async function resolveVariables(
         timeStyle: "short",
       }).format(appointment.startsAt);
       variables["appointment.staffName"] = appointment.staffName;
+      // Signed link to see, move or cancel it online (D-92). Follows reschedules.
+      const { appointmentManageUrl } = await import("../calendar/booking");
+      variables["link.reschedule"] = appointmentManageUrl(getContext().clinicId!, appointmentId);
     }
   }
 

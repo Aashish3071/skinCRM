@@ -38,6 +38,8 @@ export const consultationTypes = pgTable(
     /** Shown to the client on a booking link; kept generic by default (PRD 4.4). */
     publicLabel: text("public_label"),
     isActive: boolean("is_active").notNull().default(true),
+    /** Offered on the public booking page (PRD CAL-06). */
+    bookableOnline: boolean("bookable_online").notNull().default(false),
     position: integer("position").notNull().default(0),
     ...timestamps(),
     archivedAt: archivedAt(),

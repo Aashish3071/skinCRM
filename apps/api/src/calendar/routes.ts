@@ -312,8 +312,6 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
     params: z.object({ id: uuidSchema }),
     body: rescheduleAppointmentSchema,
     handler: async ({ params, body, ctx }) => {
-      const context = getContext();
-      const tx = getTx();
       const tz = ctx.clinicTimezone ?? "UTC";
 
       const existing = await loadAppointmentRow(params.id, true);
@@ -327,90 +325,7 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
       const staffUserId = body.staffUserId ?? existing.staffUserId;
       await assertStaffBelongToClinic([staffUserId]);
       assertCalendarAccess(staffUserId);
-      if (existing.consultationTypeId) {
-        const { typeRow } = await resolveSlot({ consultationTypeId: existing.consultationTypeId, startsAt: body.startsAt });
-        if (typeRow!.eligibleStaffIds.length && !typeRow!.eligibleStaffIds.includes(staffUserId)) {
-          throw badRequest("That member of staff is not eligible for this consultation type.");
-        }
-      }
-
-      const durationMinutes =
-        body.durationMinutes ??
-        Math.round(
-          ((existing.clientVisibleEndsAt ?? existing.endsAt).getTime() - existing.startsAt.getTime()) /
-            60000,
-        );
-      const bufferMinutes = Math.round(
-        (existing.endsAt.getTime() - (existing.clientVisibleEndsAt ?? existing.endsAt).getTime()) / 60000,
-      );
-
-      const startsAt = new Date(body.startsAt);
-      const clientVisibleEndsAt = new Date(startsAt.getTime() + durationMinutes * 60000);
-      const endsAt = new Date(clientVisibleEndsAt.getTime() + bufferMinutes * 60000);
-
-      if (!body.allowOutsideWorkingHours) {
-        await assertWithinWorkingHours(staffUserId, startsAt, clientVisibleEndsAt, tz);
-      }
-
-      /**
-       * Free the old slot first, in the same transaction. The exclusion
-       * constraint would otherwise see the original booking and refuse a move
-       * to an overlapping time — including nudging an appointment by ten
-       * minutes, which is the most common reschedule there is.
-       */
-      await tx
-        .update(appointments)
-        .set({ status: "rescheduled", changeReason: body.reason, updatedAt: new Date() })
-        .where(eq(appointments.id, existing.id));
-
-      const replacement = await insertAppointmentOrConflict({
-        clinicId: context.clinicId!,
-        personId: existing.personId,
-        leadId: existing.leadId,
-        staffUserId,
-        consultationTypeId: existing.consultationTypeId,
-        branchId: existing.branchId,
-        startsAt,
-        endsAt,
-        clientVisibleEndsAt,
-        note: existing.note,
-        createdByUserId: context.userId,
-        rescheduledFromId: existing.id,
-      });
-
-      await tx
-        .update(appointments)
-        .set({ rescheduledToId: replacement.id })
-        .where(eq(appointments.id, existing.id));
-
-      await addActivity({
-        personId: existing.personId,
-        leadId: existing.leadId,
-        type: "appointment_changed",
-        summary: `Appointment moved to ${clinicLocalDate(startsAt, tz)} ${clinicLocalTime(startsAt, tz)}`,
-        body: body.reason,
-        entityType: "appointment",
-        entityId: replacement.id,
-      });
-
-      await recordAudit({
-        action: "record_updated",
-        entityType: "appointment",
-        entityId: existing.id,
-        changeSummary: { rescheduledTo: replacement.id, reasonGiven: true },
-      });
-
-      // Stops the old appointment's pending reminders and schedules fresh
-      // ones for the new time (PRD CAL-05).
-      await stopRunsForAppointment(existing.id, "The appointment was moved");
-      await emitAutomationEvent({
-        type: "appointment_rescheduled",
-        appointmentId: replacement.id,
-        personId: replacement.personId,
-        leadId: replacement.leadId,
-        startsAt: replacement.startsAt,
-      });
-      return loadAppointment(replacement.id);
+      return rescheduleExisting(existing, { ...body, staffUserId }, tz);
     },
   });
 
@@ -422,46 +337,11 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
     params: z.object({ id: uuidSchema }),
     body: cancelAppointmentSchema,
     handler: async ({ params, body, ctx }) => {
-      const tx = getTx();
       const existing = await loadAppointmentRow(params.id, true);
       if (existing.status === "canceled") return loadAppointment(params.id);
       if (existing.status === "rescheduled") throw badRequest("Open the replacement appointment to cancel it.");
 
-      await tx
-        .update(appointments)
-        .set({
-          status: "canceled",
-          canceledAt: new Date(),
-          changeReason: body.reason,
-          updatedAt: new Date(),
-        })
-        .where(eq(appointments.id, existing.id));
-
-      await addActivity({
-        personId: existing.personId,
-        leadId: existing.leadId,
-        type: "appointment_changed",
-        summary: "Appointment cancelled",
-        body: body.reason,
-        entityType: "appointment",
-        entityId: existing.id,
-      });
-
-      await recordAudit({
-        action: "record_updated",
-        entityType: "appointment",
-        entityId: existing.id,
-        changeSummary: { status: { from: existing.status, to: "canceled" } },
-      });
-
-      await emitAutomationEvent({
-        type: "appointment_canceled",
-        appointmentId: existing.id,
-        personId: existing.personId,
-        leadId: existing.leadId,
-        startsAt: existing.startsAt,
-      });
-
+      await cancelExisting(existing, body.reason);
       // Cancelling does NOT move the lead's stage. Appointment status and lead
       // stage are separate concepts, and silently rewriting the pipeline would
       // lose why the lead was where it was (BRD 6).
@@ -576,55 +456,8 @@ export function registerCalendarRoutes(app: FastifyInstance): void {
       }
       if (moving) durationMinutes = (moving.endsAt.getTime() - moving.startsAt.getTime()) / 60000;
 
-      const hours = await workingHoursFor(query.staffUserId);
-      const { start, end } = clinicDateRangeToUtc(query.date, query.date, tz);
-
-      const booked = await tx
-        .select({ startsAt: appointments.startsAt, endsAt: appointments.endsAt })
-        .from(appointments)
-        .where(
-          and(
-            eq(appointments.staffUserId, query.staffUserId),
-            gt(appointments.endsAt, start),
-            lt(appointments.startsAt, end),
-            moving ? ne(appointments.id, moving.id) : undefined,
-            ne(appointments.status, "canceled"),
-            ne(appointments.status, "rescheduled"),
-          ),
-        );
-
-      const dayOfWeek = clinicLocalDayOfWeek(start, tz);
-      const todaysHours = hours.filter((h) => h.dayOfWeek === dayOfWeek && h.isActive);
-
-      const slots: AvailabilitySlot[] = [];
-      for (const window of todaysHours) {
-        const windowStart = clinicLocalToUtc(query.date, window.startTime.slice(0, 5), tz);
-        const windowEnd = clinicLocalToUtc(query.date, window.endTime.slice(0, 5), tz);
-
-        for (
-          let cursor = windowStart.getTime();
-          cursor + durationMinutes * 60000 <= windowEnd.getTime();
-          cursor += query.step * 60000
-        ) {
-          const slotStart = new Date(cursor);
-          const slotEnd = new Date(cursor + durationMinutes * 60000);
-          const overlaps = booked.some(
-            (b) => b.startsAt.getTime() < slotEnd.getTime() && b.endsAt.getTime() > slotStart.getTime(),
-          );
-          const inPast = slotStart.getTime() < Date.now();
-
-          slots.push({
-            startsAt: slotStart.toISOString(),
-            endsAt: slotEnd.toISOString(),
-            available: !overlaps && !inPast,
-            reason: overlaps ? "booked" : inPast ? "in_past" : null,
-          });
-        }
-      }
-
-      return { date: query.date, timezone: tz, durationMinutes,
-        slots: [...new Map(slots.map((slot) => [slot.startsAt, slot])).values()]
-          .sort((a, b) => a.startsAt.localeCompare(b.startsAt)) };
+      const slots = await daySlots({ staffUserId: query.staffUserId, date: query.date, durationMinutes, step: query.step, tz, excludeAppointmentId: moving?.id });
+      return { date: query.date, timezone: tz, durationMinutes, slots };
     },
   });
 }
@@ -686,7 +519,7 @@ function serializeType(row: typeof consultationTypes.$inferSelect) {
   };
 }
 
-async function loadAppointmentRow(id: string, lock = false) {
+export async function loadAppointmentRow(id: string, lock = false) {
   const tx = getTx();
   const query = tx.select().from(appointments).where(eq(appointments.id, id)).limit(1);
   const rows = await (lock ? query.for("update") : query);
@@ -694,14 +527,15 @@ async function loadAppointmentRow(id: string, lock = false) {
   if (!row) throw notFound("No such appointment.");
 
   const context = getContext();
-  // A practitioner may only touch their own calendar.
-  if (!context.capabilities.has("appointments:read_all") && row.staffUserId !== context.userId) {
+  // A practitioner may only touch their own calendar. System work (jobs, and
+  // a patient's signed manage link) has no signed-in person and is allowed.
+  if (context.userId && !context.capabilities.has("appointments:read_all") && row.staffUserId !== context.userId) {
     throw forbidden("That appointment belongs to another member of staff.");
   }
   return row;
 }
 
-async function loadAppointment(id: string): Promise<AppointmentDto> {
+export async function loadAppointment(id: string): Promise<AppointmentDto> {
   await loadAppointmentRow(id);
   const tx = getTx();
   const rows = await tx
@@ -716,7 +550,7 @@ async function loadAppointment(id: string): Promise<AppointmentDto> {
   return serializeAppointment(rows[0] as AppointmentJoinRow);
 }
 
-async function resolveSlot(body: {
+export async function resolveSlot(body: {
   consultationTypeId?: string | null;
   startsAt: string;
   durationMinutes?: number;
@@ -752,7 +586,7 @@ async function resolveSlot(body: {
  * The constraint is the real guard; this only translates its error. Checking
  * for a clash in application code first would still race, so it is not done.
  */
-async function insertAppointmentOrConflict(
+export async function insertAppointmentOrConflict(
   values: typeof appointments.$inferInsert,
 ): Promise<typeof appointments.$inferSelect> {
   const tx = getTx();
@@ -779,7 +613,7 @@ function isExclusionViolation(error: unknown): boolean {
   );
 }
 
-async function workingHoursFor(userId: string) {
+export async function workingHoursFor(userId: string) {
   const tx = getTx();
   const own = await tx.select().from(workingHours).where(eq(workingHours.userId, userId));
   if (own.length > 0) return own;
@@ -787,7 +621,7 @@ async function workingHoursFor(userId: string) {
   return tx.select().from(workingHours).where(isNull(workingHours.userId));
 }
 
-async function assertWithinWorkingHours(
+export async function assertWithinWorkingHours(
   staffUserId: string,
   startsAt: Date,
   endsAt: Date,
@@ -821,7 +655,7 @@ async function assertWithinWorkingHours(
   }
 }
 
-async function assertStaffBelongToClinic(staffIds: readonly string[]): Promise<void> {
+export async function assertStaffBelongToClinic(staffIds: readonly string[]): Promise<void> {
   if (staffIds.length === 0) return;
   const tx = getTx();
   // RLS hides another clinic's users, so this turns a silent no-op into a clear
@@ -850,7 +684,7 @@ async function assertBranch(id?: string | null): Promise<void> {
 }
 
 /** Timeline entry, and advance the lead to Consultation booked. */
-async function afterBooking(
+export async function afterBooking(
   appointmentId: string,
   leadId: string | null,
   personId: string,
@@ -885,4 +719,207 @@ async function afterBooking(
     entityId: appointmentId,
     changeSummary: { leadId, hasLead: leadId !== null },
   });
+}
+
+/**
+ * Move an appointment: the old row becomes `rescheduled`, a replacement is
+ * inserted (the exclusion constraint guards the new slot), reminders are
+ * re-planned. Shared by staff (routes above) and patients (public booking).
+ */
+export async function rescheduleExisting(
+  existing: typeof appointments.$inferSelect,
+  body: { startsAt: string; staffUserId?: string; durationMinutes?: number; reason: string; allowOutsideWorkingHours?: boolean },
+  tz: string,
+): Promise<AppointmentDto> {
+  const context = getContext();
+  const tx = getTx();
+  const staffUserId = body.staffUserId ?? existing.staffUserId;
+  if (existing.consultationTypeId) {
+    const { typeRow } = await resolveSlot({ consultationTypeId: existing.consultationTypeId, startsAt: body.startsAt });
+    if (typeRow!.eligibleStaffIds.length && !typeRow!.eligibleStaffIds.includes(staffUserId)) {
+      throw badRequest("That member of staff is not eligible for this consultation type.");
+    }
+  }
+
+  const durationMinutes =
+    body.durationMinutes ??
+    Math.round(
+      ((existing.clientVisibleEndsAt ?? existing.endsAt).getTime() - existing.startsAt.getTime()) /
+        60000,
+    );
+  const bufferMinutes = Math.round(
+    (existing.endsAt.getTime() - (existing.clientVisibleEndsAt ?? existing.endsAt).getTime()) / 60000,
+  );
+
+  const startsAt = new Date(body.startsAt);
+  const clientVisibleEndsAt = new Date(startsAt.getTime() + durationMinutes * 60000);
+  const endsAt = new Date(clientVisibleEndsAt.getTime() + bufferMinutes * 60000);
+
+  if (!body.allowOutsideWorkingHours) {
+    await assertWithinWorkingHours(staffUserId, startsAt, clientVisibleEndsAt, tz);
+  }
+
+  /**
+   * Free the old slot first, in the same transaction. The exclusion
+   * constraint would otherwise see the original booking and refuse a move
+   * to an overlapping time — including nudging an appointment by ten
+   * minutes, which is the most common reschedule there is.
+   */
+  await tx
+    .update(appointments)
+    .set({ status: "rescheduled", changeReason: body.reason, updatedAt: new Date() })
+    .where(eq(appointments.id, existing.id));
+
+  const replacement = await insertAppointmentOrConflict({
+    clinicId: context.clinicId!,
+    personId: existing.personId,
+    leadId: existing.leadId,
+    staffUserId,
+    consultationTypeId: existing.consultationTypeId,
+    branchId: existing.branchId,
+    startsAt,
+    endsAt,
+    clientVisibleEndsAt,
+    note: existing.note,
+    createdByUserId: context.userId,
+    rescheduledFromId: existing.id,
+  });
+
+  await tx
+    .update(appointments)
+    .set({ rescheduledToId: replacement.id })
+    .where(eq(appointments.id, existing.id));
+
+  await addActivity({
+    personId: existing.personId,
+    leadId: existing.leadId,
+    type: "appointment_changed",
+    summary: `Appointment moved to ${clinicLocalDate(startsAt, tz)} ${clinicLocalTime(startsAt, tz)}`,
+    body: body.reason,
+    entityType: "appointment",
+    entityId: replacement.id,
+  });
+
+  await recordAudit({
+    action: "record_updated",
+    entityType: "appointment",
+    entityId: existing.id,
+    changeSummary: { rescheduledTo: replacement.id, reasonGiven: true },
+  });
+
+  // Stops the old appointment's pending reminders and schedules fresh
+  // ones for the new time (PRD CAL-05).
+  await stopRunsForAppointment(existing.id, "The appointment was moved");
+  await emitAutomationEvent({
+    type: "appointment_rescheduled",
+    appointmentId: replacement.id,
+    personId: replacement.personId,
+    leadId: replacement.leadId,
+    startsAt: replacement.startsAt,
+  });
+  return loadAppointment(replacement.id);
+}
+
+/** Cancel, record why, and stop its reminders (via the automation event). */
+export async function cancelExisting(existing: typeof appointments.$inferSelect, reason: string): Promise<void> {
+  const tx = getTx();
+  await tx
+    .update(appointments)
+    .set({
+      status: "canceled",
+      canceledAt: new Date(),
+      changeReason: reason,
+      updatedAt: new Date(),
+    })
+    .where(eq(appointments.id, existing.id));
+
+  await addActivity({
+    personId: existing.personId,
+    leadId: existing.leadId,
+    type: "appointment_changed",
+    summary: "Appointment cancelled",
+    body: reason,
+    entityType: "appointment",
+    entityId: existing.id,
+  });
+
+  await recordAudit({
+    action: "record_updated",
+    entityType: "appointment",
+    entityId: existing.id,
+    changeSummary: { status: { from: existing.status, to: "canceled" } },
+  });
+
+  await emitAutomationEvent({
+    type: "appointment_canceled",
+    appointmentId: existing.id,
+    personId: existing.personId,
+    leadId: existing.leadId,
+    startsAt: existing.startsAt,
+  });
+
+}
+
+/**
+ * Every start time on one clinic-local day for one person, marked free or not:
+ * their working hours (or the clinic default), minus anything booked
+ * (buffers included), minus the past. Used by staff booking and by the public
+ * booking page, so both offer the same times.
+ */
+export async function daySlots(p: {
+  staffUserId: string;
+  date: string;
+  durationMinutes: number;
+  step: number;
+  tz: string;
+  excludeAppointmentId?: string;
+}): Promise<AvailabilitySlot[]> {
+  const tx = getTx();
+  const hours = await workingHoursFor(p.staffUserId);
+  const { start, end } = clinicDateRangeToUtc(p.date, p.date, p.tz);
+
+  const booked = await tx
+    .select({ startsAt: appointments.startsAt, endsAt: appointments.endsAt })
+    .from(appointments)
+    .where(
+      and(
+        eq(appointments.staffUserId, p.staffUserId),
+        gt(appointments.endsAt, start),
+        lt(appointments.startsAt, end),
+        p.excludeAppointmentId ? ne(appointments.id, p.excludeAppointmentId) : undefined,
+        ne(appointments.status, "canceled"),
+        ne(appointments.status, "rescheduled"),
+      ),
+    );
+
+  const dayOfWeek = clinicLocalDayOfWeek(start, p.tz);
+  const todaysHours = hours.filter((h) => h.dayOfWeek === dayOfWeek && h.isActive);
+
+  const slots: AvailabilitySlot[] = [];
+  for (const window of todaysHours) {
+    const windowStart = clinicLocalToUtc(p.date, window.startTime.slice(0, 5), p.tz);
+    const windowEnd = clinicLocalToUtc(p.date, window.endTime.slice(0, 5), p.tz);
+
+    for (
+      let cursor = windowStart.getTime();
+      cursor + p.durationMinutes * 60000 <= windowEnd.getTime();
+      cursor += p.step * 60000
+    ) {
+      const slotStart = new Date(cursor);
+      const slotEnd = new Date(cursor + p.durationMinutes * 60000);
+      const overlaps = booked.some(
+        (b) => b.startsAt.getTime() < slotEnd.getTime() && b.endsAt.getTime() > slotStart.getTime(),
+      );
+      const inPast = slotStart.getTime() < Date.now();
+
+      slots.push({
+        startsAt: slotStart.toISOString(),
+        endsAt: slotEnd.toISOString(),
+        available: !overlaps && !inPast,
+        reason: overlaps ? "booked" : inPast ? "in_past" : null,
+      });
+    }
+  }
+
+  return [...new Map(slots.map((slot) => [slot.startsAt, slot])).values()].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
 }

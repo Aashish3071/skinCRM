@@ -148,6 +148,7 @@ export const LEAD_SOURCES = [
   "referral",
   "manual",
   "unknown",
+  "online_booking",
 ] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 
@@ -163,6 +164,7 @@ export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = {
   referral: "Referral",
   manual: "Manual entry",
   unknown: "Unknown",
+  online_booking: "Online booking",
 };
 
 /** External platforms that can deliver a source submission. */

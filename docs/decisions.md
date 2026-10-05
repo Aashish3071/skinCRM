@@ -743,3 +743,21 @@ edit/archive and searchable inbox tags. Pipeline outcome categories remain fixed
 because automations and conversion feedback depend on their meaning. Do not
 advertise deferred email lifecycle, calendar/self-service, historical sync or
 patient audience features as complete.
+
+**D-92. Online booking and patient manage links (PRD CAL-06, 2026-10-05).**
+Public page `/book/{clinic slug}` (off until an admin enables it in Settings →
+Calendar and picks bookable consultation types) and a signed link per
+appointment, `/appointment/{token}`, filled into `{{link.reschedule}}`. Links
+are stateless HMACs (`packages/security/src/signed-links.ts`, purpose-bound,
+derived key) carrying clinic + appointment id; a moved appointment is followed
+via `rescheduled_to_id`, so old links keep working. Booking reuses the staff
+path: shared `daySlots`, `insertAppointmentOrConflict` (exclusion constraint),
+`afterBooking` (lead → Qualified, automations), `rescheduleExisting`,
+`cancelExisting`. Patients become leads with source `online_booking` through
+the intake pipeline; operational consent is required to book, marketing consent
+is a separate optional box. Bookable staff: the type's chosen staff, else active
+practitioners; least-busy that day wins; moves keep the same person when free.
+Online changes close `booking_change_cutoff_hours` before the start (default
+24). 90-day horizon, rate limits, honeypot, real-phone check. Staff names are
+never exposed publicly. System context (no signed-in user) may load any
+appointment; staff still only see their own without `appointments:read_all`.

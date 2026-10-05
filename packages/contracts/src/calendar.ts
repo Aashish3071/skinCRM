@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isoDate, isoDateTime, optionalShortText, shortText, uuidSchema } from "./common";
 import { APPOINTMENT_STATUSES, type AppointmentStatus } from "./enums";
+import { optionalEmailField, optionalNameField, optionalPhoneField } from "./contact";
 
 // --- Consultation types (PRD CAL-02) --------------------------------------
 
@@ -198,3 +199,64 @@ export const availabilitySlotSchema = z.object({
   reason: z.enum(["booked", "outside_hours", "in_past"]).nullable(),
 });
 export type AvailabilitySlot = z.infer<typeof availabilitySlotSchema>;
+
+// --- Online booking (PRD CAL-06) ---------------------------------------------
+
+/** What the public booking page needs. Nothing about staff or other patients. */
+export interface PublicBookingInfo {
+  clinicName: string;
+  clinicPhone: string | null;
+  timezone: string;
+  hasLogo: boolean;
+  types: { id: string; name: string; durationMinutes: number }[];
+  cutoffHours: number;
+}
+
+/** Free start times on one day, any eligible member of staff. */
+export interface PublicSlots {
+  date: string;
+  timezone: string;
+  startTimes: string[];
+}
+
+export const publicBookingSchema = z
+  .object({
+    typeId: uuidSchema,
+    startsAt: isoDateTime,
+    firstName: optionalNameField(120).refine((v) => v !== null, "Enter your first name"),
+    lastName: optionalNameField(120),
+    phone: optionalPhoneField,
+    email: optionalEmailField,
+    note: optionalShortText(1000),
+    /** Reminders and messages about this booking. Required to book. */
+    contactConsent: z.literal(true, { errorMap: () => ({ message: "Tick the box so we can confirm and remind you" }) }),
+    marketingConsent: z.boolean().default(false),
+    /** Honeypot: people leave it empty. */
+    website: z.string().max(200).optional(),
+  })
+  .refine((v) => Boolean(v.phone) || Boolean(v.email), { message: "Give a phone number or an email address", path: ["phone"] });
+export type PublicBooking = z.infer<typeof publicBookingSchema>;
+
+export interface PublicAppointment {
+  clinicName: string;
+  clinicPhone: string | null;
+  typeName: string | null;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+  status: "scheduled" | "confirmed" | "canceled" | "attended" | "no_show" | "rescheduled";
+  /** Moving or cancelling online is allowed until this time. */
+  changeDeadline: string;
+  canChange: boolean;
+  /** The current link: a moved appointment gets a new one. */
+  manageToken: string;
+}
+
+export const publicRescheduleSchema = z.object({ startsAt: isoDateTime });
+export const publicCancelSchema = z.object({ reason: optionalShortText(500) });
+
+export const onlineBookingSettingsSchema = z.object({
+  enabled: z.boolean(),
+  cutoffHours: z.coerce.number().int().min(0).max(168),
+  bookableTypeIds: z.array(uuidSchema).max(50),
+});

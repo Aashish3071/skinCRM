@@ -50,6 +50,10 @@ export const clinics = pgTable(
      * clinic's privacy lead signs off on copy and legal basis (PRD 4.4).
      */
     promotionalSendingApproved: boolean("promotional_sending_approved").notNull().default(false),
+    /** Public booking page at /book/{slug} (PRD CAL-06). Off until an admin turns it on. */
+    onlineBookingEnabled: boolean("online_booking_enabled").notNull().default(false),
+    /** Patients can move or cancel online until this many hours before the start. */
+    bookingChangeCutoffHours: integer("booking_change_cutoff_hours").notNull().default(24),
     promotionalSendingApprovedAt: timestamp("promotional_sending_approved_at", {
       withTimezone: true,
       mode: "date",
