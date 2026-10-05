@@ -74,7 +74,9 @@ declare
     'notifications',
     -- Phase 8: conversion feedback
     'feedback_destinations',
-    'feedback_events'
+    'feedback_events',
+    -- Saved list views
+    'saved_views'
   ];
 begin
   foreach tbl in array tenant_tables loop

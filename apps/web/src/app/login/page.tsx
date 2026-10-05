@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { LoginForm } from "./login-form";
+import { LegalFooter } from "@/components/legal";
 
 export const metadata = { title: "Sign in — SkinCRM" };
 
@@ -21,6 +22,7 @@ export default async function LoginPage() {
       <div className="rounded-card border border-line bg-surface p-6">
         <LoginForm showDevAccounts={process.env.NODE_ENV === "development"} />
       </div>
+      <LegalFooter />
     </main>
   );
 }

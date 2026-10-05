@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { LEAD_SOURCE_LABELS, type LeadDto } from "@skincrm/contracts";
+import { LEAD_SOURCES, type LeadSource, type SavedViewDto } from "@skincrm/contracts";
 import { PlusIcon } from "@/components/icons";
-import { Badge, Card, EmptyState, PageHeader, buttonClasses } from "@/components/ui";
-import { getLeads, getStages, relativeTime, stageTone } from "@/lib/crm";
+import { Card, EmptyState, PageHeader, buttonClasses } from "@/components/ui";
+import { apiFetch } from "@/lib/api";
+import { getAssignees, getLeads, getStages } from "@/lib/crm";
 import { can, requireCapability } from "@/lib/session";
 import { LeadBoard } from "./board";
 import { LeadFilters } from "./filters";
+import { LeadTable } from "./lead-table";
 
 export const metadata = { title: "Leads — SkinCRM" };
 
@@ -23,13 +25,28 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   if (search) query.set("search", search);
   if (single(params.unassigned) === "true") query.set("unassigned", "true");
   if (single(params.mine) === "true") query.set("ownerUserId", session.id);
+  const source = single(params.source);
+  if (source && (LEAD_SOURCES as readonly string[]).includes(source)) query.set("source", source as LeadSource);
+  const stage = single(params.stage);
+  if (stage && /^[0-9a-f-]{36}$/.test(stage)) query.set("stageId", stage);
+  if (single(params.awaiting) === "true") query.set("awaitingResponse", "true");
+  const from = single(params.from);
+  const to = single(params.to);
+  if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) query.set("createdFrom", from);
+  if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) query.set("createdTo", to);
   // Test leads (from "Send a test lead") show with a badge; Reports excludes them.
   query.set("includeTest", "true");
   // The board needs every lead at once; the list is paged.
   query.set("limit", view === "board" ? "100" : "50");
 
-  const [stages, data] = await Promise.all([getStages(), getLeads(query.toString())]);
-  const filtered = Boolean(search || params.unassigned || params.mine);
+  const canBulk = can(session, "leads:bulk_edit");
+  const [stages, data, views, assignees] = await Promise.all([
+    getStages(),
+    getLeads(query.toString()),
+    apiFetch<{ items: SavedViewDto[] }>("/saved-views?screen=leads").then((r) => r.items),
+    canBulk && view === "list" ? getAssignees() : Promise.resolve([]),
+  ]);
+  const filtered = Boolean(search || params.unassigned || params.mine || source || stage || params.awaiting || from || to);
 
   return (
     <>
@@ -45,12 +62,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         }
       />
 
-      <LeadFilters view={view} canSeeAll={can(session, "leads:read_all")} />
+      <LeadFilters
+        view={view}
+        canSeeAll={can(session, "leads:read_all")}
+        stages={stages.map((st) => ({ id: st.id, name: st.name }))}
+        views={views}
+        isAdmin={session.role === "admin"}
+      />
 
       <div className="mt-5">
         {data.items.length === 0 && filtered ? (
           <Card>
-            <EmptyState title="No leads match">Try a different search, or switch to Everyone.</EmptyState>
+            <EmptyState title="No leads match">Try a different search, clear some filters, or switch to Everyone.</EmptyState>
           </Card>
         ) : view === "board" ? (
           <LeadBoard stages={stages} leads={data.items} counts={data.stageCounts} canMove={can(session, "leads:write")} />
@@ -61,51 +84,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             </EmptyState>
           </Card>
         ) : (
-          <LeadTable leads={data.items} />
+          <LeadTable leads={data.items} assignees={assignees} canBulk={canBulk} />
         )}
       </div>
     </>
-  );
-}
-
-function LeadTable({ leads }: { leads: LeadDto[] }) {
-  return (
-    <Card>
-      <div className="-my-4 sm:-mx-5 sm:overflow-x-auto">
-        <table className="stack-table w-full text-sm">
-          <caption className="sr-only">Leads</caption>
-          <thead>
-            <tr className="border-b border-line text-left text-xs text-ink-subtle">
-              <th scope="col" className="px-5 py-3 font-medium">Name</th>
-              <th scope="col" className="px-3 py-3 font-medium">Stage</th>
-              <th scope="col" className="hidden px-3 py-3 font-medium sm:table-cell">Source</th>
-              <th scope="col" className="hidden px-3 py-3 font-medium md:table-cell">Owner</th>
-              <th scope="col" className="px-5 py-3 text-right font-medium">Added</th>
-            </tr>
-          </thead>
-          <tbody>
-            {leads.map((lead) => (
-              <tr key={lead.id} className="border-b border-line last:border-0 hover:bg-surface-muted">
-                <td className="px-5 py-3">
-                  <Link href={`/leads/${lead.id}`} className="font-medium hover:text-brand">
-                    {lead.personName}
-                  </Link>
-                  <div className="text-xs text-ink-muted">{lead.personPhone ?? lead.personEmail ?? "—"}</div>
-                </td>
-                <td data-label="Stage" className="px-3 py-3">
-                  <Badge tone={stageTone(lead.stageCategory)}>{lead.stageName}</Badge>
-                </td>
-                <td className="hidden px-3 py-3 text-ink-muted sm:table-cell">{LEAD_SOURCE_LABELS[lead.source]}</td>
-                <td className="hidden px-3 py-3 md:table-cell">
-                  {lead.ownerName ?? <span className="text-caution">Unassigned</span>}
-                </td>
-                <td data-label="Added" className="px-5 py-3 text-right text-ink-muted">{relativeTime(lead.createdAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
   );
 }
 

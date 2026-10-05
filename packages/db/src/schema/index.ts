@@ -11,3 +11,4 @@ export * from "./integrations";
 export * from "./ops";
 export * from "./notifications";
 export * from "./feedback";
+export * from "./views";

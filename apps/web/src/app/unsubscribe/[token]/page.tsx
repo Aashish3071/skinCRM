@@ -1,4 +1,5 @@
 import { ApiError, apiFetch } from "@/lib/api";
+import { LegalFooter } from "@/components/legal";
 import { UnsubscribeButton } from "./button";
 
 export const metadata = { title: "Unsubscribe", robots: { index: false } };
@@ -32,6 +33,7 @@ export default async function UnsubscribePage({ params }: { params: Promise<{ to
           <UnsubscribeButton token={token} clinicName={info.clinicName} channel={info.channel} already={info.unsubscribed} />
         )}
       </div>
+      <LegalFooter />
     </main>
   );
 }

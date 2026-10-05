@@ -332,3 +332,46 @@ export const leadRulesSettingsSchema = z.object({
   slaEscalationEnabled: z.boolean(),
 });
 export type LeadRulesSettings = z.infer<typeof leadRulesSettingsSchema>;
+
+// --- Saved views and bulk assignment (PRD LEAD-01, LEAD-03) ----------------
+
+export const SAVED_VIEW_SCREENS = ["leads"] as const;
+export type SavedViewScreen = (typeof SAVED_VIEW_SCREENS)[number];
+
+/** A screen's URL parameters. Values are strings, as in a URL. */
+const viewQuery = z.record(z.string().max(40).regex(/^[a-zA-Z]+$/), z.string().max(200)).refine(
+  (q) => Object.keys(q).length <= 20,
+  "Too many filters",
+);
+
+export const createSavedViewSchema = z.object({
+  screen: z.enum(SAVED_VIEW_SCREENS),
+  name: shortText(60),
+  query: viewQuery,
+  shared: z.boolean().default(false),
+});
+
+export const updateSavedViewSchema = z.object({
+  name: shortText(60).optional(),
+  query: viewQuery.optional(),
+  shared: z.boolean().optional(),
+});
+
+export interface SavedViewDto {
+  id: string;
+  screen: SavedViewScreen;
+  name: string;
+  query: Record<string, string>;
+  shared: boolean;
+  ownerName: string | null;
+  /** The signed-in person made it (and can edit or delete it). */
+  isMine: boolean;
+}
+
+export const bulkAssignSchema = z.object({
+  leadIds: z.array(uuidSchema).min(1).max(100),
+  /** Null returns them to the unassigned queue. */
+  ownerUserId: uuidSchema.nullable(),
+  note: optionalShortText(500),
+});
+export type BulkAssign = z.infer<typeof bulkAssignSchema>;
