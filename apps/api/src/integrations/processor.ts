@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { getMetaLeadsConnector } from "@skincrm/connectors";
+import { getMetaLeadsConnector, getMetaAdvertisingClient } from "@skincrm/connectors";
 import { schema, withoutTenantScope } from "@skincrm/db";
 import { decryptForClinic, encryptForClinic } from "@skincrm/security";
 import type { InboundEventType } from "@skincrm/contracts";
@@ -8,7 +8,7 @@ import { logger } from "../logger";
 import { ingestSubmission, type IntakeInput } from "../intake/pipeline";
 import { receiveInboundWhatsApp } from "../inbox/service";
 import { runAsSystem } from "../automations/system-context";
-import { markConnection, secretOf } from "./connections";
+import { markConnection, secretOf, metaAdvertisingToken } from "./connections";
 
 const { inboundEvents, integrationConnections, clinics, messages } = schema;
 
@@ -98,6 +98,8 @@ async function processEvent(eventId: string): Promise<void> {
       const token = connection ? secretOf(connection) : null;
       if (!token && getMetaLeadsConnector().mode === "live") throw new Error("The Facebook page is not connected (no access token).");
       const lead = await getMetaLeadsConnector().fetchLead(p.leadgen_id, token ?? "");
+      const ad = lead.adId || p.ad_id;
+      const attribution = ad ? await enrichMetaAd(ad) : {};
       result = await ingest(
         {
           platform: "meta",
@@ -110,7 +112,7 @@ async function processEvent(eventId: string): Promise<void> {
             adId: lead.adId ?? p.ad_id ?? null,
             adsetId: lead.adsetId ?? p.adgroup_id ?? null,
             campaignId: lead.campaignId,
-            accountId: p.page_id,
+            ...attribution,
           },
           consent: [{ channel: "email", purpose: "operational", source: "ad_platform_form" }],
           rawPayload: { webhook: p, lead },
@@ -124,6 +126,7 @@ async function processEvent(eventId: string): Promise<void> {
 
     case "google_lead": {
       const p = payload as GoogleLeadPayload;
+      const connection = event.connectionId ? (await tx.select().from(integrationConnections).where(eq(integrationConnections.id, event.connectionId)).limit(1))[0] : null;
       const answers: Record<string, string> = {};
       for (const c of p.user_column_data ?? []) {
         if (c.string_value) answers[(c.column_id ?? c.column_name ?? "answer").toLowerCase()] = c.string_value;
@@ -134,6 +137,7 @@ async function processEvent(eventId: string): Promise<void> {
         externalId: p.lead_id,
         ...personFromAnswers(answers),
         attribution: {
+          accountId: connection?.config.customerId ?? null,
           formId: p.form_id != null ? String(p.form_id) : null,
           campaignId: p.campaign_id != null ? String(p.campaign_id) : null,
           adsetId: p.adgroup_id != null ? String(p.adgroup_id) : null,
@@ -151,6 +155,8 @@ async function processEvent(eventId: string): Promise<void> {
 
     case "whatsapp_message": {
       const p = payload as WhatsAppMessagePayload;
+      const connection = event.connectionId ? (await tx.select().from(integrationConnections).where(eq(integrationConnections.id, event.connectionId)).limit(1))[0] : null;
+      const attribution = p.referral?.source_type === "ad" && p.referral.source_id ? await enrichMetaAd(p.referral.source_id) : {};
       const body = p.type === "text" ? (p.text?.body ?? "") : `[${p.type} — open WhatsApp on the phone to see it]`;
       const outcome = await receiveInboundWhatsApp({
         waId: p.from,
@@ -158,7 +164,9 @@ async function processEvent(eventId: string): Promise<void> {
         body,
         providerMessageId: p.id,
         receivedAt: p.timestamp ? new Date(Number(p.timestamp) * 1000) : undefined,
-        referral: p.referral ? { sourceId: p.referral.source_id ?? null, ctwaClid: p.referral.ctwa_clid ?? null } : null,
+        referral: p.referral ? { sourceId: p.referral.source_id ?? null, sourceType: p.referral.source_type ?? null, ctwaClid: p.referral.ctwa_clid ?? null } : null,
+        attribution,
+        businessAccountId: connection?.config.businessAccountId ?? null,
       });
       result = `conversation:${outcome.conversationId}`;
       if (event.connectionId) await markConnection(event.connectionId, { ok: true });
@@ -194,6 +202,14 @@ async function processEvent(eventId: string): Promise<void> {
     .update(inboundEvents)
     .set({ state: "processed", result, processedAt: new Date(), lockedUntil: null, lastError: null })
     .where(eq(inboundEvents.id, event.id));
+}
+
+/** Attribution enrichments must never hold up a patient's message or lead. */
+async function enrichMetaAd(adId: string): Promise<NonNullable<IntakeInput["attribution"]>> {
+  const token = await metaAdvertisingToken();
+  if (!token) return {};
+  try { return await getMetaAdvertisingClient().fetchAd(adId, token); }
+  catch { return {}; } // Original ad/click identifiers are still preserved for feedback.
 }
 
 async function ingest(input: IntakeInput): Promise<string> {

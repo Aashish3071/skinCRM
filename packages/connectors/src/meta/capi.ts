@@ -1,3 +1,4 @@
+import { ConnectorError } from "../types";
 import { graphRequest, type FetchLike } from "../graph";
 
 /**
@@ -14,6 +15,7 @@ export interface CapiEvent {
   eventId: string;
   leadId?: string | null;
   whatsappReferralId?: string | null;
+  whatsappBusinessAccountId?: string | null;
 }
 
 export interface CapiResult {
@@ -28,17 +30,21 @@ export interface MetaCapiConnector {
 
 export function capiPayload(events: CapiEvent[], testEventCode?: string | null) {
   return {
-    data: events.map((e) => ({
-      event_name: e.eventName,
-      event_time: Math.floor(e.eventTime.getTime() / 1000),
-      event_id: e.eventId,
-      action_source: "system_generated",
-      user_data: {
-        ...(e.leadId ? { lead_id: e.leadId } : {}),
-        ...(e.whatsappReferralId ? { ctwa_clid: e.whatsappReferralId } : {}),
-      },
-      custom_data: { event_source: "crm", lead_event_source: "SkinCRM" },
-    })),
+    data: events.map((e) => {
+      if (e.whatsappReferralId && !e.whatsappBusinessAccountId) throw new ConnectorError("Connect the WhatsApp conversion account first", { retryable: false });
+      if (e.whatsappReferralId && !["LeadSubmitted", "ViewContent"].includes(e.eventName)) throw new ConnectorError("Choose a supported WhatsApp event", { retryable: false });
+      return {
+        event_name: e.eventName,
+        event_time: Math.floor(e.eventTime.getTime() / 1000),
+        event_id: e.eventId,
+        action_source: e.whatsappReferralId ? "business_messaging" : "system_generated",
+        ...(e.whatsappReferralId ? { messaging_channel: "whatsapp" } : {}),
+        user_data: e.whatsappReferralId
+          ? { ctwa_clid: e.whatsappReferralId, whatsapp_business_account_id: e.whatsappBusinessAccountId }
+          : { lead_id: e.leadId },
+        ...(!e.whatsappReferralId ? { custom_data: { event_source: "crm", lead_event_source: "SkinCRM" } } : {}),
+      };
+    }),
     ...(testEventCode ? { test_event_code: testEventCode } : {}),
   };
 }

@@ -1,4 +1,6 @@
+import { reconcileDeliveryReceipts } from "../messaging/delivery";
 import { logger } from "../logger";
+import { syncDueGoogleForms } from "../integrations/sync";
 import { processDueInboundEvents } from "../integrations/processor";
 import { processSlaBreaches } from "../leads/sla";
 import { housekeeping, processDueAutomations } from "./jobs";
@@ -27,10 +29,13 @@ export function startWorker(pollMs: number): () => Promise<void> {
       try {
         // Drain: keep going while full batches come back.
         let processed = 0;
+        let batches = 0;
         do {
           // New leads first: an automation may be waiting on them.
           processed = (await processDueInboundEvents()) + (await processDueAutomations()) + (await processSlaBreaches()) + (await processFeedbackOutbox());
-        } while (processed > 0 && !stopping);
+          await heartbeat("worker");
+        } while (processed > 0 && !stopping && ++batches < 10);
+        await reconcileDeliveryReceipts();
 
         // Tells /health/ready and the monitor the worker is alive.
         await heartbeat("worker");
@@ -41,6 +46,7 @@ export function startWorker(pollMs: number): () => Promise<void> {
         if (Date.now() - lastMonitor > MONITOR_MS) {
           lastMonitor = Date.now();
           await runMonitor();
+          await syncDueGoogleForms();
         }
 
         if (Date.now() - lastHousekeeping > HOUSEKEEPING_MS) {

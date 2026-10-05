@@ -38,6 +38,8 @@ jobs:
       CONNECTOR_EMAIL: mock
       CONNECTOR_WHATSAPP: mock
       CONNECTOR_META: mock
+      CONNECTOR_GOOGLE: mock
+      CONVERSION_FEEDBACK_ENABLED: "true"
       OUTBOUND_SENDING_ENABLED: "false"
       WORKER_IN_API: "false"
 

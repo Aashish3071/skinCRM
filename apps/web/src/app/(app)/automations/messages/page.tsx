@@ -1,10 +1,12 @@
+import { apiFetch } from "@/lib/api";
+import { DeliveryReview, type Receipt } from "./delivery-review";
 import Link from "next/link";
 import { SUPPRESSION_REASON_LABELS, type MessageDto } from "@skincrm/contracts";
 import { ChatIcon, MailIcon } from "@/components/icons";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
 import { clinicTime, relativeTime } from "@/lib/format";
 import { getMessages } from "@/lib/messaging";
-import { requireCapability } from "@/lib/session";
+import { can, requireCapability } from "@/lib/session";
 
 export const metadata = { title: "Sent messages — SkinCRM" };
 
@@ -26,6 +28,7 @@ const FILTERS = [
 
 export default async function MessagesPage({ searchParams }: { searchParams: Promise<Search> }) {
   const session = await requireCapability("templates:read");
+  const receipts = can(session, "templates:write") ? (await apiFetch<{ items: Receipt[] }>("/messages/delivery-review")).items : [];
   const params = await searchParams;
   const state = FILTERS.find((f) => f.key === params.state)?.key ?? "all";
   const channel = params.channel === "email" || params.channel === "whatsapp" ? params.channel : "";
@@ -46,6 +49,7 @@ export default async function MessagesPage({ searchParams }: { searchParams: Pro
     <>
       <PageHeader title="Sent messages" description="Every email and WhatsApp the CRM sent — and, if one didn't go, why." />
 
+      <DeliveryReview receipts={receipts} timezone={session.clinic.timezone} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-lg border border-line-strong bg-surface p-0.5" role="group" aria-label="Status">
           {FILTERS.map((f) => (

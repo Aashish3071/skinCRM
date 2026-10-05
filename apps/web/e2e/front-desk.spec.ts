@@ -34,7 +34,8 @@ async function ensureWorkingHours(request: APIRequestContext) {
 test("walk-in → book → confirm visit → won", async ({ page, request }) => {
   await ensureWorkingHours(request);
   const tag = Date.now().toString().slice(-7);
-  const name = `E2E Walkin ${tag}`;
+  const suffix = [...tag].map((digit) => String.fromCharCode(97 + Number(digit))).join("");
+  const name = `Quality Walkin ${suffix}`;
 
   await test.step("sign in as front desk", async () => {
     await page.goto("/login");

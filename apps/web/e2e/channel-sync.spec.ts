@@ -1,0 +1,70 @@
+import { expect, test, type Locator } from "@playwright/test";
+
+const API = process.env.E2E_API_URL ?? "http://localhost:4000";
+const PASSWORD = "ChangeMe-Dev-2026!";
+
+// Run only against a disposable seeded database, with all three connector modes set to mock.
+test("admin connects all channels and enables independently tested conversion sync", async ({ page, request }) => {
+  const signedIn = await request.post(`${API}/auth/login`, { data: { email: "admin@sunshine-skin.test", password: PASSWORD } });
+  expect(signedIn.ok()).toBeTruthy();
+  const overview = await (await request.get(`${API}/integrations`)).json();
+  expect(overview.modes).toMatchObject({ meta: "mock", google: "mock", whatsapp: "mock" });
+  for (const connection of overview.connections) expect((await request.delete(`${API}/integrations/${connection.id}`)).ok()).toBeTruthy();
+  for (const destination of ["meta", "google"]) expect((await request.delete(`${API}/feedback/${destination}/credentials`)).ok()).toBeTruthy();
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.goto("/login");
+  await page.getByLabel("Email").fill("admin@sunshine-skin.test");
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  await page.getByRole("button", { name: /sign in/i }).click();
+  await expect(page).toHaveURL(/\/home/);
+  await page.goto("/settings/integrations");
+  await page.getByRole("button", { name: "Connect with Facebook", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Choose your Facebook Page" })).toBeVisible();
+  await page.getByRole("button", { name: "Connect this Page" }).click();
+  await expect(page).toHaveURL(/\/settings\/integrations\?/);
+  await page.getByRole("button", { name: "Connect with Google Ads", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Choose your Google Ads account" })).toBeVisible();
+  await page.getByRole("button", { name: "Connect this ad account" }).click();
+  await expect(page).toHaveURL(/\/settings\/integrations\?/);
+  await page.getByRole("button", { name: "Connect WhatsApp", exact: true }).click();
+  await expect(page.getByText("Connected with Meta's WhatsApp sign-up.", { exact: false })).toBeVisible();
+  await page.goto("/settings/feedback");
+  const meta = page.locator('section[aria-labelledby="fb-meta"]');
+  const google = page.locator('section[aria-labelledby="fb-google"]');
+  await meta.getByRole("button", { name: "Load connected accounts" }).click();
+  await meta.getByLabel("Meta test event code", { exact: true }).fill("META_TEST");
+  await meta.getByRole("button", { name: "Use this dataset" }).click();
+  await expect(meta.getByText("Dataset: 900000000000003", { exact: false })).toBeVisible();
+  await meta.getByLabel("WhatsApp test event code", { exact: true }).fill("WA_TEST");
+  await meta.getByRole("button", { name: "Connect WhatsApp outcomes" }).click();
+  await expect(meta.getByText("WhatsApp dataset connected:", { exact: false })).toBeVisible();
+  await meta.getByRole("checkbox", { name: /^Booked/ }).check();
+  await meta.getByRole("checkbox", { name: /^Also report leads/ }).check();
+  await meta.getByRole("button", { name: "Save milestones" }).click();
+  const allowTesting = async (card: Locator) => {
+    await card.getByRole("checkbox", { name: /^Our privacy/ }).check();
+    await card.getByRole("checkbox", { name: /^We checked/ }).check();
+    await card.getByRole("checkbox", { name: /^We understand/ }).check();
+    await card.getByRole("button", { name: "Confirm and allow testing" }).click();
+    await expect(card.getByRole("button", { name: "Send a test event" })).toBeVisible();
+  };
+  await allowTesting(meta);
+  await meta.getByRole("button", { name: "Send a test event" }).click();
+  await expect(meta.getByRole("button", { name: "Go live" })).toBeDisabled();
+  await meta.getByRole("button", { name: "Test WhatsApp outcomes" }).click();
+  await expect(meta.getByRole("button", { name: "Go live" })).toBeEnabled();
+  await meta.getByRole("button", { name: "Go live" }).click();
+  await expect(meta.getByText("Live", { exact: true })).toBeVisible();
+
+  await google.getByRole("button", { name: "Load connected accounts" }).click();
+  await google.getByRole("button", { name: "Use connected Google Ads account" }).click();
+  await google.getByRole("checkbox", { name: /^Booked/ }).check();
+  await google.getByLabel("Booked conversion action", { exact: true }).selectOption("333");
+  await google.getByRole("button", { name: "Save milestones" }).click();
+  await allowTesting(google);
+  await google.getByRole("button", { name: "Send a test event" }).click();
+  await expect(google.getByRole("button", { name: "Go live" })).toBeEnabled();
+  await google.getByRole("button", { name: "Go live" }).click();
+  await expect(google.getByText("Live", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "/tmp/skincrm-channel-sync.png", fullPage: true });
+});

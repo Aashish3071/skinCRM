@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
   normalizeEmail,
   normalizePhone,
@@ -12,10 +12,10 @@ import {
 } from "@skincrm/contracts";
 import { schema, type TenantDatabase } from "@skincrm/db";
 import { getContext, getTx } from "../context";
-import { badRequest, notFound } from "../errors";
+import { badRequest, conflict, notFound } from "../errors";
 import { diffSummary, recordAudit } from "../audit";
 
-const { people, branches, generalNotes, consentRecords, personMerges, leads, activities, tasks } = schema;
+const { people, branches, generalNotes, consentRecords, personMerges, leads, activities, tasks, appointments, messages, sourceSubmissions, automationEnrollments, suppressions, conversations, conversationNotes } = schema;
 
 type PersonRow = typeof people.$inferSelect;
 
@@ -301,6 +301,8 @@ export async function mergePeople(params: {
     throw badRequest("A person cannot be merged into themselves.");
   }
 
+  // Serialize merges of overlapping records in a deterministic order.
+  await tx.select({ id: people.id }).from(people).where(inArray(people.id, [params.survivingPersonId, params.mergedPersonId])).orderBy(people.id).for("update");
   const surviving = await getPerson(params.survivingPersonId);
   const merged = await getPerson(params.mergedPersonId);
 
@@ -328,6 +330,30 @@ export async function mergePeople(params: {
     .set({ personId: surviving.id })
     .where(eq(consentRecords.personId, merged.id));
   await tx.update(activities).set({ personId: surviving.id }).where(eq(activities.personId, merged.id));
+
+  const related: Record<string, string[]> = {};
+  for (const [name, table] of Object.entries(mergeRelatedTables)) {
+    related[name] = (await tx.select({ id: table.id }).from(table).where(eq(table.personId, merged.id))).map((row) => row.id);
+    await tx.update(table).set({ personId: surviving.id }).where(eq(table.personId, merged.id));
+  }
+  const threadMoves = [];
+  const losingThreads = await tx.select().from(conversations).where(eq(conversations.personId, merged.id));
+  for (const thread of losingThreads) {
+    const target = (await tx.select().from(conversations).where(and(eq(conversations.personId, surviving.id), eq(conversations.channel, thread.channel))))[0];
+    const messageIds = (await tx.select({ id: messages.id }).from(messages).where(eq(messages.conversationId, thread.id))).map((r) => r.id);
+    const noteIds = (await tx.select({ id: conversationNotes.id }).from(conversationNotes).where(eq(conversationNotes.conversationId, thread.id))).map((r) => r.id);
+    if (!target) {
+      await tx.update(conversations).set({ personId: surviving.id }).where(eq(conversations.id, thread.id));
+      threadMoves.push({ thread, targetId: null, messageIds, noteIds });
+      continue;
+    }
+    await tx.update(messages).set({ conversationId: target.id }).where(eq(messages.conversationId, thread.id));
+    await tx.update(conversationNotes).set({ conversationId: target.id }).where(eq(conversationNotes.conversationId, thread.id));
+    await tx.update(conversations).set({ tags: [...new Set([...target.tags, ...thread.tags])], unreadCount: target.unreadCount + thread.unreadCount, status: target.status === "open" || thread.status === "open" ? "open" : target.status }).where(eq(conversations.id, target.id));
+    await tx.delete(conversations).where(eq(conversations.id, thread.id));
+    await refreshConversation(target.id);
+    threadMoves.push({ thread, targetId: target.id, messageIds, noteIds });
+  }
 
   // Fill blanks on the survivor from the record being folded in, so a merge
   // never loses a contact detail the clinic had.
@@ -365,6 +391,8 @@ export async function mergePeople(params: {
       taskIds: movedTasks.map((r) => r.id),
       consentIds: movedConsent.map((r) => r.id),
       activityIds: movedActivities.map((r) => r.id),
+      related,
+      threadMoves,
       filledFields: Object.keys(filled),
       reason: params.reason ?? null,
     },
@@ -387,12 +415,17 @@ export async function mergePeople(params: {
 /** Undo a merge using its snapshot. */
 export async function revertMerge(mergeId: string): Promise<void> {
   const tx = getTx();
-  const rows = await tx.select().from(personMerges).where(eq(personMerges.id, mergeId)).limit(1);
+  const rows = await tx.select().from(personMerges).where(eq(personMerges.id, mergeId)).limit(1).for("update");
   const merge = rows[0];
   if (!merge) throw notFound("No such merge.");
   if (merge.revertedAt) throw badRequest("That merge has already been reverted.");
 
+  await tx.select({ id: people.id }).from(people).where(inArray(people.id, [merge.survivingPersonId, merge.mergedPersonId])).orderBy(people.id).for("update");
+  const later = await tx.select({ id: personMerges.id }).from(personMerges).where(and(ne(personMerges.id, merge.id), isNull(personMerges.revertedAt), gt(personMerges.mergedAt, merge.mergedAt), or(inArray(personMerges.survivingPersonId, [merge.survivingPersonId, merge.mergedPersonId]), inArray(personMerges.mergedPersonId, [merge.survivingPersonId, merge.mergedPersonId])))).limit(1);
+  if (later.length) throw conflict("Undo later merges involving these patients first.");
   const snapshot = merge.snapshot as {
+    related?: Record<string, string[]>;
+    threadMoves?: { thread: typeof conversations.$inferSelect; targetId: string | null; messageIds: string[]; noteIds: string[] }[];
     leadIds?: string[];
     noteIds?: string[];
     taskIds?: string[];
@@ -404,14 +437,14 @@ export async function revertMerge(mergeId: string): Promise<void> {
   // Move back only the rows this merge actually moved. Anything created since
   // stays with the survivor, which is what a user expects from an undo.
   const restore = async (
-    table: typeof leads | typeof generalNotes | typeof tasks | typeof consentRecords | typeof activities,
+    table: typeof leads | typeof generalNotes | typeof tasks | typeof consentRecords | typeof activities | (typeof mergeRelatedTables)[keyof typeof mergeRelatedTables],
     ids: string[] | undefined,
   ) => {
     if (!ids || ids.length === 0) return;
     await tx
       .update(table)
       .set({ personId: merge.mergedPersonId })
-      .where(sql`${table.id} in ${ids}`);
+      .where(and(inArray(table.id, ids), eq(table.personId, merge.survivingPersonId)));
   };
 
   await restore(leads, snapshot.leadIds);
@@ -419,6 +452,34 @@ export async function revertMerge(mergeId: string): Promise<void> {
   await restore(tasks, snapshot.taskIds);
   await restore(consentRecords, snapshot.consentIds);
   await restore(activities, snapshot.activityIds);
+  for (const [name, table] of Object.entries(mergeRelatedTables)) await restore(table, snapshot.related?.[name]);
+  for (const move of snapshot.threadMoves ?? []) {
+    const existing = (await tx.select({ id: conversations.id }).from(conversations).where(and(eq(conversations.personId, merge.mergedPersonId), eq(conversations.channel, move.thread.channel))))[0];
+    if (existing) throw conflict("The original patient has a new conversation. Merge that history before undoing this merge.");
+    if (!move.targetId) {
+      const [current] = await tx.select().from(conversations).where(eq(conversations.id, move.thread.id));
+      if (!current) throw conflict("This conversation changed after the merge. Review it before undoing.");
+      const newMessages = (await tx.select({ id: messages.id }).from(messages).where(eq(messages.conversationId, current.id))).filter((r) => !move.messageIds.includes(r.id));
+      const newNotes = (await tx.select({ id: conversationNotes.id }).from(conversationNotes).where(eq(conversationNotes.conversationId, current.id))).filter((r) => !move.noteIds.includes(r.id));
+      await tx.update(conversations).set({ personId: merge.mergedPersonId }).where(eq(conversations.id, move.thread.id));
+      if (newMessages.length || newNotes.length) {
+        const [fresh] = await tx.insert(conversations).values({ ...current, id: undefined, personId: merge.survivingPersonId, leadId: null }).returning();
+        if (newMessages.length) await tx.update(messages).set({ conversationId: fresh!.id }).where(inArray(messages.id, newMessages.map((r) => r.id)));
+        if (newNotes.length) await tx.update(conversationNotes).set({ conversationId: fresh!.id }).where(inArray(conversationNotes.id, newNotes.map((r) => r.id)));
+        await refreshConversation(fresh!.id);
+      }
+      await refreshConversation(current.id);
+    } else {
+      const row = { ...move.thread };
+      for (const key of ["createdAt", "updatedAt", "lastMessageAt", "lastInboundAt", "replyingUntil"] as const) {
+        if (row[key]) (row as Record<string, unknown>)[key] = new Date(row[key]!);
+      }
+      await tx.insert(conversations).values(row);
+      if (move.messageIds.length) await tx.update(messages).set({ conversationId: row.id }).where(inArray(messages.id, move.messageIds));
+      if (move.noteIds.length) await tx.update(conversationNotes).set({ conversationId: row.id }).where(inArray(conversationNotes.id, move.noteIds));
+      await refreshConversation(move.targetId);
+    }
+  }
 
   await tx
     .update(people)
@@ -467,4 +528,26 @@ export function serializePerson(row: PersonRow): PersonDto {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+const mergeRelatedTables = { appointments, messages, sourceSubmissions, automationEnrollments, suppressions, deliveryAttempts: schema.deliveryAttempts };
+
+async function refreshConversation(id: string): Promise<void> {
+  const tx = getTx();
+  const latest = (await tx.select().from(messages).where(eq(messages.conversationId, id)).orderBy(desc(messages.createdAt), desc(messages.id)).limit(1))[0];
+  const inbound = (await tx.select().from(messages).where(and(eq(messages.conversationId, id), eq(messages.direction, "inbound"))).orderBy(desc(messages.createdAt)).limit(1))[0];
+  await tx.update(conversations).set({ lastMessageAt: latest?.createdAt ?? null, lastInboundAt: inbound?.createdAt ?? null, lastPreview: latest?.renderedBody?.slice(0, 180) ?? null, lastDirection: latest?.direction ?? null, updatedAt: new Date() }).where(eq(conversations.id, id));
+}
+
+/** Follow merge aliases so future inquiries keep reaching the surviving patient. */
+export async function canonicalPersonId(id: string): Promise<string> {
+  const seen = new Set<string>();
+  for (let depth = 0; depth < 50; depth++) {
+    if (seen.has(id)) throw conflict("This patient has an invalid merge history. Contact support.");
+    seen.add(id);
+    const person = await getPerson(id);
+    if (!person.mergedIntoPersonId) return id;
+    id = person.mergedIntoPersonId;
+  }
+  throw conflict("This patient's merge history needs review.");
 }

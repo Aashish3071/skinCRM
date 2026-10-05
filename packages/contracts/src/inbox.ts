@@ -12,12 +12,14 @@ export const listConversationsQuerySchema = z.object({
   view: z.enum(INBOX_VIEWS).default("open"),
   search: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).max(1000000).default(0),
 });
 
 export const conversationSummarySchema = z.object({
   id: uuidSchema,
   personId: uuidSchema,
   personName: z.string(),
+  tags: z.array(z.string()),
   leadId: uuidSchema.nullable(),
   status: z.enum(CONVERSATION_STATUSES),
   assignedUserId: uuidSchema.nullable(),
@@ -59,11 +61,13 @@ export const conversationDetailSchema = conversationSummarySchema.extend({
   /** Someone else is typing a reply right now. */
   replyingName: z.string().nullable(),
   items: z.array(threadItemSchema),
+  nextCursor: z.object({ before: isoDateTime, beforeId: uuidSchema }).nullable(),
 });
 export type ConversationDetail = z.infer<typeof conversationDetailSchema>;
 
 export const replySchema = z
   .object({
+    requestId: uuidSchema.optional(),
     body: optionalShortText(4_096),
     /** An approved template, for when the 24-hour window has closed. */
     templateKey: optionalShortText(80),

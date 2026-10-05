@@ -233,6 +233,7 @@ export const activities = pgTable(
     leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }),
 
     type: activityTypeEnum("type").notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true, mode: "date" }),
     /** Short human summary. Safe to show in a list. */
     summary: text("summary").notNull(),
     /** Longer detail, e.g. a contact-attempt note. May be sensitive. */

@@ -1,5 +1,5 @@
 
-import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { clinicIdColumn, primaryId, timestamps } from "./_shared";
 import { contactChannelEnum, conversationStatusEnum } from "./enums";
 import { clinics, users } from "./tenancy";
@@ -24,6 +24,7 @@ export const conversations = pgTable(
     /** The inquiry this thread is most about, for the "open lead" link. */
     leadId: uuid("lead_id").references(() => leads.id, { onDelete: "set null" }),
 
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
     status: conversationStatusEnum("status").notNull().default("open"),
     assignedUserId: uuid("assigned_user_id").references(() => users.id, { onDelete: "set null" }),
 

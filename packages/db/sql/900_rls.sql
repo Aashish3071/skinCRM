@@ -61,6 +61,7 @@ declare
     -- Phase 4: messaging
     'message_templates',
     'messages',
+    'delivery_attempts',
     'suppressions',
     'automation_rules',
     'automation_enrollments',

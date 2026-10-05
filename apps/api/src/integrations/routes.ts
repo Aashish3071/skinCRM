@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   connectMetaSchema,
@@ -13,13 +13,14 @@ import {
   type IntegrationsOverview,
 } from "@skincrm/contracts";
 import { getEnv } from "@skincrm/config";
-import { ConnectorError, getConnectors, getMetaLeadsConnector, WhatsAppCloudConnector } from "@skincrm/connectors";
+import { ConnectorError, getConnectors, getMetaLeadsConnector, getOAuthClients, WhatsAppCloudConnector } from "@skincrm/connectors";
 import { schema } from "@skincrm/db";
-import { encryptForClinic } from "@skincrm/security";
+import { decryptForClinic, encryptForClinic } from "@skincrm/security";
 import { getContext, getTx } from "../context";
 import { badRequest, conflict, notFound } from "../errors";
 import { recordAudit } from "../audit";
 import { registerRoute } from "../route";
+import { invalidateConnectionFeedback } from "../feedback/service";
 import { whatsappConnector } from "./connections";
 import { enqueueEvent, processDueInboundEvents } from "./processor";
 import { sha256 } from "./webhooks";
@@ -107,7 +108,7 @@ export function registerIntegrationRoutes(app: FastifyInstance): void {
     handler: async () => {
       const key = randomBytes(24).toString("base64url");
       const existing = await getTx().select().from(integrationConnections).where(eq(integrationConnections.provider, "google_lead_forms")).limit(1);
-      if (existing[0]) await getTx().delete(integrationConnections).where(eq(integrationConnections.id, existing[0].id));
+      if (existing[0]) { await invalidateConnectionFeedback(existing[0].id); await getTx().delete(integrationConnections).where(eq(integrationConnections.id, existing[0].id)); }
       const connection = await upsertConnection("google_lead_forms", sha256(key), "Google Ads lead forms", key, {});
       // Shown once. Only its hash and an encrypted copy are kept.
       return { ...connection, key };
@@ -121,10 +122,55 @@ export function registerIntegrationRoutes(app: FastifyInstance): void {
     params: z.object({ id: uuidSchema }),
     status: 204,
     handler: async ({ params }) => {
+      const before = (await getTx().select().from(integrationConnections).where(eq(integrationConnections.id, params.id)).limit(1))[0];
+      if (!before) throw notFound("No such connection.");
+      await invalidateConnectionFeedback(before.id);
       const rows = await getTx().delete(integrationConnections).where(eq(integrationConnections.id, params.id)).returning();
       if (!rows[0]) throw notFound("No such connection.");
       await recordAudit({ action: "integration_disconnected", entityType: "integration", entityId: params.id, changeSummary: { provider: rows[0].provider } });
       return null;
+    },
+  });
+
+  registerRoute(app, {
+    method: "POST", url: "/integrations/events/:id/retry", auth: { capability: "integrations:write" },
+    params: z.object({ id: uuidSchema }),
+    handler: async ({ params }) => {
+      const event = (await getTx().select().from(inboundEvents).where(eq(inboundEvents.id, params.id)).limit(1))[0];
+      if (!event) throw notFound("No such event.");
+      if (event.state !== "failed") throw badRequest("Only failed events can be retried.");
+      if (!event.connectionId) throw badRequest("The original channel was removed. This event cannot be retried through a replacement connection.");
+      await getTx().update(inboundEvents).set({ state: "pending", attempts: 0, lastError: null, nextAttemptAt: new Date(), lockedUntil: null }).where(eq(inboundEvents.id, event.id));
+      await recordAudit({ action: "settings_changed", entityType: "inbound_event", entityId: event.id, changeSummary: { retry: true } });
+      return { queued: true };
+    },
+  });
+
+  registerRoute(app, {
+    method: "POST", url: "/integrations/:id/check", auth: { capability: "integrations:write" },
+    params: z.object({ id: uuidSchema }),
+    handler: async ({ params }) => {
+      const connection = (await getTx().select().from(integrationConnections).where(eq(integrationConnections.id, params.id)).limit(1))[0];
+      if (!connection) throw notFound("No such connection.");
+      const token = connection.encryptedSecret ? decryptForClinic(connection.clinicId, connection.encryptedSecret) : null;
+      let ok = false;
+      let detail: string;
+      try {
+        if (!token) throw badRequest("Reconnect this channel.");
+        if (connection.provider === "meta_lead_ads") {
+          const check = await getMetaLeadsConnector().verifyPage(connection.externalAccountId, token);
+          ok = check.ok; detail = check.detail;
+        } else if (connection.provider === "whatsapp_cloud") {
+          if (getEnv().CONNECTOR_WHATSAPP === "mock") { ok = true; detail = "Demo WhatsApp connection is available."; }
+          else { const check = await new WhatsAppCloudConnector({ phoneNumberId: connection.externalAccountId, accessToken: token }).verify(); ok = check.ok; detail = check.detail; }
+        } else if (connection.config.via === "oauth") {
+          const stored = JSON.parse(token);
+          await getOAuthClients().google.listLeadForms(stored.refreshToken, stored.account);
+          ok = true; detail = "Google Ads access is working.";
+        } else { ok = true; detail = "Webhook key is active. Send test data from Google Ads to confirm delivery."; }
+      } catch (error) { detail = error instanceof Error ? error.message : "Check failed"; }
+      await getTx().update(integrationConnections).set({ status: ok ? "healthy" : "error", lastCheckedAt: new Date(), lastError: ok ? null : detail.slice(0, 500), updatedAt: new Date() }).where(eq(integrationConnections.id, connection.id));
+      return { ok, detail };
     },
   });
 
@@ -254,6 +300,8 @@ export async function upsertConnection(
 ): Promise<ConnectionDto> {
   const context = getContext();
   const tx = getTx();
+  const existing = (await tx.select().from(integrationConnections).where(and(eq(integrationConnections.externalAccountId, externalAccountId), eq(integrationConnections.provider, provider))).limit(1))[0];
+  if (existing?.provider === provider) await invalidateConnectionFeedback(existing.id);
   const values = {
     clinicId: context.clinicId!,
     provider,
@@ -274,6 +322,12 @@ export async function upsertConnection(
       .onConflictDoUpdate({ target: [integrationConnections.provider, integrationConnections.externalAccountId], set: values, setWhere: eq(integrationConnections.clinicId, context.clinicId!) })
       .returning();
     if (!rows[0]) throw conflict("That account is already connected to another clinic.");
+    const previous = await tx.select().from(integrationConnections).where(eq(integrationConnections.provider, provider));
+    for (const old of previous) {
+      if (old.id === rows[0].id) continue;
+      await invalidateConnectionFeedback(old.id);
+      await tx.delete(integrationConnections).where(eq(integrationConnections.id, old.id));
+    }
     await recordAudit({ action: "integration_connected", entityType: "integration", entityId: rows[0].id, changeSummary: { provider } });
     return serializeConnection(rows[0]);
   } catch (error) {

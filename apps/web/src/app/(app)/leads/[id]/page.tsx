@@ -1,3 +1,4 @@
+import { InquiryNoteControls } from "./note-controls";
 import Link from "next/link";
 import { LEAD_SOURCE_LABELS } from "@skincrm/contracts";
 import { CalendarIcon, MailIcon, PhoneIcon } from "@/components/icons";
@@ -115,6 +116,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                       </time>
                     </div>
                     {entry.body && <p className="mt-1 whitespace-pre-wrap text-sm text-ink-muted">{entry.body}</p>}
+                    {writable && entry.type === "note" && <InquiryNoteControls leadId={lead.id} noteId={entry.id} body={entry.body ?? ""} canArchive={can(session, "notes:archive")} />}
                     {entry.actorLabel && <p className="mt-0.5 text-xs text-ink-subtle">{entry.actorLabel}</p>}
                   </li>
                 ))}

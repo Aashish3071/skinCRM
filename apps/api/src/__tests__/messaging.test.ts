@@ -429,7 +429,8 @@ describe("idempotency (PRD MSG-05)", () => {
     const second = await app.inject({ method: "POST", url: "/messages", headers, payload });
 
     expect(first.json().state).toBe("sent");
-    expect(second.json().suppressionReason).toBe("duplicate_idempotency_key");
+    expect(second.json().state).toBe("sent");
+    expect(second.json().messageId).toBe(first.json().messageId);
     expect(email.outbox()).toHaveLength(1);
   });
 });

@@ -74,9 +74,10 @@ function toConnectorError(error: unknown): ConnectorError {
     const mailbox = code === 550 || code === 551 || code === 553;
     return new ConnectorError(message, {
       retryable: false,
+      definitelyNotSent: true,
       providerCode: String(code),
       permanentSuppression: mailbox,
     });
   }
-  return new ConnectorError(message, { retryable: true, providerCode: code ? String(code) : "connection" });
+  return new ConnectorError(message, { retryable: true, definitelyNotSent: Boolean(code && code >= 400 && code < 500), providerCode: code ? String(code) : "connection" });
 }

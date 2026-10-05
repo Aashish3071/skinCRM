@@ -50,9 +50,11 @@ const eventName = z
 
 export const mappingEntrySchema = z.object({
   enabled: z.boolean(),
+  whatsappEventName: z.enum(["LeadSubmitted", "ViewContent"]).default("LeadSubmitted"),
   /** Meta: the event name. Google: a label shown here (Google uses the conversion action). */
   eventName: eventName,
   /** Google only: the conversion action to report into. */
+  conversionCustomerId: z.string().regex(/^\d*$/).max(30).default(""),
   conversionActionId: z.string().trim().regex(/^\d*$/, "Numbers only").max(30).optional().default(""),
 });
 
@@ -62,10 +64,10 @@ export const feedbackMappingSchema = z.object(
 export type FeedbackMapping = z.infer<typeof feedbackMappingSchema>;
 
 export const DEFAULT_FEEDBACK_MAPPING: FeedbackMapping = {
-  qualified: { enabled: false, eventName: "QualifiedLead", conversionActionId: "" },
-  consultation_booked: { enabled: false, eventName: "BookedLead", conversionActionId: "" },
-  consultation_attended: { enabled: false, eventName: "AttendedLead", conversionActionId: "" },
-  converted: { enabled: false, eventName: "ConvertedLead", conversionActionId: "" },
+  qualified: { enabled: false, eventName: "QualifiedLead", conversionActionId: "", whatsappEventName: "LeadSubmitted", conversionCustomerId: "" },
+  consultation_booked: { enabled: false, eventName: "BookedLead", conversionActionId: "", whatsappEventName: "LeadSubmitted", conversionCustomerId: "" },
+  consultation_attended: { enabled: false, eventName: "AttendedLead", conversionActionId: "", whatsappEventName: "LeadSubmitted", conversionCustomerId: "" },
+  converted: { enabled: false, eventName: "ConvertedLead", conversionActionId: "", whatsappEventName: "LeadSubmitted", conversionCustomerId: "" },
 };
 
 export const saveFeedbackSettingsSchema = z.object({
@@ -84,6 +86,8 @@ export const connectMetaCapiSchema = z.object({
   datasetId: z.string().trim().regex(/^\d{5,30}$/, "The dataset (pixel) ID is a long number"),
   accessToken: shortText(1_000),
   testEventCode: optionalShortText(40),
+  whatsappDatasetId: z.string().trim().regex(/^\d{5,30}$/).optional().or(z.literal("")),
+  whatsappBusinessAccountId: z.string().trim().regex(/^\d{5,30}$/).optional().or(z.literal("")),
 });
 
 export const connectGoogleFeedbackSchema = z.object({
@@ -109,6 +113,10 @@ export const feedbackDestinationSchema = z.object({
   lastTestOk: z.boolean().nullable(),
   lastTestDetail: z.string().nullable(),
   hasTestEventCode: z.boolean(),
+  whatsappConnected: z.boolean(),
+  whatsappDatasetId: z.string().nullable(),
+  whatsappBusinessAccountId: z.string().nullable(),
+  whatsappTestOk: z.boolean().nullable(),
 });
 export type FeedbackDestinationDto = z.infer<typeof feedbackDestinationSchema>;
 
@@ -138,4 +146,13 @@ export interface FeedbackPreview {
   identifiers: Record<string, string>;
   payload: unknown;
   mode: "test" | "production";
+}
+
+export interface FeedbackAssets {
+  metaDatasets: { id: string; name: string; businessName: string }[];
+  googleActions: { id: string; name: string; ownerCustomerId: string }[];
+  metaConnected: boolean;
+  whatsappConnected: boolean;
+  googleConnected: boolean;
+  errors: { channel: "meta" | "google"; message: string }[];
 }

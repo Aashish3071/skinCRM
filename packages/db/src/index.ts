@@ -1,5 +1,6 @@
 export {
   getDb,
+  getDeliveryDb,
   getOwnerDb,
   withTenant,
   withoutTenantScope,

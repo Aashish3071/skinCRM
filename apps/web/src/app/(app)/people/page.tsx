@@ -15,13 +15,17 @@ export default async function PeoplePage({
   const params = await searchParams;
   const search = typeof params.search === "string" ? params.search : "";
 
-  const query = new URLSearchParams({ limit: "50" });
+  const requestedPage = Number(params.page ?? 0);
+  const page = Number.isFinite(requestedPage) ? Math.max(0, Math.floor(requestedPage)) : 0;
+  const pageLink = (n: number) => `/people?${new URLSearchParams({ search, page: String(n) })}`;
+  const query = new URLSearchParams({ limit: "50", offset: String(page * 50) });
   if (search) query.set("search", search);
 
   const { items, totalCount } = await getPeople(query.toString());
 
   return (
     <>
+      {can(session, "people:write") && <Link href="/people/import" className="mb-3 inline-block text-sm text-brand">Import from CSV</Link>}
       <PageHeader
         title="Patients"
         description={`${totalCount} ${totalCount === 1 ? "person" : "people"}. One person can have many inquiries over time.`}
@@ -84,6 +88,7 @@ export default async function PeoplePage({
           )}
         </Card>
       </div>
+      <nav aria-label="Patient pages" className="mt-4 flex justify-between">{page > 0 ? <Link href={pageLink(page - 1)}>Previous</Link> : <span />}{(page + 1) * 50 < totalCount && <Link href={pageLink(page + 1)}>Next</Link>}</nav>
     </>
   );
 }

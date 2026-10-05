@@ -34,7 +34,7 @@ export class MockWhatsAppConnector implements WhatsAppConnector {
   async send(message: WhatsAppMessage): Promise<SendResult> {
     if (this.options.invalidRecipients?.includes(message.toWaId)) {
       throw new ConnectorError("Recipient is not a WhatsApp user", {
-        retryable: false,
+        retryable: false, definitelyNotSent: true,
         providerCode: "invalid_recipient",
         permanentSuppression: true,
       });
@@ -45,7 +45,7 @@ export class MockWhatsAppConnector implements WhatsAppConnector {
       this.options.unavailableTemplates?.includes(message.templateName)
     ) {
       throw new ConnectorError(`Template "${message.templateName}" is not available`, {
-        retryable: false,
+        retryable: false, definitelyNotSent: true,
         providerCode: "template_unavailable",
       });
     }

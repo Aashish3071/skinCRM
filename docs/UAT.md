@@ -38,3 +38,20 @@ column with the clinic.
 
 Browser coverage: `apps/web/e2e/front-desk.spec.ts` (walk-in → book → confirm
 → Won) runs in CI on every push.
+
+## Channel sync acceptance (D-90)
+
+Use [INTEGRATION_SYNC.md](INTEGRATION_SYNC.md) for prerequisites. The automated
+`channel-sync.spec.ts` runs only with mock providers and replaces demo account
+settings; always use a disposable database. Real pilot evidence is still needed:
+
+| Scenario | Automated coverage | Real pilot evidence |
+| --- | --- | --- |
+| Admin connects Page, Google customer/manager and WhatsApp number | OAuth/signup + channel-sync browser flow | Provider approval and chosen account IDs verified |
+| Connected datasets/actions selected without copying tokens | ad-sync API + browser | Accessible real dataset and offline action visible |
+| Returning WhatsApp ad inquiry stays on current lead | ad-sync API | Original source retained; genuine ctwa_clid captured |
+| Both enabled Meta paths tested separately | ad-sync API + browser | Correct test code and event in each dataset |
+| Google validated and final processing checked | ad-sync API + HTTP adapter | Validate-only succeeds, real upload reaches accepted/diagnostic result |
+| Reconnect/settings changes do not retarget waiting outcomes | ad-sync API + feedback regression | Queued outcomes canceled; fresh tests required |
+| New Google form linked; other CRM endpoint preserved | ad-sync API | Real new-form delivery and conflict shown |
+| Incoming and outbound failures retried without duplicate data | ad-sync API | Failure fixed; same original destination/event ID |

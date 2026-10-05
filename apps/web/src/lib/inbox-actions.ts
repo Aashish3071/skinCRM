@@ -1,5 +1,6 @@
 "use server";
 
+import type { ConversationDetail } from "@skincrm/contracts";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { ApiError, apiFetch } from "./api";
@@ -17,7 +18,7 @@ async function run(work: () => Promise<unknown>, id?: string): Promise<InboxResu
   return { ok: true };
 }
 
-export async function replyAction(id: string, input: { body?: string; templateKey?: string }): Promise<InboxResult> {
+export async function replyAction(id: string, input: { body?: string; templateKey?: string; requestId: string }): Promise<InboxResult> {
   let state: string | undefined;
   let detail: string | undefined;
   const result = await run(async () => {
@@ -70,4 +71,11 @@ export async function openConversationAction(personId: string): Promise<InboxRes
     return { ok: false, message: error instanceof ApiError ? error.message : "Could not reach the server." };
   }
   redirect(`/inbox/${id}`);
+}
+
+export async function olderConversationAction(id: string, cursor: { before: string; beforeId: string }) {
+  return apiFetch<ConversationDetail>(`/conversations/${id}?${new URLSearchParams(cursor)}`);
+}
+export async function setConversationTagsAction(id: string, tags: string[]): Promise<InboxResult> {
+ return run(() => apiFetch(`/conversations/${id}/tags`, { method: "PATCH", body: { tags } }), id);
 }

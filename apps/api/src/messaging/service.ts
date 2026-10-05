@@ -1,4 +1,7 @@
-import { eq } from "drizzle-orm";
+import { getEnv } from "@skincrm/config";
+import { refreshTemplateApproval } from "./whatsapp-templates";
+import { deliverOnce } from "./delivery";
+import { and, desc, eq } from "drizzle-orm";
 import type { SendableChannel, TemplateClassification } from "@skincrm/contracts";
 import { schema } from "@skincrm/db";
 import { ConnectorError, getConnectors } from "@skincrm/connectors";
@@ -63,6 +66,7 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
   const clinicId = context.clinicId!;
 
   const template = request.templateKey ? await loadTemplate(request.templateKey) : null;
+  if (template?.whatsappTemplateName && getEnv().CONNECTOR_WHATSAPP === "live") await refreshTemplateApproval(template);
   const channel: SendableChannel = template
     ? (template.channel as SendableChannel)
     : request.adHoc!.channel;
@@ -70,7 +74,11 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
     ? template.classification
     : (request.adHoc!.classification ?? "operational");
 
-  const destination = await resolveDestination(request.personId, channel);
+  let destination = await resolveDestination(request.personId, channel);
+  if (channel === "whatsapp" && request.conversationId) {
+    const [lastInbound] = await tx.select({ recipient: messages.recipient }).from(messages).where(and(eq(messages.conversationId, request.conversationId), eq(messages.personId, request.personId), eq(messages.direction, "inbound"))).orderBy(desc(messages.createdAt), desc(messages.id)).limit(1);
+    destination = lastInbound?.recipient ?? destination;
+  }
 
   // Every WhatsApp message, automated or not, belongs to the patient's inbox
   // thread — including ones that were blocked, so staff can see why.
@@ -100,7 +108,10 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
         { correlationId: context.correlationId, reason: decision.reason },
         "Send skipped as duplicate",
       );
-      return { messageId: "", state: "suppressed", suppressionReason: decision.reason, detail: decision.detail };
+      const [existing] = await tx.select().from(messages).where(eq(messages.idempotencyKey, request.idempotencyKey));
+      if (existing && ["sent", "delivered", "read"].includes(existing.state)) return { messageId: existing.id, state: "sent" };
+      if (existing?.state === "failed") return { messageId: existing.id, state: "failed", detail: existing.failureDetail ?? "This attempt failed. Check delivery before composing a new message.", retryable: false };
+      return { messageId: existing?.id ?? "", state: "suppressed", suppressionReason: decision.reason, detail: decision.detail };
     }
 
     const suppressed = await tx
@@ -182,9 +193,7 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
   }
 
   // --- Record before sending ----------------------------------------------
-  // The row exists first so the unique index has already claimed this
-  // idempotency key by the time the provider is called. A crash between the
-  // two leaves a `sending` row to reconcile, not a silent double send.
+  // The independent delivery receipt below survives this transaction rolling back.
   const inserted = await tx
     .insert(messages)
     .values({
@@ -219,7 +228,7 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
         .limit(1)
     )[0];
 
-    const result =
+    const result = await deliverOnce({ key: request.idempotencyKey, personId: request.personId, channel, payload: { destination, channel, classification, leadId: request.leadId ?? null, conversationId, templateId: template?.id ?? null, templateVersion: template?.version ?? null, ruleId: request.ruleId ?? null, triggeredByUserId: context.userId, body: renderedBody.text, subject: renderedSubject?.text, template: template?.whatsappTemplateName } }, async () =>
       channel === "email"
         ? await connectors.email.send({
             to: destination!,
@@ -250,7 +259,7 @@ export async function sendMessage(request: SendRequest): Promise<SendOutcome> {
                   body: renderedBody.text,
                   idempotencyKey: request.idempotencyKey,
                 },
-          );
+          ));
 
     await tx
       .update(messages)

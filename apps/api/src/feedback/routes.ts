@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   FEEDBACK_DESTINATIONS,
@@ -14,13 +14,14 @@ import {
   type FeedbackEventDto,
 } from "@skincrm/contracts";
 import { getEnv } from "@skincrm/config";
-import { ConnectorError, getFeedbackConnectors } from "@skincrm/connectors";
+import { ConnectorError, getFeedbackConnectors, getOAuthClients } from "@skincrm/connectors";
 import { schema } from "@skincrm/db";
 import { encryptForClinic } from "@skincrm/security";
 import { getContext, getTx } from "../context";
 import { badRequest } from "../errors";
 import { recordAudit } from "../audit";
 import { registerRoute } from "../route";
+import { registerFeedbackAssetRoutes } from "./assets";
 import { getConnection, secretOf } from "../integrations/connections";
 import {
   buildPayload,
@@ -53,7 +54,11 @@ function serialize(d: typeof feedbackDestinations.$inferSelect): FeedbackDestina
     lastTestAt: d.lastTestAt?.toISOString() ?? null,
     lastTestOk: d.lastTestOk,
     lastTestDetail: d.lastTestDetail,
-    hasTestEventCode: Boolean(creds?.testEventCode),
+    hasTestEventCode: Boolean(creds?.testEventCode || creds?.whatsappTestEventCode),
+    whatsappConnected: Boolean(d.config.whatsappDatasetId && d.config.whatsappBusinessAccountId && (creds?.whatsappAccessToken || creds?.accessToken)),
+    whatsappDatasetId: d.config.whatsappDatasetId ?? null,
+    whatsappBusinessAccountId: d.config.whatsappBusinessAccountId ?? null,
+    whatsappTestOk: d.config.whatsappTestOk === "true" ? true : d.config.whatsappTestOk === "false" ? false : null,
   };
 }
 
@@ -68,7 +73,17 @@ async function update(destination: "meta" | "google", values: Partial<typeof fee
   return serialize(updated[0]!);
 }
 
+async function replaceCredentials(destination: "meta" | "google", config: Record<string, string | null>, credentials: Record<string, unknown>, via = "manual") {
+  const row = await destinationRow(destination);
+  await cancelQueued(destination, "Conversion credentials changed");
+  return update(destination, {
+    config, encryptedSecret: encryptForClinic(getContext().clinicId!, JSON.stringify(credentials)),
+    eligibility: "unreviewed", lastTestOk: null, mappingVersion: row.mappingVersion + 1,
+  }, { credentials: "set", via });
+}
+
 export function registerFeedbackRoutes(app: FastifyInstance): void {
+  registerFeedbackAssetRoutes(app, update);
   // --- Overview (FB-06, FB-10) ----------------------------------------------------
   registerRoute(app, {
     method: "GET",
@@ -96,7 +111,7 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
         globallyEnabled: getEnv().CONVERSION_FEEDBACK_ENABLED,
         // Name and id only; the refresh token never leaves the server.
         connectedGoogleAds: await connectedGoogleAds().then((a) => (a ? { customerId: a.customerId, name: a.name } : null)),
-        modes: { meta: getFeedbackConnectors().meta.mode, google: getFeedbackConnectors().google.mode },
+        modes: { meta: getFeedbackConnectors().meta.mode, whatsapp: getFeedbackConnectors().whatsapp.mode, google: getFeedbackConnectors().google.mode },
         destinations: dests.map(serialize),
         volume,
         events: events.map(({ e, personName }): FeedbackEventDto => ({
@@ -117,6 +132,24 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
     },
   });
 
+  registerRoute(app, {
+    method: "POST", url: "/feedback/events/:id/retry", auth: { capability: "feedback:write" },
+    params: z.object({ id: uuidSchema }),
+    handler: async ({ params }) => {
+      const event = (await getTx().select().from(feedbackEvents).where(eq(feedbackEvents.id, params.id)).limit(1))[0];
+      if (!event || !["rejected", "blocked"].includes(event.state)) throw badRequest("Only rejected or blocked events can be retried.");
+      const lead = (await getTx().select().from(leads).where(eq(leads.id, event.leadId)).limit(1))[0];
+      if (!lead || lead.isTest) throw badRequest("Test leads cannot be sent to ad accounts.");
+      const row = await destinationRow(event.destination);
+      // Retrying never retargets an event after an account or mapping change.
+      const gate = feedbackGate(row, event, destinationSecrets(row));
+      if (!gate.send) throw badRequest(gate.reason);
+      await getTx().update(feedbackEvents).set({ state: "queued", attempts: 0, reason: null, nextAttemptAt: new Date(), lockedUntil: null, updatedAt: new Date() }).where(eq(feedbackEvents.id, event.id));
+      await recordAudit({ action: "settings_changed", entityType: "feedback_event", entityId: event.id, changeSummary: { retry: true } });
+      return { queued: true };
+    },
+  });
+
   // --- Mapping (FB-01) --------------------------------------------------------------
   registerRoute(app, {
     method: "PUT",
@@ -126,6 +159,23 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
     body: saveFeedbackSettingsSchema,
     handler: async ({ params, body }) => {
       const row = await destinationRow(params.destination);
+      if (params.destination === "google") {
+        const connection = await getConnection("google_lead_forms");
+        if (connection?.config.via === "oauth" && row.config.googleConnectionId === connection.id) {
+          const stored = JSON.parse(secretOf(connection) ?? "{}");
+          let actions;
+          try { actions = await getOAuthClients().google.listConversionActions(stored.refreshToken, stored.account); }
+          catch (error) { if (error instanceof ConnectorError) throw badRequest(error.message); throw error; }
+          for (const m of FEEDBACK_MILESTONES) {
+            const entry = body.mapping[m];
+            if (!entry.enabled) continue;
+            const action = actions.find((a) => a.id === entry.conversionActionId && (!entry.conversionCustomerId || a.ownerCustomerId === entry.conversionCustomerId));
+            if (!action) throw badRequest("Choose an enabled offline conversion action from the connected Google account.");
+            entry.conversionCustomerId = action.ownerCustomerId;
+          }
+        }
+      }
+      await cancelQueued(params.destination, "Sync settings changed");
       // Anything no longer mapped must not go out later.
       for (const m of FEEDBACK_MILESTONES) {
         if (row.mapping[m]?.enabled && !body.mapping[m].enabled) {
@@ -135,7 +185,7 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
             .where(and(eq(feedbackEvents.destination, params.destination), eq(feedbackEvents.milestone, m), eq(feedbackEvents.state, "queued")));
         }
       }
-      return update(params.destination, { mapping: body.mapping, includeWhatsAppAds: params.destination === "meta" ? body.includeWhatsAppAds : false, mappingVersion: row.mappingVersion + 1 }, {
+      return update(params.destination, { mapping: body.mapping, includeWhatsAppAds: params.destination === "meta" ? body.includeWhatsAppAds : false, mappingVersion: row.mappingVersion + 1, lastTestOk: null, config: { ...row.config, whatsappTestOk: null }, eligibility: row.eligibility === "approved_production" ? "approved_test_only" : row.eligibility }, {
         mappingVersion: row.mappingVersion + 1,
         enabled: FEEDBACK_MILESTONES.filter((m) => body.mapping[m].enabled),
       });
@@ -148,12 +198,9 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
     url: "/feedback/meta/credentials",
     auth: { capability: "feedback:write" },
     body: connectMetaCapiSchema,
-    handler: async ({ body }) =>
-      update("meta", {
-        config: { datasetId: body.datasetId },
-        encryptedSecret: encryptForClinic(getContext().clinicId!, JSON.stringify({ accessToken: body.accessToken, testEventCode: body.testEventCode ?? null })),
-        lastTestOk: null,
-      }, { credentials: "set" }),
+    handler: async ({ body }) => replaceCredentials("meta", {
+      datasetId: body.datasetId, whatsappDatasetId: body.whatsappDatasetId || null, whatsappBusinessAccountId: body.whatsappBusinessAccountId || null,
+    }, { accessToken: body.accessToken, testEventCode: body.testEventCode ?? null }),
   });
 
   registerRoute(app, {
@@ -161,12 +208,9 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
     url: "/feedback/google/credentials",
     auth: { capability: "feedback:write" },
     body: connectGoogleFeedbackSchema,
-    handler: async ({ body }) =>
-      update("google", {
-        config: { customerId: body.customerId },
-        encryptedSecret: encryptForClinic(getContext().clinicId!, JSON.stringify({ clientId: body.clientId, clientSecret: body.clientSecret, refreshToken: body.refreshToken, loginCustomerId: body.loginCustomerId ?? null })),
-        lastTestOk: null,
-      }, { credentials: "set" }),
+    handler: async ({ body }) => replaceCredentials("google", { customerId: body.customerId.replace(/-/g, "") }, {
+      clientId: body.clientId, clientSecret: body.clientSecret, refreshToken: body.refreshToken, loginCustomerId: body.loginCustomerId ?? null,
+    }),
   });
 
   /**
@@ -184,16 +228,11 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
       const env = getEnv();
       const live = env.CONNECTOR_GOOGLE === "live";
       if (live && (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET)) throw badRequest("The server is missing GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET.");
-      return update("google", {
-        config: { customerId: found.customerId },
-        encryptedSecret: encryptForClinic(getContext().clinicId!, JSON.stringify({
-          clientId: live ? env.GOOGLE_OAUTH_CLIENT_ID : "mock-client",
-          clientSecret: live ? env.GOOGLE_OAUTH_CLIENT_SECRET : "mock-secret",
-          refreshToken: found.refreshToken,
-          loginCustomerId: found.loginCustomerId,
-        })),
-        lastTestOk: null,
-      }, { credentials: "set", via: "google_connection" });
+      return replaceCredentials("google", { customerId: found.customerId, googleConnectionId: found.connectionId }, {
+        clientId: live ? env.GOOGLE_OAUTH_CLIENT_ID : "mock-client",
+        clientSecret: live ? env.GOOGLE_OAUTH_CLIENT_SECRET : "mock-secret",
+        refreshToken: found.refreshToken, loginCustomerId: found.loginCustomerId,
+      }, "google_connection");
     },
   });
 
@@ -246,7 +285,11 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
     handler: async ({ params }) => {
       const row = await destinationRow(params.destination);
       if (row.eligibility !== "approved_test_only") throw badRequest("Complete the checks and a test first.");
-      if (!row.lastTestOk) throw badRequest("Send a successful test event first.");
+      if (row.config.datasetId || params.destination === "google") {
+        if (!row.lastTestOk) throw badRequest("Send a successful test event first.");
+      }
+      if (row.includeWhatsAppAds && row.config.whatsappTestOk !== "true") throw badRequest("Send a successful WhatsApp test event first.");
+      if (params.destination === "meta" && !row.config.datasetId && !row.includeWhatsAppAds) throw badRequest("Connect a conversion destination first.");
       return update(params.destination, { eligibility: "approved_production" }, { eligibility: "approved_production" });
     },
   });
@@ -272,33 +315,20 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
     url: "/feedback/:destination/preview",
     auth: { capability: "feedback:read" },
     params: destParam,
-    body: z.object({ leadId: uuidSchema.optional() }),
+    body: z.object({ leadId: uuidSchema.optional(), channel: z.enum(["meta", "whatsapp", "google"]).optional() }),
     handler: async ({ params, body }) => {
       const row = await destinationRow(params.destination);
       const milestone = FEEDBACK_MILESTONES.find((m) => row.mapping[m]?.enabled);
       if (!milestone) throw badRequest("Map at least one milestone to preview it.");
-      const tx = getTx();
-      let lead: { id: string } | undefined;
-      if (body.leadId) lead = (await tx.select({ id: leads.id }).from(leads).where(eq(leads.id, body.leadId)).limit(1))[0];
-      if (!lead) {
-        // The newest lead that came from this platform, so the preview shows a real match.
-        const platform = params.destination === "meta" ? "meta" : "google";
-        lead = (
-          await tx
-            .select({ id: leads.id })
-            .from(leads)
-            .innerJoin(schema.sourceSubmissions, eq(schema.sourceSubmissions.id, leads.sourceSubmissionId))
-            .where(and(eq(schema.sourceSubmissions.platform, platform), isNotNull(leads.sourceSubmissionId)))
-            .orderBy(desc(leads.createdAt))
-            .limit(1)
-        )[0];
-      }
-      const match = lead ? await matchKeyFor(lead.id, row) : null;
+      const channel = body.channel ?? (params.destination === "google" ? "google" : row.config.datasetId ? "meta" : "whatsapp");
+      const matchLead = await matchingLead(row, channel, body.leadId);
+      const lead = matchLead ? { id: matchLead.leadId } : null;
+      const match = matchLead?.match ?? null;
       const sample = {
         milestone,
         eventId: lead ? feedbackEventId(row.clinicId, lead.id, milestone, row.destination) : "example-event-id",
         eventTime: new Date(),
-        matchKey: match?.key ?? (params.destination === "meta" ? "meta_lead_id" : "google_click_id"),
+        matchKey: match?.key ?? (channel === "whatsapp" ? "meta_whatsapp_referral_id" : params.destination === "meta" ? "meta_lead_id" : "google_click_id"),
         matchValue: match?.value ?? (params.destination === "meta" ? "1234567890123456" : "EXAMPLEgclid0000"),
       };
       return { ...previewFor(row, sample, destinationSecrets(row)), basedOn: lead && match ? "your newest matching lead" : "an example — no matching lead yet" };
@@ -309,36 +339,43 @@ export function registerFeedbackRoutes(app: FastifyInstance): void {
   registerRoute(app, {
     method: "POST",
     url: "/feedback/:destination/test",
+    body: z.object({ channel: z.enum(["meta", "whatsapp", "google"]).optional(), leadId: uuidSchema.optional() }).optional(),
     auth: { capability: "feedback:write" },
     params: destParam,
-    handler: async ({ params }) => {
+    handler: async ({ params, body }) => {
       const row = await destinationRow(params.destination);
+      const channel = body?.channel ?? (params.destination === "google" ? "google" : row.config.datasetId ? "meta" : "whatsapp");
+      if ((params.destination === "google") !== (channel === "google")) throw badRequest("Choose a channel for this destination.");
       const milestone = FEEDBACK_MILESTONES.find((m) => row.mapping[m]?.enabled);
       if (!milestone) throw badRequest("Map at least one milestone first.");
       const creds = destinationSecrets(row);
       // Always test mode, whatever the destination's state.
+      if (row.eligibility !== "approved_test_only" && row.eligibility !== "approved_production") throw badRequest("Complete the review before testing.");
       const testRow = { ...row, eligibility: "approved_test_only" as const };
-      const gate = feedbackGate(testRow, { milestone, mappingVersion: row.mappingVersion }, creds);
+      const gate = feedbackGate(testRow, { milestone, mappingVersion: row.mappingVersion, matchKey: channel === "whatsapp" ? "meta_whatsapp_referral_id" : channel === "meta" ? "meta_lead_id" : "google_click_id" }, creds);
       let ok = false;
       let detail: string;
       if (!gate.send) {
         detail = gate.reason;
       } else {
+        const matching = await matchingLead(row, channel, body?.leadId);
+        const mode = channel === "google" ? getFeedbackConnectors().google.mode : channel === "whatsapp" ? getFeedbackConnectors().whatsapp.mode : getFeedbackConnectors().meta.mode;
+        if (!matching && mode === "live") throw badRequest("Receive a real ad inquiry for this channel first. A live test must use the ad platform's actual lead or click ID.");
         const event = {
           milestone,
           eventId: `test-${randomUUID()}`,
           eventTime: new Date(),
-          matchKey: params.destination === "meta" ? "meta_lead_id" : "google_click_id",
-          matchValue: params.destination === "meta" ? "000000000000000" : "TeSt_GcLiD_0000",
+          matchKey: matching?.match.key ?? (channel === "whatsapp" ? "meta_whatsapp_referral_id" : params.destination === "meta" ? "meta_lead_id" : "google_click_id"),
+          matchValue: matching?.match.value ?? (channel === "whatsapp" ? "mock-ctwa-click" : params.destination === "meta" ? "000000000000000" : "TeSt_GcLiD_0000"),
         };
         try {
-          detail = await deliver(testRow, buildPayload(testRow, event, creds, true), creds!);
+          detail = (await deliver(testRow, buildPayload(testRow, event, creds, true), creds!)).detail;
           ok = true;
         } catch (error) {
           detail = error instanceof ConnectorError || error instanceof Error ? error.message : "Test failed";
         }
       }
-      await getTx().update(feedbackDestinations).set({ lastTestAt: new Date(), lastTestOk: ok, lastTestDetail: detail.slice(0, 500) }).where(eq(feedbackDestinations.id, row.id));
+      await getTx().update(feedbackDestinations).set({ lastTestAt: new Date(), ...(channel === "whatsapp" ? { config: { ...row.config, whatsappTestOk: String(ok) } } : { lastTestOk: ok }), lastTestDetail: detail.slice(0, 500) }).where(eq(feedbackDestinations.id, row.id));
       return { ok, detail };
     },
   });
@@ -350,5 +387,20 @@ async function connectedGoogleAds() {
   if (!connection || connection.config.via !== "oauth") return null;
   const stored = JSON.parse(secretOf(connection) ?? "{}") as { refreshToken?: string; account?: { customerId: string; name: string; loginCustomerId: string | null } };
   if (!stored.refreshToken || !stored.account) return null;
-  return { ...stored.account, refreshToken: stored.refreshToken };
+  return { ...stored.account, refreshToken: stored.refreshToken, connectionId: connection.id };
+}
+
+async function matchingLead(row: typeof feedbackDestinations.$inferSelect, channel: string, leadId?: string) {
+  const expected = channel === "whatsapp" ? "meta_whatsapp_referral_id" : channel === "google" ? "google_click_id" : "meta_lead_id";
+  const candidates = await getTx().select({ id: leads.id }).from(leads).innerJoin(schema.sourceSubmissions, or(eq(schema.sourceSubmissions.leadId, leads.id), eq(schema.sourceSubmissions.id, leads.sourceSubmissionId))).where(and(
+    leadId ? eq(leads.id, leadId) : undefined,
+    eq(schema.sourceSubmissions.platform, channel === "whatsapp" ? "whatsapp" : channel === "meta" ? "meta" : "google"),
+    eq(schema.sourceSubmissions.isTest, false),
+    channel === "whatsapp" ? eq(schema.sourceSubmissions.source, "whatsapp_ad") : undefined,
+  )).orderBy(desc(schema.sourceSubmissions.receivedAt));
+  for (const lead of candidates) {
+    const match = await matchKeyFor(lead.id, row, new Date(), channel as "meta" | "whatsapp" | "google");
+    if (match?.key === expected) return { leadId: lead.id, match };
+  }
+  return null;
 }

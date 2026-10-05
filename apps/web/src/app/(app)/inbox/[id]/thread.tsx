@@ -11,8 +11,10 @@ import {
   assignConversationAction,
   markReadAction,
   replyAction,
+  olderConversationAction,
   setConversationStatusAction,
   typingAction,
+  setConversationTagsAction,
 } from "@/lib/inbox-actions";
 import { Avatar } from "../shell";
 
@@ -43,6 +45,20 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   const lastTyping = useRef(0);
+  const intent = useRef<{ content: string; id: string } | null>(null);
+  const [older, setOlder] = useState<ConversationDetail["items"]>([]);
+  const [cursor, setCursor] = useState(convo.nextCursor);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadOlder = async () => {
+    if (!cursor || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const page = await olderConversationAction(convo.id, cursor);
+      setOlder((existing) => [...page.items, ...existing]);
+      setCursor(page.nextCursor);
+    } catch { setError("Could not load older messages. Try again."); }
+    finally { setLoadingOlder(false); }
+  };
   const windowOpen = Boolean(convo.windowOpenUntil);
   const approved = templates.filter((t) => t.whatsappTemplateName && t.whatsappStatus === "approved");
   const usableTemplates = windowOpen ? templates : approved;
@@ -76,11 +92,15 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
   const send = () => {
     if (!canSend) return;
     setError(null);
+    const content = JSON.stringify({ text, templateKey });
+    if (intent.current?.content !== content) intent.current = { content, id: crypto.randomUUID() };
+    const requestId = intent.current.id;
     startTransition(async () => {
       const result = mode === "note"
         ? await addConversationNoteAction(convo.id, text)
-        : await replyAction(convo.id, templateKey ? { templateKey } : { body: text });
+        : await replyAction(convo.id, templateKey ? { templateKey, requestId } : { body: text, requestId });
       if (!result.ok) return setError(result.message);
+      intent.current = null;
       setText("");
       setTemplateKey("");
       router.refresh();
@@ -92,7 +112,7 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
   const toggleDone = () =>
     startTransition(async () => { await setConversationStatusAction(convo.id, convo.status === "resolved" ? "open" : "resolved"); router.refresh(); });
 
-  const items = convo.items;
+  const items = Array.from(new Map([...older, ...convo.items].map((item) => [item.id, item])).values()).sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
 
   return (
     <>
@@ -122,6 +142,10 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
             <MoreIcon size={20} />
           </summary>
           <div className="absolute right-0 z-30 mt-1 w-64 rounded-lg bg-[var(--wa-list)] py-2 text-sm shadow-[var(--shadow-pop)]">
+            {canReply && <button type="button" className="block w-full px-4 py-2 text-left" onClick={() => {
+              const value = prompt("Conversation tags, separated by commas", convo.tags.join(", "));
+              if (value !== null) startTransition(async () => { const result = await setConversationTagsAction(convo.id, value.split(",").map((s) => s.trim()).filter(Boolean)); if (!result.ok) setError(result.message); else router.refresh(); });
+            }}>Edit tags{convo.tags.length ? `: ${convo.tags.join(", ")}` : ""}</button>}
             {canAssign && (
               <label className="block px-4 py-2">
                 <span className="text-xs text-[var(--wa-meta)]">Handled by</span>
@@ -142,6 +166,7 @@ export function Thread({ convo, timezone, templates, staff, canReply, canAssign,
       {/* Messages */}
       <div className="wa-wallpaper flex-1 overflow-y-auto px-3 py-3 sm:px-[6%]" aria-live="polite">
         <ol className="flex flex-col">
+          {cursor && <button type="button" className="mx-auto block rounded border px-3 py-2 text-sm" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? "Loading…" : "Load older messages"}</button>}
           {items.map((item, i) => {
             const prev = items[i - 1];
             const day = dayLabel(item.at, timezone);

@@ -6,6 +6,8 @@ import { Badge, Field, buttonClasses, inputClasses } from "@/components/ui";
 import { DigitsInput, EmailInput, PhoneInput } from "@/components/contact-inputs";
 import { WhatsAppConnect } from "./whatsapp-connect";
 import {
+  checkConnectionAction,
+  retryInboundAction,
   connectMetaAction,
   connectWhatsAppAction,
   createGoogleKeyAction,
@@ -66,6 +68,7 @@ function ConnectionFooter({ connection, testProvider, pending, run }: {
         {connection.displayName}
         {connection.lastEventAt ? ` · last lead ${new Date(connection.lastEventAt).toLocaleString()}` : " · nothing received yet"}
       </p>
+      <button type="button" disabled={pending} onClick={() => run(() => checkConnectionAction(connection.id))} className={buttonClasses("secondary", "sm")}>Check connection</button>
       {testProvider && (
         <button type="button" disabled={pending} onClick={() => run(() => sendTestLeadAction(testProvider))} className={buttonClasses("secondary", "sm")}>
           Send a test lead
@@ -374,4 +377,9 @@ function Advanced({ children }: { children: React.ReactNode }) {
       <div className="mt-3 flex flex-col gap-3">{children}</div>
     </details>
   );
+}
+
+export function RetryInboundButton({ id }: { id: string }) {
+  const { pending, result, run } = useRunner();
+  return <div><button type="button" disabled={pending} onClick={() => run(() => retryInboundAction(id))} className={buttonClasses("secondary", "sm")}>Retry</button><Outcome result={result} /></div>;
 }

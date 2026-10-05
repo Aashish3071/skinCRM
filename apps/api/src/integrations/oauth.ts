@@ -21,6 +21,7 @@ import { getContext, getTx } from "../context";
 import { badRequest, notFound } from "../errors";
 import { recordAudit } from "../audit";
 import { registerRoute } from "../route";
+import { invalidateConnectionFeedback } from "../feedback/service";
 import { getConnection, secretOf } from "./connections";
 import { serializeConnection, upsertConnection } from "./routes";
 import { sha256 } from "./webhooks";
@@ -44,7 +45,7 @@ const PENDING_TTL_MS = 15 * 60_000;
 const { authTokens, integrationConnections } = schema;
 
 type PendingSecret =
-  | { provider: "meta"; pages: { id: string; name: string; token: string; canReadLeads: boolean }[] }
+  | { provider: "meta"; userToken?: string; pages: { id: string; name: string; token: string; canReadLeads: boolean }[] }
   | { provider: "google"; refreshToken: string; accounts: GoogleAdsAccount[] };
 
 export function oauthRedirectUri(provider: OAuthProvider): string {
@@ -113,7 +114,7 @@ function choicesFor(secret: PendingSecret): OAuthChoice[] {
 }
 
 /** Put our webhook on every lead form that doesn't already have it. */
-async function attachLeadForms(refreshToken: string, account: GoogleAdsAccount, key: string, onlyMissing: boolean) {
+export async function attachLeadForms(refreshToken: string, account: GoogleAdsAccount, key: string, onlyMissing: boolean) {
   const client = getOAuthClients().google;
   const url = googleWebhookUrl();
   const forms = await provider("Google Ads", () => client.listLeadForms(refreshToken, account));
@@ -137,7 +138,7 @@ async function attachLeadForms(refreshToken: string, account: GoogleAdsAccount, 
   return { total: forms.length, added, failed, elsewhere };
 }
 
-function formsSentence(result: { total: number; added: number; failed: string[]; elsewhere: string[] }, onlyMissing: boolean): string {
+export function formsSentence(result: { total: number; added: number; failed: string[]; elsewhere: string[] }, onlyMissing: boolean): string {
   const parts: string[] = [];
   const ours = result.total - result.elsewhere.length;
   if (result.total === 0) parts.push("There are no lead forms in this account yet. Create one in Google Ads, then press Check for new lead forms.");
@@ -190,7 +191,7 @@ export function registerOAuthRoutes(app: FastifyInstance): void {
         const userToken = await provider("Facebook", () => clients.meta.exchangeCode({ code: body.code, redirectUri }));
         const pages = await provider("Facebook", () => clients.meta.listPages(userToken));
         if (!pages.length) throw badRequest("Your Facebook account doesn't manage any Pages, or you didn't allow access to them. Try again and tick the clinic's Page.");
-        secret = { provider: "meta", pages: pages.map((p) => ({ id: p.id, name: p.name, token: p.accessToken, canReadLeads: p.canReadLeads })) };
+        secret = { provider: "meta", userToken, pages: pages.map((p) => ({ id: p.id, name: p.name, token: p.accessToken, canReadLeads: p.canReadLeads })) };
       } else {
         const refreshToken = await provider("Google", () => clients.google.exchangeCode({ code: body.code, redirectUri }));
         const accounts = await provider("Google Ads", () => clients.google.listAccounts(refreshToken));
@@ -241,17 +242,23 @@ export function registerOAuthRoutes(app: FastifyInstance): void {
         if (!page.canReadLeads) throw badRequest("You need to be an admin or advertiser on this Page to receive its leads.");
         // Subscribe first: a saved connection that receives nothing is worse than a clear error.
         await provider("Facebook refused to send this Page's leads to SkinCRM", () => getOAuthClients().meta.subscribePage(page.id, page.token));
-        const connection = await upsertConnection("meta_lead_ads", page.id, page.name, page.token, { via: "oauth" });
+        const connection = await upsertConnection("meta_lead_ads", page.id, page.name, page.token, { via: "oauth", adTokenSealed: secret.userToken ? encryptForClinic(row.clinicId, secret.userToken) : null });
         return { connection, detail: `Connected ${page.name}. New leads from its forms will arrive in Leads within seconds.` };
       }
 
       const account = secret.accounts.find((a) => a.customerId === body.choiceId);
       if (!account) throw badRequest("Pick one of the ad accounts listed.");
-      const key = randomBytes(24).toString("base64url");
-      const result = await attachLeadForms(secret.refreshToken, account, key, false);
-      // One Google connection per clinic: replace any earlier one (and its key).
       const existing = await getConnection("google_lead_forms");
-      if (existing) await getTx().delete(integrationConnections).where(eq(integrationConnections.id, existing.id));
+      const priorSecret = existing ? secretOf(existing) : null;
+      const sameAccount = !existing?.config.customerId || existing.config.customerId === account.customerId;
+      const priorKey = sameAccount ? (existing?.config.via === "oauth" ? (JSON.parse(priorSecret ?? "{}") as { key?: string }).key : priorSecret) : null;
+      const key = priorKey || randomBytes(24).toString("base64url");
+      const result = await attachLeadForms(secret.refreshToken, account, key, false);
+      // A different account gets its own key; old forms must never be attributed to it.
+      if (existing && !sameAccount) {
+        await invalidateConnectionFeedback(existing.id);
+        await getTx().delete(integrationConnections).where(eq(integrationConnections.id, existing.id));
+      }
       const connection = await upsertConnection(
         "google_lead_forms",
         sha256(key),
@@ -259,6 +266,10 @@ export function registerOAuthRoutes(app: FastifyInstance): void {
         JSON.stringify({ key, refreshToken: secret.refreshToken, account }),
         { via: "oauth", customerId: account.customerId, loginCustomerId: account.loginCustomerId, leadForms: String(result.added) },
       );
+      if (result.failed.length || result.elsewhere.length) {
+        await getTx().update(integrationConnections).set({ status: "degraded", lastError: formsSentence(result, false).slice(0, 500) }).where(eq(integrationConnections.id, connection.id));
+        connection.status = "degraded"; connection.lastError = formsSentence(result, false).slice(0, 500);
+      }
       return { connection, detail: formsSentence(result, false) };
     },
   });
@@ -277,7 +288,7 @@ export function registerOAuthRoutes(app: FastifyInstance): void {
       const withWebhook = result.total - result.failed.length - result.elsewhere.length;
       const rows = await getTx()
         .update(integrationConnections)
-        .set({ config: { ...connection.config, leadForms: String(withWebhook) }, lastCheckedAt: new Date(), updatedAt: new Date() })
+        .set({ status: result.failed.length || result.elsewhere.length ? "degraded" : "healthy", lastError: result.failed.length || result.elsewhere.length ? formsSentence(result, true).slice(0, 500) : null, config: { ...connection.config, leadForms: String(withWebhook) }, lastCheckedAt: new Date(), updatedAt: new Date() })
         .where(eq(integrationConnections.id, connection.id))
         .returning();
       await recordAudit({ action: "settings_changed", entityType: "integration", entityId: connection.id, changeSummary: { googleLeadForms: withWebhook } });
@@ -326,6 +337,7 @@ export function registerOAuthRoutes(app: FastifyInstance): void {
       }
       const client = getWhatsAppSignupClient();
       const token = await provider("Meta", () => client.exchangeCode(body.code));
+      const details = await provider("Meta", () => client.numberDetails(body.phoneNumberId, token, body.wabaId));
       // Webhooks first: a connected number whose messages never arrive is the worst outcome.
       await provider("Meta refused to send this number's messages to SkinCRM", () => client.subscribeApp(body.wabaId, token));
       // A new number needs registering for the Cloud API with a two-step PIN; a
@@ -334,10 +346,9 @@ export function registerOAuthRoutes(app: FastifyInstance): void {
       if (!body.coexistence) {
         await provider("Meta couldn't register the number", () => client.registerNumber(body.phoneNumberId, token, pin));
       }
-      const details = await provider("Meta", () => client.numberDetails(body.phoneNumberId, token));
 
-      // One WhatsApp number per clinic: replace any earlier connection.
-      await getTx().delete(integrationConnections).where(eq(integrationConnections.provider, "whatsapp_cloud"));
+      // Upsert keeps the same number’s connection ID, so failed events stay recoverable.
+      // A different number replaces the old connection and invalidates its feedback.
       const connection = await upsertConnection(
         "whatsapp_cloud",
         body.phoneNumberId,

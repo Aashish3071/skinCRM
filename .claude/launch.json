@@ -34,6 +34,20 @@
         "3100"
       ],
       "port": 3100
+    },
+    {
+      "name": "api-audit",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DATABASE_URL=postgresql://skincrm:skincrm_dev_password@localhost:5433/skincrm_audit",
+        "DATABASE_APP_URL=postgresql://skincrm_app:skincrm_app_dev_password@localhost:5433/skincrm_audit",
+        "WORKER_IN_API=true",
+        "pnpm",
+        "--filter",
+        "@skincrm/api",
+        "dev"
+      ],
+      "port": 4000
     }
   ]
 }

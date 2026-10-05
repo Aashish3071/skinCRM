@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { aliasedTable, and, asc, desc, eq, ilike, isNull, ne, or, sql, type SQL } from "drizzle-orm";
+import { aliasedTable, and, desc, eq, lt, ilike, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
   WHATSAPP_SERVICE_WINDOW_HOURS,
@@ -16,7 +16,7 @@ import {
   type ConversationSummary,
   type ThreadItem,
 } from "@skincrm/contracts";
-import { getConnectors } from "@skincrm/connectors";
+import { getEnv } from "@skincrm/config";
 import { schema } from "@skincrm/db";
 import { getContext, getTx } from "../context";
 import { badRequest, conflict, forbidden, notFound } from "../errors";
@@ -50,7 +50,7 @@ export function registerInboxRoutes(app: FastifyInstance): void {
       if (query.view === "unread") where.push(sql`${conversations.unreadCount} > 0`);
       if (query.search) {
         const term = `%${query.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-        where.push(or(ilike(people.displayName, term), ilike(people.phoneE164, term))!);
+        where.push(or(ilike(people.displayName, term), ilike(people.phoneE164, term), sql`${conversations.tags}::text ilike ${term}`)!);
       }
       // A thread with nothing in it yet is noise in the list.
       where.push(sql`${conversations.lastMessageAt} is not null`);
@@ -61,8 +61,8 @@ export function registerInboxRoutes(app: FastifyInstance): void {
         .innerJoin(people, eq(people.id, conversations.personId))
         .leftJoin(assignee, eq(assignee.id, conversations.assignedUserId))
         .where(and(...where))
-        .orderBy(desc(conversations.unreadCount), desc(conversations.lastMessageAt))
-        .limit(query.limit);
+        .orderBy(desc(conversations.unreadCount), desc(conversations.lastMessageAt), desc(conversations.id))
+        .limit(query.limit + 1).offset(query.offset);
 
       const counts = await getTx()
         .select({
@@ -75,9 +75,11 @@ export function registerInboxRoutes(app: FastifyInstance): void {
         .where(sql`${conversations.lastMessageAt} is not null`);
 
       return {
-        items: rows.map((r) => summarize(r.c, r.personName, r.assignedName)),
+        items: rows.slice(0, query.limit).map((r) => summarize(r.c, r.personName, r.assignedName)),
+        offset: query.offset,
+        nextOffset: rows.length > query.limit ? query.offset + query.limit : null,
         counts: counts[0] ?? { open: 0, unread: 0, mine: 0, unassigned: 0 },
-        simulateAvailable: getConnectors().whatsapp.mode === "mock",
+        simulateAvailable: getEnv().CONNECTOR_WHATSAPP === "mock" && getEnv().NODE_ENV !== "production",
       };
     },
   });
@@ -88,7 +90,8 @@ export function registerInboxRoutes(app: FastifyInstance): void {
     url: "/conversations/:id",
     auth: { capability: "conversations:read" },
     params: z.object({ id: uuidSchema }),
-    handler: async ({ params }): Promise<ConversationDetail> => {
+    query: z.object({ before: z.string().datetime().optional(), beforeId: uuidSchema.optional() }).refine((q) => Boolean(q.before) === Boolean(q.beforeId), "Provide both cursor fields"),
+    handler: async ({ params, query }): Promise<ConversationDetail> => {
       const context = getContext();
       const tx = getTx();
       const assignee = aliasedTable(users, "assignee");
@@ -112,16 +115,18 @@ export function registerInboxRoutes(app: FastifyInstance): void {
       if (!row) throw notFound("No such conversation.");
 
       const sender = aliasedTable(users, "sender");
+      const olderMessages = query.before ? or(lt(messages.createdAt, new Date(query.before)), and(eq(messages.createdAt, new Date(query.before)), lt(messages.id, query.beforeId!))) : undefined;
+      const olderNotes = query.before ? or(lt(conversationNotes.createdAt, new Date(query.before)), and(eq(conversationNotes.createdAt, new Date(query.before)), lt(conversationNotes.id, query.beforeId!))) : undefined;
       const [msgs, notes] = await Promise.all([
         tx
           .select({ m: messages, senderName: sender.fullName, ruleName: automationRules.name })
           .from(messages)
           .leftJoin(sender, eq(sender.id, messages.triggeredByUserId))
           .leftJoin(automationRules, eq(automationRules.id, messages.ruleId))
-          .where(eq(messages.conversationId, params.id))
-          .orderBy(asc(messages.createdAt))
-          .limit(500),
-        tx.select().from(conversationNotes).where(eq(conversationNotes.conversationId, params.id)).orderBy(asc(conversationNotes.createdAt)),
+          .where(and(eq(messages.conversationId, params.id), olderMessages))
+          .orderBy(desc(messages.createdAt), desc(messages.id))
+          .limit(101),
+        tx.select().from(conversationNotes).where(and(eq(conversationNotes.conversationId, params.id), olderNotes)).orderBy(desc(conversationNotes.createdAt), desc(conversationNotes.id)).limit(101),
       ]);
 
       const items: ThreadItem[] = [
@@ -135,10 +140,12 @@ export function registerInboxRoutes(app: FastifyInstance): void {
           failureDetail: m.failureDetail,
           byLabel: m.direction === "inbound" ? null : (senderName ?? (ruleName ? null : "System")),
           automationName: ruleName,
-          at: (m.sentAt ?? m.createdAt).toISOString(),
+          at: m.createdAt.toISOString(),
         })),
         ...notes.map((n): ThreadItem => ({ kind: "note", id: n.id, body: n.body, byLabel: n.authorLabel, at: n.createdAt.toISOString() })),
-      ].sort((a, b) => a.at.localeCompare(b.at));
+      ].sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+      const page = items.slice(0, 100);
+      const oldest = page.at(-1);
 
       const replyingActive =
         row.c.replyingUserId && row.c.replyingUserId !== context.userId && row.c.replyingUntil && row.c.replyingUntil > new Date();
@@ -147,7 +154,8 @@ export function registerInboxRoutes(app: FastifyInstance): void {
         ...summarize(row.c, row.personName, row.assignedName),
         personPhone: row.personPhone,
         replyingName: replyingActive ? row.replyingName : null,
-        items,
+        items: page.reverse(),
+        nextCursor: items.length > 100 && oldest ? { before: oldest.at, beforeId: oldest.id } : null,
       };
     },
   });
@@ -282,7 +290,7 @@ export function registerInboxRoutes(app: FastifyInstance): void {
         conversationId: convo.id,
         templateKey: body.templateKey ?? undefined,
         adHoc: body.templateKey ? undefined : { channel: "whatsapp", body: body.body! },
-        idempotencyKey: `inbox:${convo.id}:${randomUUID()}`,
+        idempotencyKey: `inbox:${convo.id}:${body.requestId ?? randomUUID()}`,
         // Staff are answering a person who wrote to them; quiet hours are for
         // automated messages, not a conversation happening now.
         ignoreQuietHours: true,
@@ -304,6 +312,14 @@ export function registerInboxRoutes(app: FastifyInstance): void {
     },
   });
 
+  registerRoute(app, { method: "PATCH", url: "/conversations/:id/tags", auth: { capability: "conversations:write" }, params: z.object({ id: uuidSchema }), body: z.object({ tags: z.array(z.string().trim().min(1).max(40)).max(12) }), handler: async ({ params, body }) => {
+    await load(params.id);
+    const tags = [...new Set(body.tags.map((t) => t.toLowerCase()))];
+    await getTx().update(conversations).set({ tags, updatedAt: new Date() }).where(eq(conversations.id, params.id));
+    await recordAudit({ action: "record_updated", entityType: "conversation", entityId: params.id, changeSummary: { tags } });
+    return { tags };
+  } });
+
   // --- Development: simulate a patient writing in -----------------------------
   registerRoute(app, {
     method: "POST",
@@ -311,7 +327,7 @@ export function registerInboxRoutes(app: FastifyInstance): void {
     auth: { capability: "conversations:write" },
     body: simulateInboundSchema,
     handler: async ({ body }) => {
-      if (getConnectors().whatsapp.mode !== "mock") {
+      if (getEnv().CONNECTOR_WHATSAPP !== "mock" || getEnv().NODE_ENV === "production") {
         throw forbidden("Simulated messages are only available with the mock WhatsApp connector.");
       }
       return receiveInboundWhatsApp({
@@ -340,6 +356,7 @@ function summarize(
     id: c.id,
     personId: c.personId,
     personName,
+    tags: c.tags,
     leadId: c.leadId,
     status: c.status,
     assignedUserId: c.assignedUserId,

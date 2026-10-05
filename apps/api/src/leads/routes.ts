@@ -328,7 +328,7 @@ export function registerLeadRoutes(app: FastifyInstance): void {
       const rows = await tx
         .select()
         .from(activities)
-        .where(eq(activities.leadId, params.id))
+        .where(and(eq(activities.leadId, params.id), isNull(activities.archivedAt)))
         .orderBy(desc(activities.occurredAt));
 
       return {
@@ -404,6 +404,21 @@ export function registerLeadRoutes(app: FastifyInstance): void {
         summary: "Note added to this inquiry",
         body: body.body,
       });
+      return { ok: true };
+    },
+  });
+
+  for (const method of ["PATCH", "DELETE"] as const) registerRoute(app, {
+    method, url: "/leads/:id/notes/:noteId", auth: { capability: method === "DELETE" ? "notes:archive" : "leads:write" },
+    params: z.object({ id: uuidSchema, noteId: uuidSchema }), body: z.object({ body: z.string().trim().min(1).max(10000).optional() }),
+    handler: async ({ params, body }) => {
+      await assertLeadVisible(params.id);
+      const tx = getTx();
+      const [note] = await tx.select().from(activities).where(and(eq(activities.id, params.noteId), eq(activities.leadId, params.id), eq(activities.type, "note"), isNull(activities.archivedAt)));
+      if (!note) throw notFound("No such inquiry note.");
+      if (method === "PATCH" && !body.body) throw badRequest("Write a note before saving.");
+      await tx.update(activities).set(method === "DELETE" ? { archivedAt: new Date() } : { body: body.body }).where(eq(activities.id, note.id));
+      await recordAudit({ action: "record_updated", entityType: "inquiry_note", entityId: note.id, changeSummary: { archived: method === "DELETE", edited: method === "PATCH" } });
       return { ok: true };
     },
   });

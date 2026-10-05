@@ -22,3 +22,18 @@ export async function saveTemplateAction(id: string | null, input: CreateTemplat
     return { status: "error", message: "Could not reach the server. Try again." };
   }
 }
+
+export async function syncWhatsAppTemplatesAction() {
+  try {
+    const catalogue = await apiFetch<{ items: { id: string; name: string; language: string; status: string; supported: boolean; components: { type: string; text?: string }[] }[]; variables: { key: string; label: string }[] }>("/templates/whatsapp/sync", { method: "POST" });
+    revalidatePath("/automations/templates");
+    return { ok: true as const, catalogue };
+  } catch (error) { return { ok: false as const, message: error instanceof ApiError ? error.message : "Could not load WhatsApp templates." }; }
+}
+export async function importWhatsAppTemplateAction(id: string, variables: string[]) {
+  try {
+    await apiFetch("/templates/whatsapp/import", { method: "POST", body: { id, variables } });
+    revalidatePath("/automations/templates");
+    return { ok: true as const };
+  } catch (error) { return { ok: false as const, message: error instanceof ApiError ? error.message : "Could not import this template." }; }
+}

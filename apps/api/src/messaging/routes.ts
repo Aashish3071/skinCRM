@@ -1,3 +1,5 @@
+import { syncTemplates, importTemplate } from "./whatsapp-templates";
+import { whatsappConnector } from "../integrations/connections";
 import type { FastifyInstance } from "fastify";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -12,6 +14,7 @@ import {
   type MessageDto,
   type TemplateDto,
 } from "@skincrm/contracts";
+import { getEnv } from "@skincrm/config";
 import { schema } from "@skincrm/db";
 import { buildIdempotencyKey } from "@skincrm/security";
 import { getConnectors } from "@skincrm/connectors";
@@ -31,6 +34,8 @@ import {
 const { messageTemplates, messages, people, suppressions } = schema;
 
 export function registerMessagingRoutes(app: FastifyInstance): void {
+  registerRoute(app, { method: "POST", url: "/templates/whatsapp/sync", auth: { capability: "templates:write" }, handler: async () => syncTemplates() });
+  registerRoute(app, { method: "POST", url: "/templates/whatsapp/import", auth: { capability: "templates:write" }, body: z.object({ id: z.string().max(200), variables: z.array(z.string().max(100)).max(30) }), handler: async ({ body }) => importTemplate(body.id, body.variables) });
   // --- Available variables -------------------------------------------------
   registerRoute(app, {
     method: "GET",
@@ -205,7 +210,7 @@ export function registerMessagingRoutes(app: FastifyInstance): void {
           clinicId: context.clinicId!,
           personId: body.personId,
           ruleId: null,
-          triggerEventId: context.correlationId,
+          triggerEventId: body.requestId ?? context.correlationId,
           scheduleInstance: null,
           channel: body.channel ?? body.templateKey ?? "unknown",
         }),
@@ -314,11 +319,11 @@ export function registerMessagingRoutes(app: FastifyInstance): void {
       const connectors = getConnectors();
       const [email, whatsapp] = await Promise.all([
         connectors.email.verify(),
-        connectors.whatsapp.verify(),
+        whatsappConnector().then((c) => c.verify()).catch((e: Error) => ({ ok: false, detail: e.message })),
       ]);
       return {
         email: { mode: connectors.email.mode, ...email },
-        whatsapp: { mode: connectors.whatsapp.mode, ...whatsapp },
+        whatsapp: { mode: getEnv().CONNECTOR_WHATSAPP, ...whatsapp },
       };
     },
   });

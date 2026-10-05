@@ -54,38 +54,79 @@ export function resetConnectors(): void {
   cached = undefined;
 }
 
-import { LiveMetaLeadsConnector, MockMetaLeadsConnector, type MetaLeadsConnector } from "./meta/leads";
+import {
+  LiveMetaLeadsConnector,
+  MockMetaLeadsConnector,
+  type MetaLeadsConnector,
+} from "./meta/leads";
 
 let metaLeads: MetaLeadsConnector | undefined;
 
 /** Meta Lead Ads adapter for this process, from `CONNECTOR_META`. */
 export function getMetaLeadsConnector(): MetaLeadsConnector {
-  metaLeads ??= getEnv().CONNECTOR_META === "live" ? new LiveMetaLeadsConnector() : new MockMetaLeadsConnector();
+  metaLeads ??=
+    getEnv().CONNECTOR_META === "live"
+      ? new LiveMetaLeadsConnector()
+      : new MockMetaLeadsConnector();
   return metaLeads;
 }
 
-export function setMetaLeadsConnector(connector: MetaLeadsConnector | undefined): void {
+export function setMetaLeadsConnector(
+  connector: MetaLeadsConnector | undefined,
+): void {
   metaLeads = connector;
 }
 
 export * from "./meta/capi";
 export * from "./google/data-manager";
-import { LiveMetaCapiConnector, MockMetaCapiConnector, type MetaCapiConnector } from "./meta/capi";
-import { LiveGoogleFeedbackConnector, MockGoogleFeedbackConnector, type GoogleFeedbackConnector } from "./google/data-manager";
+import {
+  LiveMetaCapiConnector,
+  MockMetaCapiConnector,
+  type MetaCapiConnector,
+} from "./meta/capi";
+import {
+  LiveGoogleFeedbackConnector,
+  MockGoogleFeedbackConnector,
+  type GoogleFeedbackConnector,
+} from "./google/data-manager";
 
 let capi: MetaCapiConnector | undefined;
+let whatsappFeedback: MetaCapiConnector | undefined;
 let googleFeedback: GoogleFeedbackConnector | undefined;
 
 /** Conversion-feedback senders, from CONNECTOR_META / CONNECTOR_GOOGLE. */
-export function getFeedbackConnectors(): { meta: MetaCapiConnector; google: GoogleFeedbackConnector } {
+export function getFeedbackConnectors(): {
+  meta: MetaCapiConnector;
+  whatsapp: MetaCapiConnector;
+  google: GoogleFeedbackConnector;
+} {
   const env = getEnv();
-  capi ??= env.CONNECTOR_META === "live" ? new LiveMetaCapiConnector() : new MockMetaCapiConnector();
-  googleFeedback ??= env.CONNECTOR_GOOGLE === "live" ? new LiveGoogleFeedbackConnector() : new MockGoogleFeedbackConnector();
-  return { meta: capi, google: googleFeedback };
+  capi ??=
+    env.CONNECTOR_META === "live"
+      ? new LiveMetaCapiConnector()
+      : new MockMetaCapiConnector();
+  googleFeedback ??=
+    env.CONNECTOR_GOOGLE === "live"
+      ? new LiveGoogleFeedbackConnector()
+      : new MockGoogleFeedbackConnector();
+  whatsappFeedback ??=
+    env.CONNECTOR_WHATSAPP === "live"
+      ? new LiveMetaCapiConnector()
+      : new MockMetaCapiConnector();
+  return { meta: capi, whatsapp: whatsappFeedback, google: googleFeedback };
 }
 
-export function setFeedbackConnectors(next: { meta?: MetaCapiConnector; google?: GoogleFeedbackConnector } | undefined): void {
+export function setFeedbackConnectors(
+  next:
+    | {
+        meta?: MetaCapiConnector;
+        whatsapp?: MetaCapiConnector;
+        google?: GoogleFeedbackConnector;
+      }
+    | undefined,
+): void {
   capi = next?.meta;
+  whatsappFeedback = next?.whatsapp ?? next?.meta;
   googleFeedback = next?.google;
 }
 
@@ -93,9 +134,21 @@ export * from "./oauth/meta";
 export * from "./oauth/google";
 export * from "./oauth/whatsapp";
 import { ConnectorError } from "./types";
-import { LiveMetaOAuthClient, MockMetaOAuthClient, type MetaOAuthClient } from "./oauth/meta";
-import { LiveGoogleOAuthClient, MockGoogleOAuthClient, type GoogleOAuthClient } from "./oauth/google";
-import { LiveWhatsAppSignupClient, MockWhatsAppSignupClient, type WhatsAppSignupClient } from "./oauth/whatsapp";
+import {
+  LiveMetaOAuthClient,
+  MockMetaOAuthClient,
+  type MetaOAuthClient,
+} from "./oauth/meta";
+import {
+  LiveGoogleOAuthClient,
+  MockGoogleOAuthClient,
+  type GoogleOAuthClient,
+} from "./oauth/google";
+import {
+  LiveWhatsAppSignupClient,
+  MockWhatsAppSignupClient,
+  type WhatsAppSignupClient,
+} from "./oauth/whatsapp";
 
 let metaOAuth: MetaOAuthClient | undefined;
 let googleOAuth: GoogleOAuthClient | undefined;
@@ -105,26 +158,54 @@ let googleOAuth: GoogleOAuthClient | undefined;
  * Live mode with the app credentials missing throws a message for the operator
  * rather than silently falling back to the demo flow.
  */
-export function getOAuthClients(): { meta: MetaOAuthClient; google: GoogleOAuthClient } {
-  const env = getEnv();
-  if (!metaOAuth) {
-    if (env.CONNECTOR_META === "live") {
-      if (!env.META_APP_ID || !env.META_APP_SECRET) throw new ConnectorError("Connect with Facebook needs META_APP_ID and META_APP_SECRET on the server.", { retryable: false, providerCode: "not_configured" });
-      metaOAuth = new LiveMetaOAuthClient({ appId: env.META_APP_ID, appSecret: env.META_APP_SECRET, loginConfigId: env.META_LOGIN_CONFIG_ID ?? null });
-    } else metaOAuth = new MockMetaOAuthClient();
-  }
-  if (!googleOAuth) {
-    if (env.CONNECTOR_GOOGLE === "live") {
-      if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET || !env.GOOGLE_ADS_DEVELOPER_TOKEN)
-        throw new ConnectorError("Connect with Google needs GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET and GOOGLE_ADS_DEVELOPER_TOKEN on the server.", { retryable: false, providerCode: "not_configured" });
-      googleOAuth = new LiveGoogleOAuthClient({ clientId: env.GOOGLE_OAUTH_CLIENT_ID, clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET, developerToken: env.GOOGLE_ADS_DEVELOPER_TOKEN });
-    } else googleOAuth = new MockGoogleOAuthClient();
-  }
-  return { meta: metaOAuth, google: googleOAuth };
+export function getOAuthClients(): {
+  meta: MetaOAuthClient;
+  google: GoogleOAuthClient;
+} {
+  return {
+    get meta() {
+      const env = getEnv();
+      if (!metaOAuth) {
+        if (env.CONNECTOR_META === "live") {
+          if (!env.META_APP_ID || !env.META_APP_SECRET)
+            throw new ConnectorError(
+              "Connect with Facebook needs META_APP_ID and META_APP_SECRET on the server.",
+              { retryable: false, providerCode: "not_configured" },
+            );
+          metaOAuth = new LiveMetaOAuthClient({
+            appId: env.META_APP_ID,
+            appSecret: env.META_APP_SECRET,
+            loginConfigId: env.META_LOGIN_CONFIG_ID ?? null,
+          });
+        } else metaOAuth = new MockMetaOAuthClient();
+      }
+      return metaOAuth!;
+    },
+    get google() {
+      const env = getEnv();
+      if (!googleOAuth) {
+        if (env.CONNECTOR_GOOGLE === "live") {
+          if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET)
+            throw new ConnectorError(
+              "Connect with Google needs GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET on the server.",
+              { retryable: false, providerCode: "not_configured" },
+            );
+          googleOAuth = new LiveGoogleOAuthClient({
+            clientId: env.GOOGLE_OAUTH_CLIENT_ID,
+            clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+            developerToken: env.GOOGLE_ADS_DEVELOPER_TOKEN,
+          });
+        } else googleOAuth = new MockGoogleOAuthClient();
+      }
+      return googleOAuth!;
+    },
+  };
 }
 
 /** Tests swap in fakes; undefined resets to the env-selected clients. */
-export function setOAuthClients(next: { meta?: MetaOAuthClient; google?: GoogleOAuthClient } | undefined): void {
+export function setOAuthClients(
+  next: { meta?: MetaOAuthClient; google?: GoogleOAuthClient } | undefined,
+): void {
   metaOAuth = next?.meta;
   googleOAuth = next?.google;
 }
@@ -137,13 +218,53 @@ export function getWhatsAppSignupClient(): WhatsAppSignupClient {
   const env = getEnv();
   if (env.CONNECTOR_WHATSAPP === "live") {
     if (!env.META_APP_ID || !env.META_APP_SECRET || !env.META_WA_CONFIG_ID) {
-      throw new ConnectorError("Connect WhatsApp needs META_APP_ID, META_APP_SECRET and META_WA_CONFIG_ID on the server.", { retryable: false, providerCode: "not_configured" });
+      throw new ConnectorError(
+        "Connect WhatsApp needs META_APP_ID, META_APP_SECRET and META_WA_CONFIG_ID on the server.",
+        { retryable: false, providerCode: "not_configured" },
+      );
     }
-    whatsappSignup = new LiveWhatsAppSignupClient({ appId: env.META_APP_ID, appSecret: env.META_APP_SECRET });
+    whatsappSignup = new LiveWhatsAppSignupClient({
+      appId: env.META_APP_ID,
+      appSecret: env.META_APP_SECRET,
+    });
   } else whatsappSignup = new MockWhatsAppSignupClient();
   return whatsappSignup;
 }
 
-export function setWhatsAppSignupClient(next: WhatsAppSignupClient | undefined): void {
+export function setWhatsAppSignupClient(
+  next: WhatsAppSignupClient | undefined,
+): void {
   whatsappSignup = next;
 }
+
+export * from "./meta/advertising";
+import {
+  LiveMetaAdvertisingClient,
+  MockMetaAdvertisingClient,
+  type MetaAdvertisingClient,
+} from "./meta/advertising";
+let advertising: MetaAdvertisingClient | undefined;
+let whatsappAdvertising: MetaAdvertisingClient | undefined;
+export function getMetaAdvertisingClient(
+  channel: "meta" | "whatsapp" = "meta",
+): MetaAdvertisingClient {
+  if (channel === "whatsapp") {
+    whatsappAdvertising ??=
+      getEnv().CONNECTOR_WHATSAPP === "live"
+        ? new LiveMetaAdvertisingClient()
+        : new MockMetaAdvertisingClient();
+    return whatsappAdvertising;
+  }
+  advertising ??=
+    getEnv().CONNECTOR_META === "live"
+      ? new LiveMetaAdvertisingClient()
+      : new MockMetaAdvertisingClient();
+  return advertising;
+}
+export function setMetaAdvertisingClient(
+  client: MetaAdvertisingClient | undefined,
+): void {
+  advertising = client;
+  whatsappAdvertising = client;
+}
+export { listWhatsAppTemplates, type WhatsAppTemplate } from "./whatsapp/templates";

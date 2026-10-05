@@ -30,13 +30,16 @@ export interface GoogleCredentials {
 
 export interface GoogleFeedbackConnector {
   readonly mode: "mock" | "live";
-  send(params: { credentials: GoogleCredentials; conversions: GoogleConversion[]; validateOnly: boolean }): Promise<{ accepted: number; requestId: string | null }>;
+  status(credentials: GoogleCredentials, requestId: string): Promise<{ state: "processing" | "accepted" | "rejected"; detail: string }>;
+  send(params: { credentials: GoogleCredentials; conversions: GoogleConversion[]; validateOnly: boolean }): Promise<{ accepted: number; requestId: string | null; pending?: boolean }>;
 }
 
-export function dataManagerPayload(customerId: string, conversions: GoogleConversion[], validateOnly: boolean) {
+export function dataManagerPayload(customerId: string, conversions: GoogleConversion[], validateOnly: boolean, loginCustomerId?: string | null) {
   const account = customerId.replace(/-/g, "");
   return {
     destinations: [...new Set(conversions.map((c) => c.conversionActionId))].map((id) => ({
+      reference: id,
+      ...(loginCustomerId ? { loginAccount: { accountType: "GOOGLE_ADS", accountId: loginCustomerId.replace(/-/g, "") } } : {}),
       operatingAccount: { accountType: "GOOGLE_ADS", accountId: account },
       productDestinationId: id,
     })),
@@ -75,24 +78,44 @@ export class LiveGoogleFeedbackConnector implements GoogleFeedbackConnector {
       headers: {
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
-        ...(credentials.loginCustomerId ? { "login-customer-id": credentials.loginCustomerId.replace(/-/g, "") } : {}),
+
       },
-      body: JSON.stringify(dataManagerPayload(credentials.customerId, conversions, validateOnly)),
+      body: JSON.stringify(dataManagerPayload(credentials.customerId, conversions, validateOnly, credentials.loginCustomerId)),
       signal: AbortSignal.timeout(20_000),
     });
     const data = (await r.json().catch(() => ({}))) as { requestId?: string; error?: { message?: string; code?: number } };
     if (!r.ok) {
       throw new ConnectorError(data.error?.message ?? `Google returned ${r.status}`, { retryable: r.status >= 500 || r.status === 429, providerCode: String(r.status) });
     }
-    return { accepted: conversions.length, requestId: data.requestId ?? null };
+    if (!validateOnly && !data.requestId) throw new ConnectorError("Google returned no upload request ID", { retryable: true });
+    return { accepted: conversions.length, requestId: data.requestId ?? null, pending: !validateOnly };
   }
+  async status(credentials: GoogleCredentials, requestId: string) {
+    const token = await this.accessToken(credentials);
+    const response = await this.fetchImpl(`https://datamanager.googleapis.com/v1/requestStatus:retrieve?requestId=${encodeURIComponent(requestId)}`, {
+      headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000),
+    });
+    const result = await response.json().catch(() => ({})) as {
+      error?: { message?: string };
+      requestStatusPerDestination?: { requestStatus?: string; errorInfo?: { errorCounts?: { reason?: string }[] } }[];
+    };
+    if (!response.ok) throw new ConnectorError(result.error?.message ?? `Google returned ${response.status}`, { retryable: response.status >= 500 || response.status === 429 });
+    const states = result.requestStatusPerDestination ?? [];
+    if (states.some((s) => s.requestStatus === "FAILED" || s.requestStatus === "PARTIAL_SUCCESS")) {
+      return { state: "rejected" as const, detail: states.flatMap((s) => s.errorInfo?.errorCounts?.map((e) => e.reason ?? "Processing failed") ?? []).join(", ") || "Google rejected the conversion" };
+    }
+    if (states.length && states.every((s) => s.requestStatus === "SUCCESS")) return { state: "accepted" as const, detail: "Processed by Google" };
+    return { state: "processing" as const, detail: "Google is still processing this upload" };
+  }
+
 }
 
 export class MockGoogleFeedbackConnector implements GoogleFeedbackConnector {
   readonly mode = "mock" as const;
   readonly sent: unknown[] = [];
+  async status() { return { state: "accepted" as const, detail: "Processed by mock Google" }; }
   async send({ credentials, conversions, validateOnly }: { credentials: GoogleCredentials; conversions: GoogleConversion[]; validateOnly: boolean }) {
-    this.sent.push(dataManagerPayload(credentials.customerId, conversions, validateOnly));
+    this.sent.push(dataManagerPayload(credentials.customerId, conversions, validateOnly, credentials.loginCustomerId));
     return { accepted: conversions.length, requestId: `mock-${Date.now()}` };
   }
 }

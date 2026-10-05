@@ -124,6 +124,19 @@ describe("the outbox (FB-05, UAT 13)", () => {
     expect(meta.sent).toHaveLength(1);
   });
 
+  it("keeps queued test outcomes in test mode after production is enabled", async () => {
+    await setUpMeta();
+    const id = await lead();
+    await move(id, "consultation_booked");
+    const test = await app.inject({ method: "POST", url: "/feedback/meta/test", headers: { cookie: admin } });
+    expect(test.json().ok).toBe(true);
+    const live = await app.inject({ method: "POST", url: "/feedback/meta/go-live", headers: { cookie: admin }, payload: { confirm: true } });
+    expect(live.statusCode).toBe(200);
+    await processFeedbackOutbox();
+    expect((await events(id))[0]!.testMode).toBe(true);
+    expect((meta.sent.at(-1)!.payload as { test_event_code?: string }).test_event_code).toBe("TEST123");
+  });
+
   it("sends only the allowlisted fields — no names, contact details or services", async () => {
     await setUpMeta();
     const id = await lead();

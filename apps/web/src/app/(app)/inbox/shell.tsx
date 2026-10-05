@@ -26,7 +26,7 @@ export function InboxShell({ list, view, search, selectedId, children }: {
   children: React.ReactNode;
 }) {
   const q = (next: Record<string, string>) => {
-    const p = new URLSearchParams({ ...(view !== "open" ? { view } : {}), ...(search ? { search } : {}), ...next });
+    const p = new URLSearchParams({ ...(view !== "open" ? { view } : {}), ...(search ? { search } : {}), ...(list.offset ? { offset: String(list.offset) } : {}), ...next });
     for (const [k, v] of [...p]) if (!v || (k === "view" && v === "open")) p.delete(k);
     return p.size ? `?${p}` : "";
   };
@@ -43,7 +43,7 @@ export function InboxShell({ list, view, search, selectedId, children }: {
             {view !== "open" && <input type="hidden" name="view" value={view} />}
             <label htmlFor="inbox-search" className="sr-only">Search chats</label>
             <SearchIcon size={16} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--wa-meta)]" />
-            <input id="inbox-search" name="search" type="search" defaultValue={search} placeholder="Search name or number"
+            <input id="inbox-search" name="search" type="search" defaultValue={search} placeholder="Search name, number or tag"
               className="h-10 w-full rounded-lg border-0 bg-[var(--wa-panel)] pl-11 pr-3 text-sm text-[var(--wa-text)] placeholder:text-[var(--wa-meta)]" />
           </form>
           <nav aria-label="Filter chats" className="-mx-3 mt-2 overflow-x-auto px-3">
@@ -53,7 +53,7 @@ export function InboxShell({ list, view, search, selectedId, children }: {
                 const n = v.count ? list.counts[v.count] : 0;
                 return (
                   <li key={v.key}>
-                    <Link href={`/inbox${q({ view: v.key })}`} aria-current={active ? "true" : undefined}
+                    <Link href={`/inbox${q({ view: v.key, offset: "" })}`} aria-current={active ? "true" : undefined}
                       className={`flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[13px] ${
                         active ? "bg-[#d9fdd3] font-medium text-[#0a5c36]" : "bg-[var(--wa-panel)] text-[var(--wa-meta)] hover:text-[var(--wa-text)]"
                       }`}>
@@ -74,6 +74,7 @@ export function InboxShell({ list, view, search, selectedId, children }: {
           )}
           {list.items.map((c) => <Row key={c.id} c={c} active={c.id === selectedId} href={`/inbox/${c.id}${q({})}`} />)}
         </ul>
+        {(list.offset > 0 || list.nextOffset !== null) && <nav aria-label="Conversation pages" className="flex justify-between border-t border-line p-3 text-sm">{list.offset > 0 ? <Link href={`/inbox${q({ offset: String(Math.max(0, list.offset - 50)) })}`}>Previous</Link> : <span />}{list.nextOffset !== null && <Link href={`/inbox${q({ offset: String(list.nextOffset) })}`}>Next</Link>}</nav>}
       </section>
 
       <section aria-label="Chat" className={`${selectedId ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>

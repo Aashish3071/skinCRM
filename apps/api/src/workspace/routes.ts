@@ -75,7 +75,7 @@ export function registerWorkspaceRoutes(app: FastifyInstance): void {
     handler: async ({ query }) => {
       const context = getContext();
       const tx = getTx();
-      const where: SQL[] = [];
+      const where: SQL[] = [isNull(activities.archivedAt)];
       if (query.personId) where.push(eq(activities.personId, query.personId));
       const tz = context.clinicTimezone ?? "UTC";
       if (query.from) where.push(gte(activities.occurredAt, clinicLocalToUtc(query.from, "00:00", tz)));

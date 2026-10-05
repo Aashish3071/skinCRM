@@ -21,6 +21,7 @@ export const META_OAUTH_SCOPES = [
   "pages_manage_metadata",
   "leads_retrieval",
   "business_management",
+  "ads_management",
 ] as const;
 
 export interface MetaPageChoice {

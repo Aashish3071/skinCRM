@@ -28,6 +28,8 @@ export class ConnectorError extends Error {
     message: string,
     readonly options: {
       retryable: boolean;
+      /** Provider explicitly rejected the request before acceptance. */
+      definitelyNotSent?: boolean;
       providerCode?: string;
       /** Set when the provider says this recipient must never be contacted again. */
       permanentSuppression?: boolean;

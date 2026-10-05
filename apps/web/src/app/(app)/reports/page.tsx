@@ -120,7 +120,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Prom
           </Card>
 
           {data.campaigns.length > 0 && (
-            <Card title="Ad campaigns" description="Leads from Facebook, Instagram and Google ads, by campaign.">
+            <Card title="Ad campaigns" description="Leads by their latest recorded ad inquiry, including WhatsApp.">
               <table className="stack-table w-full text-sm">
                 <thead>
                   <tr className="border-b border-line text-left text-xs text-ink-subtle">

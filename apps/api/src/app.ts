@@ -1,3 +1,5 @@
+import { registerDeliveryRecoveryRoutes } from "./messaging/recovery-routes";
+import { registerCrmSettingsRoutes } from "./settings/routes";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
@@ -161,6 +163,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerIntakeRoutes(app);
   registerCalendarRoutes(app);
   registerMessagingRoutes(app);
+  registerDeliveryRecoveryRoutes(app);
   registerAutomationRoutes(app);
   registerUnsubscribeRoutes(app);
   registerWorkspaceRoutes(app);
@@ -171,6 +174,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerReportRoutes(app);
   registerAuditLogRoutes(app);
   registerProfileRoutes(app);
+  registerCrmSettingsRoutes(app);
   registerNotificationRoutes(app);
   registerFeedbackRoutes(app);
 

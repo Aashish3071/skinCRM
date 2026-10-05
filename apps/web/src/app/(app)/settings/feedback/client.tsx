@@ -6,6 +6,7 @@ import {
   FEEDBACK_MILESTONES,
   FEEDBACK_MILESTONE_LABELS,
   forbiddenWordIn,
+  type FeedbackAssets,
   type FeedbackDestinationDto,
   type FeedbackEventDto,
   type FeedbackMapping,
@@ -15,6 +16,9 @@ import { Badge, Field, buttonClasses, inputClasses } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
 import {
   applyGoogleConnectionAction,
+  applyMetaConnectionAction,
+  applyWhatsAppConnectionAction,
+  loadFeedbackAssetsAction,
   confirmChecklistAction,
   connectFeedbackAction,
   goLiveAction,
@@ -22,6 +26,7 @@ import {
   pauseFeedbackAction,
   previewFeedbackAction,
   revokeFeedbackAction,
+  retryFeedbackAction,
   saveMappingAction,
   testFeedbackAction,
   type FbResult,
@@ -83,12 +88,17 @@ export function DestinationCard({ dest, writable, demo, volume, googleAds = null
   const [result, setResult] = useState<FbResult | null>(null);
   const [mapping, setMapping] = useState<FeedbackMapping>(dest.mapping);
   const [wa, setWa] = useState(dest.includeWhatsAppAds);
+  const [whatsappTestCode, setWhatsappTestCode] = useState("");
+  const [assets, setAssets] = useState<FeedbackAssets | null>(null);
+  const [datasetId, setDatasetId] = useState("");
+  const [testCode, setTestCode] = useState("");
   const [checks, setChecks] = useState([false, false, false]);
   const [preview, setPreview] = useState<(FeedbackPreview & { basedOn: string }) | null>(null);
   const d = dest.destination;
   const act = (fn: () => Promise<FbResult>) => start(async () => setResult(await fn()));
   const mapped = FEEDBACK_MILESTONES.some((m) => dest.mapping[m].enabled);
   const reviewed = dest.eligibility === "approved_test_only" || dest.eligibility === "approved_production";
+  const testsPassed = (d !== "meta" || dest.accountLabel ? dest.lastTestOk === true : true) && (!dest.includeWhatsAppAds || dest.whatsappTestOk === true);
   const accepted = (m: string) => volume.filter((v) => v.milestone === m && v.state === "accepted").reduce((a, v) => a + v.n, 0);
   const badName = FEEDBACK_MILESTONES.map((m) => (mapping[m].enabled ? forbiddenWordIn(mapping[m].eventName) : null)).find(Boolean);
 
@@ -99,7 +109,7 @@ export function DestinationCard({ dest, writable, demo, volume, googleAds = null
           <h2 id={`fb-${d}`} className="text-base font-semibold">{NAMES[d]}</h2>
           <p className="mt-0.5 text-sm text-ink-muted">
             {d === "meta"
-              ? "For leads from Facebook/Instagram lead forms (and, if Meta confirms it for you, click-to-WhatsApp ads)."
+              ? "Bookings and client outcomes from Facebook/Instagram lead forms and click-to-WhatsApp ads."
               : "For leads from Google Ads that arrived with a click ID. Click ID only — no emails or phone numbers."}
           </p>
         </div>
@@ -113,8 +123,34 @@ export function DestinationCard({ dest, writable, demo, volume, googleAds = null
         </div>
       </header>
 
+      {demo && <p className="mb-4 rounded-lg bg-surface-muted p-3 text-sm text-ink-muted">Demo connection: events stay in this CRM. Nothing is sent to the ad platforms.</p>}
       <div className="flex flex-col gap-4">
-        <Step n={1} title="Connect the ad account" done={dest.connected}>
+        <Step n={1} title="Choose the conversion destination" done={dest.connected}>
+          {writable && (
+            <div className="mb-3 flex flex-col gap-3 rounded-lg border border-line p-3">
+              <p className="text-sm text-ink-muted">Use accounts already connected under <Link href="/settings/integrations" className="font-medium text-brand">Lead sources &amp; messaging</Link>.</p>
+              <div><button type="button" disabled={pending} onClick={() => act(async () => {
+                const loaded = await loadFeedbackAssetsAction();
+                if (!loaded.ok) return loaded;
+                setAssets(loaded.assets);
+                setDatasetId(loaded.assets.metaDatasets[0]?.id ?? "");
+                return { ok: true, detail: "Connected accounts loaded." };
+              })} className={buttonClasses("secondary", "sm")}>{assets ? "Refresh connected accounts" : "Load connected accounts"}</button></div>
+              {assets?.errors.filter((e) => e.channel === d).map((e) => <p key={e.channel} role="alert" className="text-sm text-critical">{e.message}</p>)}
+              {d === "meta" && assets && <>
+                <Field label="Meta test event code" htmlFor="linked-meta-test" hint="From Events Manager → Test events. Used only in test mode."><input id="linked-meta-test" value={testCode} onChange={(e) => setTestCode(e.target.value)} className={inputClasses} /></Field>
+                {assets.metaDatasets.length > 0 && <div className="flex flex-wrap items-end gap-2">
+                  <Field label="Facebook / Instagram dataset" htmlFor="linked-meta-dataset"><select id="linked-meta-dataset" value={datasetId} onChange={(e) => setDatasetId(e.target.value)} className={inputClasses}>{assets.metaDatasets.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.businessName}</option>)}</select></Field>
+                  <button type="button" disabled={pending || !datasetId} onClick={() => act(() => applyMetaConnectionAction(datasetId, testCode))} className={buttonClasses("primary", "sm")}>Use this dataset</button>
+                </div>}
+                {assets.metaConnected && !assets.metaDatasets.length && !assets.errors.some((e) => e.channel === "meta") && <p className="text-sm text-ink-muted">No datasets are shared with this Facebook connection. Share the CRM dataset in Meta Business Settings, then refresh.</p>}
+                {assets.whatsappConnected && <Field label="WhatsApp test event code" htmlFor="linked-whatsapp-test" hint="From the WhatsApp dataset’s Test events tab. Saved separately from the Facebook dataset code."><input id="linked-whatsapp-test" value={whatsappTestCode} onChange={(e) => setWhatsappTestCode(e.target.value)} className={inputClasses} /></Field>}
+                {assets.whatsappConnected && <div className="flex flex-wrap items-center gap-2"><p className="mr-auto text-sm text-ink-muted">Use the connected WhatsApp business number for ad outcomes.</p><button type="button" disabled={pending} onClick={() => act(() => applyWhatsAppConnectionAction(whatsappTestCode))} className={buttonClasses("primary", "sm")}>Connect WhatsApp outcomes</button></div>}
+                {dest.whatsappConnected && <p className="text-sm text-positive">WhatsApp dataset connected: {dest.whatsappDatasetId}</p>}
+              </>}
+              {d === "google" && assets?.googleConnected && <button type="button" disabled={pending} onClick={() => act(() => applyGoogleConnectionAction())} className={buttonClasses("primary", "sm")}>Use connected Google Ads account</button>}
+            </div>
+          )}
           {dest.connected ? (
             <div className="flex flex-wrap items-center gap-3 text-sm">
               <span className="text-ink-muted">{d === "meta" ? "Dataset" : "Customer ID"}: {dest.accountLabel}{d === "meta" && (dest.hasTestEventCode ? " · test code set" : " · no test code")}</span>
@@ -173,8 +209,12 @@ export function DestinationCard({ dest, writable, demo, volume, googleAds = null
                     <div className="flex flex-wrap gap-2">
                       <input aria-label={`${FEEDBACK_MILESTONE_LABELS[m].title} event name`} disabled={!writable} value={mapping[m].eventName} onChange={(e) => setMapping({ ...mapping, [m]: { ...mapping[m], eventName: e.target.value } })} className={`${inputClasses} w-44`} />
                       {d === "google" && (
-                        <input aria-label={`${FEEDBACK_MILESTONE_LABELS[m].title} conversion action ID`} placeholder="Conversion action ID" disabled={!writable} value={mapping[m].conversionActionId} onChange={(e) => setMapping({ ...mapping, [m]: { ...mapping[m], conversionActionId: e.target.value } })} className={`${inputClasses} w-48`} />
+                        assets?.googleActions.length ? <select aria-label={`${FEEDBACK_MILESTONE_LABELS[m].title} conversion action`} disabled={!writable} value={mapping[m].conversionActionId} onChange={(e) => {
+                          const action = assets.googleActions.find((a) => a.id === e.target.value);
+                          setMapping({ ...mapping, [m]: { ...mapping[m], conversionActionId: e.target.value, conversionCustomerId: action?.ownerCustomerId ?? "" } });
+                        }} className={`${inputClasses} w-56`}><option value="">Choose conversion action</option>{assets.googleActions.map((a) => <option key={`${a.ownerCustomerId}:${a.id}`} value={a.id}>{a.name}</option>)}</select> : <input aria-label={`${FEEDBACK_MILESTONE_LABELS[m].title} conversion action ID`} placeholder="Conversion action ID" disabled={!writable} value={mapping[m].conversionActionId} onChange={(e) => setMapping({ ...mapping, [m]: { ...mapping[m], conversionActionId: e.target.value } })} className={`${inputClasses} w-48`} />
                       )}
+                      {d === "meta" && wa && <select aria-label={`${FEEDBACK_MILESTONE_LABELS[m].title} WhatsApp event`} disabled={!writable} value={mapping[m].whatsappEventName ?? "LeadSubmitted"} onChange={(e) => setMapping({ ...mapping, [m]: { ...mapping[m], whatsappEventName: e.target.value as "LeadSubmitted" | "ViewContent" } })} className={`${inputClasses} w-48`}><option value="LeadSubmitted">WhatsApp: Lead submitted</option><option value="ViewContent">WhatsApp: Content viewed</option></select>}
                       <span className="self-center text-xs text-ink-subtle">{accepted(m)} sent in 28 days</span>
                     </div>
                   )}
@@ -184,7 +224,7 @@ export function DestinationCard({ dest, writable, demo, volume, googleAds = null
             {d === "meta" && (
               <label className="flex items-start gap-2.5 text-sm">
                 <input type="checkbox" disabled={!writable} checked={wa} onChange={(e) => setWa(e.target.checked)} className="mt-0.5" />
-                <span>Also report leads from click-to-WhatsApp ads <span className="block text-xs text-ink-subtle">Only after Meta has confirmed this matching is supported for your account.</span></span>
+                <span>Also report leads from click-to-WhatsApp ads <span className="block text-xs text-ink-subtle">Connect WhatsApp outcomes above and test with a real ad inquiry before going live.</span></span>
               </label>
             )}
             {badName && <p role="alert" className="text-sm text-critical">Event names can&rsquo;t mention services or health (&ldquo;{badName}&rdquo;). Use a funnel word like &ldquo;QualifiedLead&rdquo;.</p>}
@@ -224,17 +264,17 @@ export function DestinationCard({ dest, writable, demo, volume, googleAds = null
           <div className="flex flex-col gap-3 text-sm">
             <div className="flex flex-wrap gap-2">
               <button type="button" disabled={pending || !mapped} onClick={() => start(async () => { const r = await previewFeedbackAction(d); if (r.ok) setPreview(r.preview); else setResult({ ok: false, message: r.message }); })} className={buttonClasses("secondary", "sm")}>Preview what&rsquo;s sent</button>
-              {writable && reviewed && <button type="button" disabled={pending} onClick={() => act(() => testFeedbackAction(d))} className={buttonClasses("secondary", "sm")}>Send a test event</button>}
+              {writable && reviewed && <button type="button" disabled={pending} onClick={() => act(() => testFeedbackAction(d, d === "google" ? "google" : dest.accountLabel ? "meta" : "whatsapp"))} className={buttonClasses("secondary", "sm")}>Send a test event</button>}
               {writable && dest.eligibility === "approved_test_only" && (
-                <button type="button" disabled={pending || !dest.lastTestOk} onClick={() => { if (window.confirm(`Go live? Real milestones will be sent to ${d === "meta" ? "Meta" : "Google"} from now on. Old ones are not back-filled.`)) act(() => goLiveAction(d)); }} className={buttonClasses("primary", "sm")}>Go live</button>
+                <button type="button" disabled={pending || !testsPassed} onClick={() => { if (window.confirm(`Go live? Real milestones will be sent to ${d === "meta" ? "Meta" : "Google"} from now on. Old ones are not back-filled.`)) act(() => goLiveAction(d)); }} className={buttonClasses("primary", "sm")}>Go live</button>
               )}
             </div>
             {dest.lastTestAt && (
-              <p className={dest.lastTestOk ? "text-positive" : "text-critical"}>
-                Last test {relativeTime(dest.lastTestAt)}: {dest.lastTestOk ? "worked" : "failed"}{dest.lastTestDetail ? ` — ${dest.lastTestDetail}` : ""}
+              <p className={testsPassed ? "text-positive" : "text-critical"}>
+                Last test {relativeTime(dest.lastTestAt)}: {testsPassed ? "worked" : "needs attention"}{dest.lastTestDetail ? ` — ${dest.lastTestDetail}` : ""}
               </p>
             )}
-            {dest.eligibility === "approved_test_only" && !dest.lastTestOk && <p className="text-ink-subtle">Go live unlocks after a successful test.</p>}
+            {dest.eligibility === "approved_test_only" && !testsPassed && <p className="text-ink-subtle">Go live unlocks after a successful test.</p>}
             {preview && (
               <div className="rounded-lg border border-line bg-surface-muted p-3">
                 <p className="text-xs text-ink-muted">Based on {preview.basedOn} · mode: {preview.mode === "test" ? "test" : "live"}</p>
@@ -244,6 +284,10 @@ export function DestinationCard({ dest, writable, demo, volume, googleAds = null
           </div>
         </Step>
 
+        {d === "meta" && dest.includeWhatsAppAds && writable && <div className="flex flex-wrap items-center gap-3">
+          <button type="button" disabled={pending || !dest.whatsappConnected} onClick={() => act(() => testFeedbackAction("meta", "whatsapp"))} className={buttonClasses("secondary")}>Test WhatsApp outcomes</button>
+          <span className="text-sm text-ink-muted">{dest.whatsappTestOk ? "WhatsApp test passed" : "WhatsApp needs its own successful test"}</span>
+        </div>}
         {dest.eligibility === "approved_production" && (
           <div className="rounded-lg border border-line bg-surface-muted p-4 text-sm">
             <p className="font-medium">Before your marketer changes bidding</p>
@@ -263,7 +307,7 @@ export function DestinationCard({ dest, writable, demo, volume, googleAds = null
 
 const STATE: Record<string, { tone: "positive" | "critical" | "caution" | "neutral" | "brand"; label: string }> = {
   accepted: { tone: "positive", label: "Accepted" },
-  sent: { tone: "positive", label: "Sent" },
+  sent: { tone: "brand", label: "Google processing" },
   queued: { tone: "brand", label: "Waiting" },
   sending: { tone: "brand", label: "Sending" },
   blocked: { tone: "caution", label: "Blocked" },
@@ -273,10 +317,13 @@ const STATE: Record<string, { tone: "positive" | "critical" | "caution" | "neutr
   candidate: { tone: "neutral", label: "Candidate" },
 };
 
-export function EventLog({ events }: { events: FeedbackEventDto[] }) {
+export function EventLog({ events, writable = false }: { events: FeedbackEventDto[]; writable?: boolean }) {
+  const [pending, start] = useTransition();
+  const [result, setResult] = useState<FbResult | null>(null);
   return (
     <section className="rounded-card border border-line bg-surface p-5 shadow-[var(--shadow-card)]">
       <h2 className="text-base font-semibold">Recent events</h2>
+      <Outcome result={result} />
       <p className="mt-0.5 text-sm text-ink-muted">Every milestone the CRM considered sending, and what happened. Your own funnel counts never depend on this.</p>
       {events.length === 0 ? (
         <p className="mt-4 text-sm text-ink-muted">Nothing yet.</p>
@@ -288,6 +335,7 @@ export function EventLog({ events }: { events: FeedbackEventDto[] }) {
               <span className="text-ink-muted">{FEEDBACK_MILESTONE_LABELS[e.milestone].title} → {e.destination === "meta" ? "Meta" : "Google"}{e.testMode ? " (test)" : ""}</span>
               <span className="text-xs text-ink-subtle">{relativeTime(e.createdAt)}{e.attempts > 1 ? ` · ${e.attempts} tries` : ""}</span>
               <span className="ml-auto"><Badge tone={STATE[e.state]?.tone ?? "neutral"}>{STATE[e.state]?.label ?? e.state}</Badge></span>
+              {writable && ["rejected", "blocked"].includes(e.state) && <button type="button" disabled={pending} onClick={() => start(async () => setResult(await retryFeedbackAction(e.id)))} className={buttonClasses("secondary", "sm")}>Retry</button>}
               {e.reason && <p className="w-full text-xs text-ink-subtle">{e.reason}</p>}
             </li>
           ))}

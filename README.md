@@ -9,6 +9,11 @@ and reports which sources produce attended appointments.
 It is **not** an electronic medical record. There are no prescriptions,
 diagnoses, treatment notes or clinical photos anywhere in the product.
 
+Current launch status and remaining live-account gates are tracked in
+[docs/HANDOFF.md](docs/HANDOFF.md). Passing local tests is not a live-provider
+certification. Branches, pipeline labels/order, CSV import, inquiry-note editing,
+inbox tags and delivery-recovery review are available in the customer UI.
+
 Requirements live in [PRD.md](PRD.md) and [BRD.md](BRD.md). Every requirement has
 a stable ID (`ID-01`, `LEAD-02`, `WA-06`, `FB-03`, …) used throughout the code,
 tickets and tests.
@@ -149,7 +154,7 @@ Phases follow PRD section 10. Requirement IDs in brackets.
 ```bash
 pnpm typecheck    # clean
 pnpm lint         # clean
-pnpm test         # 357 tests: 14 RLS isolation, 24 security, 314 API, 5 web
+pnpm test         # 386 tests: 14 RLS, 24 security, 330 API, 13 connectors, 5 web
 pnpm --filter @skincrm/web e2e   # browser test; needs `pnpm dev` running (see apps/web/playwright.config.ts)
 ```
 
@@ -390,6 +395,20 @@ In the root `.env`: `OUTBOUND_SENDING_ENABLED=true`, `CONNECTOR_EMAIL=live`
 `CONNECTOR_WHATSAPP=live`, `CONNECTOR_META=live`, `META_APP_SECRET`,
 `PUBLIC_API_URL` (public HTTPS), then connect accounts in Settings and tick
 "Marketing messages are approved".
+
+### Channel data sync (D-90)
+
+Customers can connect Facebook, Google Ads and WhatsApp, select conversion
+assets from their connected accounts, test each channel and enable future
+milestone feedback. New Google forms are linked hourly; returning WhatsApp ad
+inquiries retain attribution on their open lead. Failed incoming events and
+eligible conversion events have retry controls. Google uploads are tracked
+through asynchronous processing, not declared accepted immediately.
+
+See [docs/INTEGRATION_SYNC.md](docs/INTEGRATION_SYNC.md) for setup, supported
+scope and required live-account checks. Patient contact lists and health
+information are excluded from advertising payloads. Live provider approval
+and end-to-end verification with the client's real accounts are still required.
 
 ### Next up
 

@@ -31,7 +31,7 @@ export class MockEmailConnector implements EmailConnector {
 
     if (this.options.bounceAddresses?.some((a) => a.toLowerCase() === to)) {
       throw new ConnectorError("Recipient address does not exist", {
-        retryable: false,
+        retryable: false, definitelyNotSent: true,
         providerCode: "hard_bounce",
         permanentSuppression: true,
       });
@@ -39,7 +39,7 @@ export class MockEmailConnector implements EmailConnector {
 
     if (this.options.transientFailureAddresses?.some((a) => a.toLowerCase() === to)) {
       throw new ConnectorError("Provider temporarily unavailable", {
-        retryable: true,
+        retryable: true, definitelyNotSent: true,
         providerCode: "temporary_failure",
       });
     }

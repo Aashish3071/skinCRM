@@ -33,6 +33,12 @@ function createHandle(connectionString: string, max: number): DbHandle {
 
 let runtimeHandle: DbHandle | undefined;
 let ownerHandle: DbHandle | undefined;
+let deliveryHandle: DbHandle | undefined;
+/** Separate pool prevents request transactions exhausting the connections needed to commit receipts. */
+export function getDeliveryDb(): DbHandle {
+  deliveryHandle ??= createHandle(getRuntimeDatabaseUrl(), 10);
+  return deliveryHandle;
+}
 
 /**
  * Runtime connection for the api and worker. Uses the non-owner application
@@ -100,9 +106,10 @@ export async function withoutTenantScope<T>(
 }
 
 export async function closeAllConnections(): Promise<void> {
-  await Promise.all([runtimeHandle?.close(), ownerHandle?.close()]);
+  await Promise.all([runtimeHandle?.close(), ownerHandle?.close(), deliveryHandle?.close()]);
   runtimeHandle = undefined;
   ownerHandle = undefined;
+  deliveryHandle = undefined;
 }
 
 export { schema, sql };

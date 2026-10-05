@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { FeedbackMapping, FeedbackPreview } from "@skincrm/contracts";
+import type { FeedbackAssets, FeedbackMapping, FeedbackPreview } from "@skincrm/contracts";
 import { ApiError, apiFetch } from "./api";
 
 export type FbResult = { ok: true; detail?: string } | { ok: false; message: string; fieldErrors?: Record<string, string[]> };
@@ -37,9 +37,9 @@ export async function confirmChecklistAction(d: Dest): Promise<FbResult> {
 export async function markBlockedAction(d: Dest): Promise<FbResult> {
   return run(async () => { await apiFetch(`/feedback/${d}/blocked`, { method: "POST" }); return "Marked as not allowed. Nothing will be sent."; });
 }
-export async function testFeedbackAction(d: Dest): Promise<FbResult> {
+export async function testFeedbackAction(d: Dest, channel?: "meta" | "whatsapp" | "google"): Promise<FbResult> {
   try {
-    const r = await apiFetch<{ ok: boolean; detail: string }>(`/feedback/${d}/test`, { method: "POST" });
+    const r = await apiFetch<{ ok: boolean; detail: string }>(`/feedback/${d}/test`, { method: "POST", body: { channel } });
     revalidatePath("/settings/feedback");
     return r.ok ? { ok: true, detail: r.detail } : { ok: false, message: r.detail };
   } catch (error) {
@@ -62,4 +62,19 @@ export async function previewFeedbackAction(d: Dest): Promise<{ ok: true; previe
 
 export async function applyGoogleConnectionAction(): Promise<FbResult> {
   return run(async () => { await apiFetch("/feedback/google/credentials/from-connection", { method: "POST" }); });
+}
+
+export async function loadFeedbackAssetsAction(): Promise<{ ok: true; assets: FeedbackAssets } | { ok: false; message: string }> {
+  try { return { ok: true, assets: await apiFetch<FeedbackAssets>("/feedback/assets") }; }
+  catch (error) { return { ok: false, message: error instanceof ApiError ? error.message : "Could not load connected accounts." }; }
+}
+export async function applyMetaConnectionAction(datasetId: string, testEventCode: string): Promise<FbResult> {
+  return run(async () => { await apiFetch("/feedback/meta/credentials/from-connection", { method: "POST", body: { datasetId, testEventCode } }); return "Connected. Choose outcomes, review and test before going live."; });
+}
+export async function applyWhatsAppConnectionAction(testEventCode: string): Promise<FbResult> {
+  return run(async () => { await apiFetch("/feedback/meta/credentials/from-whatsapp", { method: "POST", body: { testEventCode } }); return "WhatsApp conversion destination connected. Receive a real ad inquiry, then test it."; });
+}
+
+export async function retryFeedbackAction(id: string): Promise<FbResult> {
+  return run(async () => { await apiFetch(`/feedback/events/${id}/retry`, { method: "POST" }); return "Queued for another attempt."; });
 }

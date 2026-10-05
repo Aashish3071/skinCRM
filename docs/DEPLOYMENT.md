@@ -41,7 +41,7 @@ Edit `.env` — every value below matters in production:
 | `CONNECTOR_EMAIL`, `SMTP_*`, `EMAIL_FROM_*` | `live` and your relay (SES, Postmark…). Not `localhost` — the app refuses |
 | `CONNECTOR_WHATSAPP`, `CONNECTOR_META`, `CONNECTOR_GOOGLE` | `live` once the apps in §4 exist |
 | `META_APP_ID`, `META_APP_SECRET` | from the Meta app (§4). The secret also verifies webhook signatures |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN` | for Connect with Google Ads (§4) |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Connect with Google Ads; Ads/Data Manager APIs enabled in the Cloud project (§4) |
 | `OPS_ALERT_EMAIL` | where operational alerts go |
 | `MONITOR_TOKEN` | `openssl rand -base64 32`, for your uptime monitor |
 | `BACKUPS_EXPECTED` | `true` once the backup cron is in place |
@@ -87,7 +87,7 @@ that to work, you (the operator) set up two apps **once per deployment**:
 1. Create a Business-type app; add **Facebook Login for Business** and **Webhooks**.
 2. Valid OAuth redirect URI: `https://crm.yourclinic.com/settings/integrations/oauth/meta/callback`.
 3. Permissions: `pages_show_list`, `pages_read_engagement`, `pages_manage_metadata`,
-   `leads_retrieval`, `business_management`. Complete **Business Verification** and
+   `leads_retrieval`, `business_management`, `ads_management`. Complete **Business Verification** and
    **App Review** for Advanced Access — until then only people with a role on the
    app can connect (fine for a first pilot clinic whose admin you add as a tester).
    Optionally create a Login for Business configuration with these permissions
@@ -99,19 +99,22 @@ that to work, you (the operator) set up two apps **once per deployment**:
 6. Test with Meta's Lead Ads Testing Tool after a clinic connects.
 
 **Google (Connect with Google Ads)** — console.cloud.google.com + ads.google.com
-1. Enable the **Google Ads API**. Create an **OAuth client (Web application)**
+1. Enable the **Google Ads API** and **Data Manager API** on the OAuth client’s Cloud project. Create an **OAuth client (Web application)**
    with redirect URI `https://crm.yourclinic.com/settings/integrations/oauth/google/callback`.
-   Configure the consent screen (scope `…/auth/adwords`) and publish it.
-2. In a Google Ads manager account, API Center → apply for a **developer token**
-   (Basic access is enough).
+   Configure/publish consent for `…/auth/adwords` and `…/auth/datamanager`.
+   Existing customers must reconnect to grant the added Data Manager scope.
+2. Confirm the Cloud project has the required Google Ads/Data Manager access.
+   [Google’s access policy](https://developers.google.com/google-ads/api/docs/api-policy/developer-token)
+   replaces developer-token access; the legacy token setting is optional.
 3. `.env`: `CONNECTOR_GOOGLE=live`, `GOOGLE_OAUTH_CLIENT_ID`,
-   `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_ADS_DEVELOPER_TOKEN`.
+   `GOOGLE_OAUTH_CLIENT_SECRET`.
 4. **Verify before go-live:** connect a real test account and press "Send test
    data" on one of its lead forms in Google Ads; the lead must appear in Leads.
    The lead-form webhook update is written against the API reference and has
    only run against fakes (`packages/connectors/src/oauth/google.ts`).
-5. The same connection can supply conversion-feedback credentials
-   (Settings → Ad platform feedback → "Use this account").
+5. The same connection supplies verified conversion actions and feedback credentials
+   in Settings → Ad platform feedback. Follow [INTEGRATION_SYNC.md](INTEGRATION_SYNC.md),
+   including validate-only and a real upload checked through processing diagnostics.
 
 A form that already sends leads to another system (a previous CRM, Zapier) is
 left alone and listed, never overwritten. The manual routes — pasting a Page
@@ -182,3 +185,25 @@ LOAD_EMAIL=... LOAD_PASSWORD=... node scripts/load-check.mjs https://staging.exa
 ```
 
 Fails if p95 exceeds 2 s or more than 1% of requests fail.
+
+
+## D-91 rollout: delivery receipts and customer controls
+
+Run the normal migration command before replacing the API/worker. Migrations
+0014–0016 and the current RLS script are required. Keep the worker enabled: it
+reconstructs message history after interrupted requests and never resends an
+uncertain provider call. Budget an additional ten application-role connections
+per process for the independent receipt pool, alongside the existing pools.
+
+An admin can inspect **Automations → Sent messages → Delivery needs review**.
+Check the external provider's history before recording an outcome. Accepted
+requires its provider message ID. Confirming "not sent" does not resend; staff
+can deliberately compose another message after that verification. Receipts
+contain encrypted recovery content and must remain in database backups with the
+clinic encryption key available to the restore environment.
+
+For templates, connect the WhatsApp business account, approve a supported text
+template in WhatsApp Manager, then **Load templates and refresh approvals** and
+map/import its variables. Check a real recipient and delivery status before
+turning on reminders. An unsupported format is shown explicitly instead of
+being imported as if it were sendable.

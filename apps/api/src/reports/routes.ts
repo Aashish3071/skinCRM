@@ -58,7 +58,11 @@ export function registerReportRoutes(app: FastifyInstance): void {
         join people p on p.id = l.person_id
         join pipeline_stages st on st.id = l.stage_id
         left join users u on u.id = l.owner_user_id
-        left join source_submissions s on s.id = l.source_submission_id
+        left join lateral (
+          select ss.* from source_submissions ss
+          where ss.id = l.source_submission_id or (ss.lead_id = l.id and ss.source <> 'whatsapp_organic')
+          order by ss.received_at desc limit 1
+        ) s on true
         order by r.created_at
       `);
       const list = [...rows];
@@ -161,14 +165,19 @@ async function summary(query: ReportQuery): Promise<ReportSummary> {
 
   const campaigns = await tx.execute<{ platform: string; campaign: string; leads: number; qualified: number; won: number }>(sql`
     ${cte}
-    select s.platform::text as platform, coalesce(s.campaign_name, s.campaign_id, s.form_name, s.form_id, 'Not recorded') as campaign,
+    select s.platform::text as platform, coalesce(s.campaign_name, s.campaign_id, s.form_name, s.form_id, s.ad_id, 'Not recorded') as campaign,
       count(*)::int as leads,
       count(*) filter (where r.furthest >= ${pos("consultation_booked")} or r.won)::int as qualified,
       count(*) filter (where r.won)::int as won
     from reached r
     join leads l on l.id = r.id
-    join source_submissions s on s.id = l.source_submission_id
-    where s.platform in ('meta', 'google')
+    join lateral (
+      select ss.* from source_submissions ss
+      where (ss.id = l.source_submission_id or ss.lead_id = l.id)
+        and ss.platform in ('meta', 'google', 'whatsapp') and ss.source <> 'whatsapp_organic'
+      order by ss.received_at desc limit 1
+    ) s on true
+    where s.platform in ('meta', 'google', 'whatsapp') and s.source <> 'whatsapp_organic'
     group by 1, 2 order by leads desc limit 50
   `);
 

@@ -7,6 +7,8 @@ import { can, requireCapability } from "@/lib/session";
 export const metadata = { title: "Settings — SkinCRM" };
 
 const SECTIONS: { href: string; title: string; description: string; icon: ComponentType<{ size?: number }>; capability: "users:read" | "settings:read" | "integrations:read" | "audit:read" | "feedback:read" }[] = [
+  { href: "/settings/branches", title: "Branches", description: "Add, edit and archive clinic locations.", icon: HomeIcon, capability: "settings:read" },
+  { href: "/settings/pipeline", title: "Lead pipeline", description: "Name and arrange your inquiry stages.", icon: FlagIcon, capability: "settings:read" },
   { href: "/settings/clinic", title: "Clinic profile", description: "Your clinic's name, logo, phone, address and time zone.", icon: HomeIcon, capability: "settings:read" },
   { href: "/settings/profile", title: "My profile", description: "Your name, password and two-step sign-in.", icon: PeopleIcon, capability: "settings:read" },
   { href: "/settings/integrations", title: "Lead sources & messaging", description: "Facebook and Google lead ads, WhatsApp number, email sending and marketing approval.", icon: ZapIcon, capability: "integrations:read" },

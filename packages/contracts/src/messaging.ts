@@ -62,6 +62,7 @@ export type PreviewTemplate = z.infer<typeof previewTemplateSchema>;
 
 export const sendMessageSchema = z
   .object({
+    requestId: uuidSchema.optional(),
     personId: uuidSchema,
     leadId: uuidSchema.nullish(),
     templateKey: optionalShortText(80),

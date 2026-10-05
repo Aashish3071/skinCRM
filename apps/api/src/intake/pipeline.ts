@@ -1,3 +1,4 @@
+import { canonicalPersonId } from "../people/service";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import {
   LEAD_SOURCE_LABELS,
@@ -352,13 +353,15 @@ async function matchPerson(phoneE164: string | null, email: string | null): Prom
   const rows = await tx
     .select({ id: people.id })
     .from(people)
-    .where(and(or(...conditions)!, isNull(people.mergedIntoPersonId), isNull(people.archivedAt)))
-    .limit(2);
+    .where(and(or(...conditions)!, isNull(people.archivedAt)))
+    .limit(100);
 
   // Exactly one match links automatically. Two different people sharing a phone
   // or email is ambiguous, so the submission opens a new record and the pair
   // surfaces in the duplicate review queue instead of guessing.
-  return rows.length === 1 ? rows[0]!.id : null;
+  if (rows.length >= 100) return null;
+  const canonical = new Set(await Promise.all(rows.map((r) => canonicalPersonId(r.id))));
+  return canonical.size === 1 ? [...canonical][0]! : null;
 }
 
 /** Add contact details the existing record lacked. Never overwrites. */

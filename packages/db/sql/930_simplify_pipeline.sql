@@ -62,6 +62,7 @@ begin
     ('lost',                  'Lost',                  'Lost',      5)
   ) as v(category, old_name, new_name, pos)
   where s.category::text = v.category
+    and not exists (select 1 from audit_events a where a.clinic_id = s.clinic_id and a.entity_type = 'pipeline_settings')
     and s.name = v.old_name
     and (s.name <> v.new_name or s.position <> v.pos);
 

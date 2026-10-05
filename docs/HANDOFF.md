@@ -1,13 +1,114 @@
 # Handoff — resume point
 
-**Updated:** 2026-09-29
-**Phase:** All 9 phases built, launch blockers fixed. Remaining: pilot with the clinic's real accounts.
-**Overall:** ~97% of the build; the rest needs the client's accounts
+**Updated:** 2026-10-01
+**Phase:** Core CRM implemented; launch hardening and customer controls added. Live-provider acceptance and email lifecycle integration remain open.
+**Overall:** Do not describe this as production-certified. Use the outstanding gates below when planning the client pilot.
 
 Read [README.md](../README.md) to run it and [ARCHITECTURE.md](../ARCHITECTURE.md)
 for the rules that must not be broken. This file says only what to do next.
 
 ---
+
+## Verification — 2026-10-05
+
+Finished the D-90/D-91 work: a WhatsApp **STOP** from a known patient opened a
+new sales lead (the open-lead lookup was skipped for opt-outs, then a lead was
+created). It now attaches to any open lead and never creates one
+(`apps/api/src/inbox/service.ts`). Verified on a fresh migrated + seeded scratch
+database: typecheck, lint, **400 tests** (342 API, 24 security, 15 connectors,
+14 RLS, 5 web) and **all 4 browser tests** (front desk, channel sync, branches /
+pipeline / CSV import, WhatsApp template import; run with
+`E2E_BROWSER_CHANNEL=chrome` when Playwright's bundled browser is not installed).
+The normal dev database was migrated to 0016 after a `pg_dump` backup.
+
+## Latest implementation — launch hardening (D-91)
+
+The six findings from the October 1 QA pass have implementations and regression coverage:
+
+- Patient merges move appointments, messages, submissions, automation enrollments,
+  suppression records and delivery receipts. Duplicate inbox threads are combined;
+  undo restores original history while keeping later messages with the survivor.
+  Incoming phone/email aliases follow the surviving patient.
+- WhatsApp template catalogue loading, CRM-field mapping/import and approval refresh
+  are available under Automations → Message templates. Live sends verify provider
+  status and matching content. Template authoring/submission happens in WhatsApp
+  Manager. Supported imports use positional text body parameters; media, buttons,
+  authentication and named parameters are explicitly unsupported.
+- A separate, tenant-scoped database pool commits delivery receipts before sending.
+  Provider acknowledgement can be reused after caller rollback. Uncertain sends are
+  never automatically resent. The worker restores missing message history; admins
+  resolve uncertain outcomes in Sent messages after checking provider evidence.
+  This is **not** an exactly-once guarantee from SMTP or WhatsApp.
+- Inbox histories use a stable date/ID cursor and a Load older messages button.
+  Inbox and patient lists also paginate. Staff reply retries reuse a request UUID.
+- Inbox simulation is disabled in production and in live WhatsApp mode. Messaging
+  health uses the actual per-clinic WhatsApp connector.
+- CI explicitly enables conversion tests with all providers mocked. Browser tests
+  run serially because they share clinic settings. The front-desk fixture now uses
+  a valid patient name under the existing validation rules.
+
+Additional customer controls: branch create/edit/default/archive; pipeline label
+and display-order editing; CSV upload/mapping/preview/confirmation; inquiry-note
+edit/archive with audit entries; inbox tags searchable in the chat list. Pipeline
+outcome categories stay fixed to preserve automation/reporting meaning.
+
+### Database and rollout
+
+Apply migrations `0014`–`0016` through `pnpm db:migrate` before deploying the API
+or worker. They add delivery receipts, encrypted recovery content, inbox tags and
+inquiry-note archive timestamps. The RLS script covers the new tenant table.
+Receipt writes use up to ten extra application-role database connections per
+API/worker process; include them in the deployment connection budget.
+
+All development verification for this change uses a disposable database. The
+normal development database and external ad/messaging accounts are not migration
+or test targets. Existing in-progress integration changes were preserved.
+
+### Still required before promising a fully live client rollout
+
+1. Choose and implement the email provider's inbound replies, asynchronous delivery,
+   bounce and complaint events. SMTP submission alone does not provide these.
+   The user has been asked which provider should be supported.
+2. Perform the real-account pilot in INTEGRATION_SYNC.md: app permissions,
+   WhatsApp signup/template sending, lead receipt, conversion matching, revocation
+   and reconnect recovery. Mock success cannot certify external account eligibility.
+3. Apply migrations and repeat backup restore, alerts, capacity and customer UAT on
+   the actual deployment. Accessibility/load results from September predate these
+   new screens and must not be treated as verification of them.
+4. Confirm the sold scope. Saved views, bulk assignment, self-service booking,
+   external calendar sync, historic ad/chat backfill, ad spend and audience-list
+   sync remain outside this implementation. Clinical records/billing remain outside
+   the product's documented CRM scope.
+
+## Latest implementation — channel sync (D-90)
+
+See [INTEGRATION_SYNC.md](INTEGRATION_SYNC.md). Connected-asset selection,
+independent Meta/WhatsApp feedback and tests, Google conversion-action ownership,
+Data Manager permission and v25 Ads calls, asynchronous Google acceptance,
+hourly Google-form linking, same-account reconnect key preservation, returning
+WhatsApp ad attribution, latest-ad reports/CSV and retry/check controls are built.
+Account/mapping changes revoke tests and prevent queued/rejected events from
+being retargeted. Test-mode candidates remain tests after promotion.
+
+New regression coverage: `packages/connectors/src/ad-sync.test.ts`,
+`apps/api/src/__tests__/ad-sync.test.ts`, feedback promotion regression and
+`apps/web/e2e/channel-sync.spec.ts`. API tests used a separate migrated/seeded
+scratch database, with workers disabled. Turbo test tasks pass explicit database
+URLs through and do not cache database-dependent test results. Use a disposable database for the new
+browser test: it replaces the demo clinic's connections and conversion setup.
+All three provider modes must be mock; set `E2E_BROWSER_CHANNEL=chrome` to use
+an installed Chrome if the bundled Playwright browser is unavailable.
+
+Verification: full workspace suite passed before the final WhatsApp reconnect
+regression was added; the updated ad-sync/signup suites (19 tests), lint,
+typecheck and the all-channel browser flow also passed. Expected total: 386
+workspace tests. The production build passed and was repeated after UI changes.
+
+Live Meta/Google/WhatsApp accounts have **not** been used to certify this build.
+The setup, provider permissions, real webhook delivery and one real approved
+conversion per enabled path are the next required launch checks. Historical
+chat/lead imports, spend sync, campaign edits and patient-audience uploads are
+outside the implemented scope.
 
 ## Get to a working state
 
@@ -20,7 +121,7 @@ pnpm db:migrate
 pnpm db:seed
 pnpm typecheck                # 5 packages, clean
 pnpm lint                     # clean
-pnpm test                     # expect 357 passing
+pnpm test                     # expect 400 passing
 ```
 
 If those tests pass, the foundation is intact and you can build on it.
@@ -64,7 +165,7 @@ curl -s -c /tmp/c.txt -X POST http://localhost:4000/auth/login -H 'content-type:
   discovers every `clinic_id` table from the catalog and fails if any is
   unprotected. Idempotent seed: two clinics, 11 stages each, 7 users.
 
-### `apps/api` (Fastify) — 246 integration tests
+### `apps/api` (Fastify) — 330 tests, including channel-sync regressions
 
 - `src/route.ts` — the route contract. Correlation id, request context, Zod
   validation, session resolution, capability check, tenant transaction and
@@ -125,7 +226,7 @@ with the app running; CI runs it against the production builds).
 Sixth session (2026-09-28/29): Reports unparked, staff Delete, patient edit,
 Notes/Activity filter panel, a role-change hang fixed (D-82), launch blockers
 from docs/PRODUCTION_READINESS_REVIEW.md fixed, `pnpm db:create-clinic`,
-Playwright in CI. 334 tests + 1 browser test passing. Nothing is half-done.
+Playwright in CI. See the latest verification section above for current coverage and remaining launch gates.
 
 Local `.env` has `CONVERSION_FEEDBACK_ENABLED=true` (mock connectors, nothing
 leaves the machine). Both feedback destinations were left **Off**.
@@ -136,11 +237,11 @@ error screen for an unreachable API. 341 tests + browser test passing.
 Eighth session (2026-09-29): Connect WhatsApp with Embedded Signup incl.
 coexistence (D-88), and contact-field validation across every form and the API
 (D-89; rules in `packages/contracts/src/contact.ts`, inputs in
-`apps/web/src/components/contact-inputs.tsx`). Nothing is half-done.
+`apps/web/src/components/contact-inputs.tsx`). Live-provider acceptance remains required.
 
 ### 1. Pilot with the clinic's real accounts — docs/DEPLOYMENT.md
 0. Create the Meta app (incl. WhatsApp + Embedded Signup configuration) and the
-   Google OAuth client + developer token (DEPLOYMENT §4), then have the clinic
+   Google OAuth client with Ads/Data Manager API access (DEPLOYMENT §4), then have the clinic
    press Connect with Facebook / Google Ads / WhatsApp. **Verify Google's
    lead-form webhook update and the WhatsApp coexistence onboarding against real
    accounts** before relying on them.
@@ -150,8 +251,8 @@ coexistence (D-88), and contact-field validation across every form and the API
 3. SMTP with SPF/DKIM (DEPLOYMENT §4). For coexistence numbers, consider
    requesting Meta's contacts/history sync (not built; D-88).
 4. Feedback: Settings → Ad platform feedback, checklist, **test event against
-   the real account** (Google's Data Manager request shape is marked
-   verify-before-go-live), confirm in Events Manager / Google Ads, then Go live.
+   the real account** (including WhatsApp's separate dataset and Google's
+   asynchronous upload diagnostics), confirm in Events Manager / Google Ads, then Go live.
 5. Backup cron + off-host copy, then `scripts/verify-backup.sh` on the server.
 6. Walk the 15 scenarios in docs/UAT.md with the clinic; fill "Pilot result".
 

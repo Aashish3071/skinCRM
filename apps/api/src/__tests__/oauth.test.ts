@@ -175,7 +175,8 @@ describe("live clients (fake network)", async () => {
     const client = new LiveGoogleOAuthClient({ clientId: "id", clientSecret: "s", developerToken: "dev" }, fake);
     const url = new URL(client.authorizeUrl({ state: "s", redirectUri: "https://crm.test/cb" }));
     expect(url.searchParams.get("access_type")).toBe("offline");
-    expect(url.searchParams.get("scope")).toBe("https://www.googleapis.com/auth/adwords");
+    expect(url.searchParams.get("scope")).toContain("https://www.googleapis.com/auth/adwords");
+    expect(url.searchParams.get("scope")).toContain("https://www.googleapis.com/auth/datamanager");
     expect(await client.exchangeCode({ code: "c", redirectUri: "https://crm.test/cb" })).toBe("r");
     const account = { customerId: "1", name: "A", loginCustomerId: null };
     const hook = { url: "https://crm.test/webhooks/google/lead-form", key: "k" };

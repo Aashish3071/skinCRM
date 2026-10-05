@@ -300,3 +300,8 @@ export async function searchPeopleAction(
     return [];
   }
 }
+
+export async function changeInquiryNoteAction(leadId: string, noteId: string, body: string | null) {
+ try { await apiFetch(`/leads/${leadId}/notes/${noteId}`, { method: body === null ? "DELETE" : "PATCH", body: body === null ? {} : { body } }); revalidatePath(`/leads/${leadId}`); revalidatePath("/activity"); return { ok: true as const }; }
+ catch (e) { return { ok: false as const, message: e instanceof ApiError ? e.message : "Could not save this note." }; }
+}

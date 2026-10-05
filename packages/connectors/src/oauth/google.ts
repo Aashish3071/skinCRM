@@ -19,9 +19,9 @@ import type { FetchLike } from "../graph";
  * the time of writing. Connect a real test account and confirm with Google's
  * "Send test data" that a lead arrives before relying on it.
  */
-export const GOOGLE_ADS_API_VERSION = "v21";
+export const GOOGLE_ADS_API_VERSION = "v25";
 const ADS_BASE = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
-export const GOOGLE_OAUTH_SCOPES = ["https://www.googleapis.com/auth/adwords"] as const;
+export const GOOGLE_OAUTH_SCOPES = ["https://www.googleapis.com/auth/adwords", "https://www.googleapis.com/auth/datamanager"] as const;
 
 export interface GoogleAdsAccount {
   /** Digits only. */
@@ -30,6 +30,8 @@ export interface GoogleAdsAccount {
   /** The manager account to call through, when access comes via one. */
   loginCustomerId: string | null;
 }
+
+export interface GoogleConversionAction { id: string; name: string; ownerCustomerId: string }
 
 export interface GoogleLeadForm {
   resourceName: string;
@@ -45,6 +47,7 @@ export interface GoogleOAuthClient {
   /** Code → refresh token. */
   exchangeCode(params: { code: string; redirectUri: string }): Promise<string>;
   listAccounts(refreshToken: string): Promise<GoogleAdsAccount[]>;
+  listConversionActions(refreshToken: string, account: GoogleAdsAccount): Promise<GoogleConversionAction[]>;
   listLeadForms(refreshToken: string, account: GoogleAdsAccount): Promise<GoogleLeadForm[]>;
   addWebhook(refreshToken: string, account: GoogleAdsAccount, form: GoogleLeadForm, webhook: { url: string; key: string }): Promise<void>;
 }
@@ -52,7 +55,7 @@ export interface GoogleOAuthClient {
 interface GoogleApp {
   clientId: string;
   clientSecret: string;
-  developerToken: string;
+  developerToken?: string;
 }
 
 export class LiveGoogleOAuthClient implements GoogleOAuthClient {
@@ -106,7 +109,7 @@ export class LiveGoogleOAuthClient implements GoogleOAuthClient {
       method: init.method ?? "GET",
       headers: {
         authorization: `Bearer ${accessToken}`,
-        "developer-token": this.app.developerToken,
+        ...(this.app.developerToken ? { "developer-token": this.app.developerToken } : {}),
         ...(init.loginCustomerId ? { "login-customer-id": init.loginCustomerId } : {}),
         ...(init.body !== undefined ? { "content-type": "application/json" } : {}),
       },
@@ -123,30 +126,63 @@ export class LiveGoogleOAuthClient implements GoogleOAuthClient {
     return data;
   }
 
-  private search<T>(accessToken: string, customerId: string, query: string, loginCustomerId: string | null) {
-    return this.ads<{ results?: T[] }>(accessToken, `customers/${customerId}/googleAds:search`, { method: "POST", body: { query }, loginCustomerId });
+  private async search<T>(accessToken: string, customerId: string, query: string, loginCustomerId: string | null) {
+    const results: T[] = [];
+    let pageToken: string | undefined;
+    for (let n = 0; n < 100; n++) {
+      const page = await this.ads<{ results?: T[]; nextPageToken?: string }>(accessToken, `customers/${customerId}/googleAds:search`, {
+        method: "POST", body: { query, ...(pageToken ? { pageToken } : {}) }, loginCustomerId,
+      });
+      results.push(...(page.results ?? []));
+      if (!page.nextPageToken) return { results };
+      if (page.nextPageToken === pageToken) break;
+      pageToken = page.nextPageToken;
+    }
+    throw new ConnectorError("Google returned too many assets. Narrow the accounts shared with SkinCRM.", { retryable: false });
   }
 
   async listAccounts(refreshToken: string): Promise<GoogleAdsAccount[]> {
     const access = await this.accessToken(refreshToken);
     const { resourceNames = [] } = await this.ads<{ resourceNames?: string[] }>(access, "customers:listAccessibleCustomers");
     const accounts = new Map<string, GoogleAdsAccount>();
-    for (const resource of resourceNames.slice(0, 20)) {
+    const failures: string[] = [];
+    for (const resource of resourceNames) {
       const rootId = resource.replace("customers/", "");
-      // Covers both a plain ad account (itself, level 0) and a manager
-      // account (its direct client accounts, level 1).
-      const { results = [] } = await this.search<{ customerClient: { id: string; descriptiveName?: string; manager?: boolean; level?: string } }>(
-        access, rootId,
-        "SELECT customer_client.id, customer_client.descriptive_name, customer_client.manager, customer_client.level FROM customer_client WHERE customer_client.level <= 1",
-        rootId,
-      ).catch(() => ({ results: [] }));
-      for (const { customerClient: c } of results) {
-        if (c.manager) continue;
-        const id = String(c.id);
-        if (!accounts.has(id)) accounts.set(id, { customerId: id, name: c.descriptiveName || `Account ${id}`, loginCustomerId: id === rootId ? null : rootId });
+      const queue = [rootId];
+      const visited = new Set<string>();
+      while (queue.length) {
+        const customerId = queue.shift()!;
+        if (visited.has(customerId)) continue;
+        visited.add(customerId);
+        if (visited.size > 100) throw new ConnectorError("Too many manager accounts. Share fewer accounts and retry.", { retryable: false });
+        try {
+          const { results } = await this.search<{ customerClient: { id: string; descriptiveName?: string; manager?: boolean; level?: string } }>(
+            access, customerId,
+            "SELECT customer_client.id, customer_client.descriptive_name, customer_client.manager, customer_client.level FROM customer_client WHERE customer_client.level <= 1 AND customer_client.status = 'ENABLED'",
+            rootId,
+          );
+          for (const { customerClient: c } of results) {
+            const id = String(c.id);
+            if (c.manager) { if (id !== customerId) queue.push(id); continue; }
+            if (!accounts.has(id)) accounts.set(id, { customerId: id, name: c.descriptiveName || `Account ${id}`, loginCustomerId: id === rootId ? null : rootId });
+          }
+        } catch (error) {
+          failures.push(error instanceof Error ? error.message : "Account lookup failed");
+        }
       }
     }
+    if (!accounts.size && failures.length) throw new ConnectorError(failures[0]!, { retryable: false });
     return [...accounts.values()];
+  }
+
+  async listConversionActions(refreshToken: string, account: GoogleAdsAccount): Promise<GoogleConversionAction[]> {
+    const access = await this.accessToken(refreshToken);
+    const { results } = await this.search<{ conversionAction: { id: string; name: string; ownerCustomer: string } }>(
+      access, account.customerId,
+      "SELECT conversion_action.id, conversion_action.name, conversion_action.owner_customer FROM conversion_action WHERE conversion_action.status = 'ENABLED' AND conversion_action.type = 'UPLOAD_CLICKS'",
+      account.loginCustomerId,
+    );
+    return results.map(({ conversionAction: c }) => ({ id: String(c.id), name: c.name, ownerCustomerId: c.ownerCustomer.replace("customers/", "") }));
   }
 
   async listLeadForms(refreshToken: string, account: GoogleAdsAccount): Promise<GoogleLeadForm[]> {
@@ -205,6 +241,9 @@ export class MockGoogleOAuthClient implements GoogleOAuthClient {
   }
   async listAccounts(): Promise<GoogleAdsAccount[]> {
     return [{ customerId: "1234567890", name: "Demo Skin Clinic Ads", loginCustomerId: null }];
+  }
+  async listConversionActions(): Promise<GoogleConversionAction[]> {
+    return [{ id: "333", name: "Booked lead", ownerCustomerId: "1234567890" }, { id: "444", name: "Converted lead", ownerCustomerId: "1234567890" }];
   }
   async listLeadForms(): Promise<GoogleLeadForm[]> {
     return [

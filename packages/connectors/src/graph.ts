@@ -47,6 +47,7 @@ export async function graphRequest<T>(
     const err = (data as { error?: { message?: string; code?: number; error_subcode?: number } }).error;
     const code = err?.code;
     throw new ConnectorError(err?.message ?? `Meta returned ${response.status}`, {
+      definitelyNotSent: response.status < 500,
       // Rate limits and Meta-side outages are worth retrying; bad tokens and
       // bad requests are not.
       retryable: response.status >= 500 || code === 4 || code === 17 || code === 32 || code === 613 || code === 130429,

@@ -6,6 +6,8 @@ export interface InboxList {
   items: ConversationSummary[];
   counts: { open: number; unread: number; mine: number; unassigned: number };
   simulateAvailable: boolean;
+  offset: number;
+  nextOffset: number | null;
 }
 
 export const getConversations = (query: string) => apiFetch<InboxList>(`/conversations?${query}`);

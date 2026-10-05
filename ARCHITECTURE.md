@@ -387,13 +387,28 @@ Code: `apps/api/src/feedback/` (service + routes), adapters in
 
 - `changeStage` → `createFeedbackCandidates()` for each milestone first stamped
   (Qualified and Booked together, D-63), only for reviewed, unpaused destinations
-  with that milestone mapped. Match key from the lead's source submission: Meta lead
+  with that milestone mapped. Match key from the latest eligible original or linked source submission at the milestone time: Meta lead
   id, WhatsApp referral id (opt-in), or gclid; none → `unmatched`; test lead → `blocked`.
 - Worker `processFeedbackOutbox()` claims `queued` rows (SKIP LOCKED), re-runs
   `feedbackGate()`, builds the allowlisted payload, sends via the adapter, and
-  records `accepted` / retries with backoff / `rejected`.
+  records `accepted` / retries with backoff / `rejected`. Google uploads use
+  `sent` until request-status diagnostics report success; the worker claims
+  both `queued` and due `sent` rows, polling without resending.
 - Pause and revoke cancel queued rows; unmapping a milestone cancels its queue.
 - The ops monitor alerts on rejections (`feedback_rejected`).
+- D-90: `feedback/assets.ts` discovers accessible Meta datasets and enabled Google
+  offline conversion actions, verifies destination selection and reuses encrypted
+  channel credentials. WhatsApp has its own WABA dataset, token, event mapping
+  and test code; both Meta paths must pass tests if enabled. Linked connection
+  changes invalidate approval and cancel queued work. Mapping versions prevent
+  old rejected events being retried to a different destination. Candidate test
+  mode is persisted, so promotion cannot send old test candidates live.
+- `integrations/sync.ts` claims due Google OAuth accounts by ID across tenants,
+  then checks forms inside each clinic hourly. It preserves other tools' webhooks.
+  One current connection per provider matches the settings UI. Original lead
+  source remains immutable; linked WhatsApp ad touches supply feedback matches
+  and latest-ad campaign reporting. No historical provider backfill or patient
+  audience upload. See [INTEGRATION_SYNC.md](docs/INTEGRATION_SYNC.md).
 
 ## 8. Authentication and authorization
 
@@ -560,3 +575,32 @@ Consequences to know about:
 | Connect WhatsApp — Embedded Signup + coexistence `[WA-01, INT-06]` (D-88) | ✅ Built, 4 tests; verify coexistence with the clinic's real number |
 | Contact-field validation, staff forms strict / ingestion forgiving (D-89) | ✅ Built, 12 tests |
 
+
+
+## Delivery recovery and patient history (D-91)
+
+`messaging/delivery.ts` commits an encrypted delivery receipt using `getDeliveryDb`
+(the application role, tenant RLS, a separate pool) **before** the external call.
+The caller's message row still belongs to its ordinary CRM transaction. A rollback
+cannot remove the receipt. A confirmed result is replayed without another send;
+an uncertain result blocks automatic retries. Only explicit provider rejection
+marked `definitelyNotSent` permits the existing retry scheduler to try again.
+Never classify a connection timeout or missing acknowledgement as a definite
+rejection. Do not add arbitrary retry keys to uncertain sends.
+
+The worker reconstructs missing delivery history from receipts after two minutes.
+Admin review requires a provider message ID for acceptance or evidence that the
+message was not sent, and records an audit event. Neither reconciliation nor
+review calls a sending provider. HTTP clients should pass a stable `requestId`
+for a send intent; the inbox keeps it across a failed response.
+
+Merge snapshots include all patient-linked operational tables and original
+conversation/message/note identifiers. Do not delete a merged patient's alias:
+future inbound messages and exact contact matches follow its survivor. Undo must
+not move post-merge history away from the survivor. Later merges must be undone
+before earlier overlapping merges.
+
+WhatsApp approval comes from the connected WABA's complete paginated catalogue,
+never from user-submitted approval flags. Imported body placeholders must map to
+allowed CRM fields and match the provider text, language and category. Each live
+template send revalidates this relationship. Catalogue failures must fail closed.

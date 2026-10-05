@@ -1,3 +1,4 @@
+import { WhatsAppImport } from "./whatsapp-import";
 import Link from "next/link";
 import { ChatIcon, MailIcon, PlusIcon } from "@/components/icons";
 import { Badge, Card, EmptyState, PageHeader, buttonClasses } from "@/components/ui";
@@ -24,6 +25,7 @@ export default async function TemplatesPage() {
           ) : null
         }
       />
+      {writable && <WhatsAppImport />}
       {templates.length === 0 ? (
         <Card>
           <EmptyState title="No templates yet">

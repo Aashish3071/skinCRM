@@ -193,3 +193,22 @@ export const messagesRelations = relations(messages, ({ one }) => ({
 export type MessageTemplate = typeof messageTemplates.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type Suppression = typeof suppressions.$inferSelect;
+
+/** Committed independently before contacting a provider. No patient/message FK:
+ * the surrounding CRM transaction may still be uncommitted or roll back. */
+export const deliveryAttempts = pgTable("delivery_attempts", {
+  id: primaryId(),
+  clinicId: clinicIdColumn().references(() => clinics.id, { onDelete: "cascade" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  fingerprint: text("fingerprint").notNull(),
+  payloadEncrypted: text("payload_encrypted"),
+  personId: uuid("person_id").notNull(),
+  channel: text("channel").notNull(),
+  state: text("state").notNull().default("uncertain"),
+  providerMessageId: text("provider_message_id"),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true, mode: "date" }),
+  detail: text("detail"),
+  retryable: boolean("retryable").notNull().default(false),
+  permanentSuppression: boolean("permanent_suppression").notNull().default(false),
+  ...timestamps(),
+}, (t) => [uniqueIndex("delivery_attempts_key").on(t.clinicId, t.idempotencyKey)]);

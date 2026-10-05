@@ -23,6 +23,13 @@
     "test": {
       "dependsOn": [
         "^build"
+      ],
+      "cache": false,
+      "passThroughEnv": [
+        "DATABASE_URL",
+        "DATABASE_APP_URL",
+        "LOG_LEVEL",
+        "WORKER_IN_API"
       ]
     }
   }

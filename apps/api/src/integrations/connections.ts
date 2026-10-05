@@ -36,6 +36,7 @@ export async function whatsappConnector(): Promise<WhatsAppConnector> {
     throw new ConnectorError("WhatsApp isn't connected for this clinic yet. Connect it in Settings → Integrations.", {
       retryable: false,
       providerCode: "not_connected",
+      definitelyNotSent: true,
     });
   }
   return new WhatsAppCloudConnector({ phoneNumberId: connection.externalAccountId, accessToken: token });
@@ -52,4 +53,10 @@ export async function markConnection(id: string, outcome: { ok: boolean; error?:
       updatedAt: new Date(),
     })
     .where(and(eq(integrationConnections.id, id), eq(integrationConnections.clinicId, getContext().clinicId!)));
+}
+
+/** The user token is separate from the Page token and is never serialized. */
+export async function metaAdvertisingToken(): Promise<string | null> {
+  const connection = await getConnection("meta_lead_ads");
+  return connection?.config.adTokenSealed ? decryptForClinic(connection.clinicId, connection.config.adTokenSealed) : null;
 }

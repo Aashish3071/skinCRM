@@ -10,7 +10,7 @@ export const metadata = { title: "Ad platform feedback — SkinCRM" };
 export interface FeedbackOverview {
   globallyEnabled: boolean;
   connectedGoogleAds: { customerId: string; name: string } | null;
-  modes: { meta: "mock" | "live"; google: "mock" | "live" };
+  modes: { meta: "mock" | "live"; whatsapp: "mock" | "live"; google: "mock" | "live" };
   destinations: FeedbackDestinationDto[];
   volume: { destination: string; milestone: string; state: string; n: number }[];
   events: FeedbackEventDto[];
@@ -46,12 +46,12 @@ export default async function FeedbackPage() {
             key={d.destination}
             dest={d}
             writable={writable}
-            demo={data.modes[d.destination] === "mock"}
+            demo={d.destination === "google" ? data.modes.google === "mock" : data.modes.meta === "mock" && (!d.includeWhatsAppAds || data.modes.whatsapp === "mock")}
             volume={data.volume.filter((v) => v.destination === d.destination)}
             googleAds={d.destination === "google" ? data.connectedGoogleAds : null}
           />
         ))}
-        <EventLog events={data.events} />
+        <EventLog events={data.events} writable={writable} />
       </div>
     </>
   );

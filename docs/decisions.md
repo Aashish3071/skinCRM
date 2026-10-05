@@ -592,8 +592,9 @@ Google's validate-only.
 
 **D-80. Google feedback uses the Data Manager API, click ID only.** No hashed
 email/phone and no enhanced conversions (Google's health policy). The request
-shape is marked "verify before go-live" in `google/data-manager.ts`; the test-mode
-gate exists so it is proven against the real account before real events flow.
+shape follows the Data Manager reference; D-90 adds destination references,
+manager routing and asynchronous diagnostics. Test-mode validation and the
+real-account pilot are required before live events flow.
 
 **D-81. Staff removal: Archive (reversible) and Delete (permanent, non-admins only).**
 Archive (`DELETE /users/:id`) suspends and hides an account; history stays
@@ -692,3 +693,53 @@ send to it) but kept in the inquiry note; a submission with nothing usable is
 refused. After a rejected submit, forms keep what was typed (React clears a form
 after its action; the action returns the values).
 
+
+
+**D-90. Connected channel assets and explicit conversion paths (2026-10-01).**
+Use OAuth channel credentials to discover and verify Meta datasets and Google
+UPLOAD_CLICKS actions; retain action-owner and manager routing. Google OAuth
+requests both adwords and datamanager, Ads discovery uses v25, and developer
+tokens are optional legacy configuration. Independent lazy OAuth clients let a
+Google-only installation operate without Meta app credentials.
+
+WhatsApp CAPI uses the WABA's dataset and token, ctwa_clid plus WABA ID,
+business_messaging/whatsapp, and separate supported event names and test codes.
+Do not reuse a Facebook dataset or manufacture clicks/revenue. Each enabled
+Meta path must pass its own test. Live tests need genuine received identifiers;
+synthetic examples stay in mocks. Payloads continue to exclude patient/health
+and contact-list data (D-21, D-79, D-80).
+
+Google upload acceptance is asynchronous: retain requestId in providerResponse,
+use existing `sent` state, wait 30 minutes then poll hourly without re-uploading.
+Stable transaction IDs protect retries. Test-mode candidates persist that mode
+through production promotion. Mapping/version changes cancel old waiting work
+and require retesting; reconnect/disconnect revokes linked destinations. Admin
+retries cannot retarget old events or send test leads.
+
+Keep one active connection per channel to match the customer settings flow.
+Google same-account reconnect retains its webhook key; hourly form checks attach
+new empty endpoints and preserve other tools' endpoints. Returning WhatsApp ad
+messages append attribution to the current open opportunity without changing
+its original source. Campaign reports/export show the latest recorded ad touch.
+New-only event sync does not provide historic chat/lead backfill, account-spend
+replication or audience uploads. Full launch requires the real-account pilot in
+INTEGRATION_SYNC.md; mock/HTTP-fake tests cannot certify external app approval.
+
+
+## D-91 — Launch hardening and customer administration (2026-10-01)
+
+Use independently committed delivery receipts and stop uncertain sends for
+operator review rather than promising provider-independent exactly-once delivery.
+Keep a stable staff send UUID across response retries. Recover message history
+from encrypted receipt content without making another provider call.
+
+Patient merge/revert covers operational modules added after the original merge
+implementation. Preserve aliases for subsequent inbound contact, and preserve
+post-merge work on undo. WhatsApp approval is fetched from the clinic's WABA and
+validated against mapped body text; approval cannot be set through CRM input.
+
+Expose branch management, pipeline labels/order, CSV onboarding, inquiry-note
+edit/archive and searchable inbox tags. Pipeline outcome categories remain fixed
+because automations and conversion feedback depend on their meaning. Do not
+advertise deferred email lifecycle, calendar/self-service, historical sync or
+patient audience features as complete.

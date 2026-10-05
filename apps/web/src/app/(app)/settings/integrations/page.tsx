@@ -4,7 +4,7 @@ import { Badge, Card, PageHeader } from "@/components/ui";
 import { apiFetch } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import { can, requireCapability } from "@/lib/session";
-import { GoogleCard, MetaCard, SendingCard, WhatsAppCard } from "./cards";
+import { GoogleCard, MetaCard, SendingCard, WhatsAppCard, RetryInboundButton } from "./cards";
 
 export const metadata = { title: "Lead sources & messaging — SkinCRM" };
 
@@ -37,6 +37,10 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         </p>
       )}
       {oauthError && <p role="alert" className="mb-4 rounded-lg bg-critical-soft px-4 py-3 text-sm text-critical">{oauthError}</p>}
+      <div className="mb-4 rounded-card border border-line bg-surface p-4 text-sm">
+        <p>Ad enquiries arrive automatically after connecting. To send bookings and client outcomes back, <Link href="/settings/feedback" className="font-medium text-brand">set up ad platform feedback</Link> and test each channel.</p>
+        <p className="mt-1 text-ink-muted">New Google lead forms are checked hourly. Messages and lead submissions keep their original provider IDs to prevent duplicates.</p>
+      </div>
       <div className="flex flex-col gap-4">
         <SendingCard sending={data.sending} modes={data.modes} />
         <MetaCard connection={by("meta_lead_ads")} webhook={data.webhooks.meta} verifyToken={data.verifyTokens.meta} live={data.modes.meta === "live"} />
@@ -62,6 +66,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
                       <Badge tone="critical">Failed</Badge>
                     )}
                   </span>
+                  {writable && e.state === "failed" && <RetryInboundButton id={e.id} />}
                   {e.lastError && e.state !== "processed" && <p className="w-full text-xs text-critical">{e.lastError}</p>}
                 </li>
               ))}

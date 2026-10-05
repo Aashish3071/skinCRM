@@ -10,6 +10,7 @@ async function run(work: () => Promise<{ detail?: string; key?: string; url?: st
   try {
     const r = (await work()) ?? {};
     revalidatePath("/settings/integrations");
+    revalidatePath("/settings/feedback");
     return { ok: true, ...r };
   } catch (error) {
     if (error instanceof ApiError) return { ok: false, message: error.message, fieldErrors: error.details };
@@ -84,4 +85,15 @@ export async function startWhatsAppSignupAction(): Promise<{ ok: true; start: Wh
 
 export async function completeWhatsAppSignupAction(input: { state: string; code: string; phoneNumberId: string; wabaId: string; coexistence: boolean }): Promise<Result> {
   return run(async () => ({ detail: (await apiFetch<{ detail: string }>("/integrations/whatsapp/signup/complete", { method: "POST", body: input })).detail }));
+}
+
+export async function checkConnectionAction(id: string): Promise<Result> {
+  try {
+    const r = await apiFetch<{ ok: boolean; detail: string }>(`/integrations/${id}/check`, { method: "POST" });
+    revalidatePath("/settings/integrations");
+    return r.ok ? { ok: true, detail: r.detail } : { ok: false, message: r.detail };
+  } catch (error) { return { ok: false, message: error instanceof ApiError ? error.message : "Could not check the account." }; }
+}
+export async function retryInboundAction(id: string): Promise<Result> {
+  return run(async () => { await apiFetch(`/integrations/events/${id}/retry`, { method: "POST" }); return { detail: "Queued for another attempt." }; });
 }

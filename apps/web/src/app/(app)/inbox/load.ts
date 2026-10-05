@@ -10,6 +10,8 @@ export async function loadList(params: Search) {
   const search = one(params.search)?.trim() ?? "";
   const q = new URLSearchParams({ view });
   if (search) q.set("search", search);
+  const offset = Number(one(params.offset) ?? 0);
+  if (Number.isInteger(offset) && offset > 0 && offset <= 1000000) q.set("offset", String(offset));
   return { view, search, list: await getConversations(q.toString()) };
 }
 

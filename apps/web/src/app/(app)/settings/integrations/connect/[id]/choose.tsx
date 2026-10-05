@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { OAuthChoice } from "@skincrm/contracts";
 import { buttonClasses } from "@/components/ui";
@@ -9,6 +9,8 @@ import { completeOAuthAction } from "@/lib/integration-actions";
 /** One radio per Page / ad account; the first one that can be used is preselected. */
 export function ChooseAccount({ pendingId, provider, noun, choices }: { pendingId: string; provider: "meta" | "google"; noun: string; choices: OAuthChoice[] }) {
   const router = useRouter();
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
   const [choice, setChoice] = useState(choices.find((c) => !c.unavailableReason)?.id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -44,7 +46,7 @@ export function ChooseAccount({ pendingId, provider, noun, choices }: { pendingI
       </fieldset>
       {error && <p role="alert" className="rounded-lg bg-critical-soft px-3 py-2 text-sm text-critical">{error}</p>}
       <div className="flex flex-wrap gap-2">
-        <button type="submit" disabled={pending || !choice} className={buttonClasses()}>{pending ? "Connecting…" : `Connect this ${noun}`}</button>
+        <button type="submit" disabled={!ready || pending || !choice} className={buttonClasses()}>{pending ? "Connecting…" : `Connect this ${noun}`}</button>
       </div>
     </form>
   );

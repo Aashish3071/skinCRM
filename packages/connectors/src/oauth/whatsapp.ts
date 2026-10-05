@@ -34,7 +34,7 @@ export interface WhatsAppSignupClient {
   subscribeApp(wabaId: string, token: string): Promise<void>;
   /** A new number must be registered for the Cloud API, with a 6-digit PIN. */
   registerNumber(phoneNumberId: string, token: string, pin: string): Promise<void>;
-  numberDetails(phoneNumberId: string, token: string): Promise<WhatsAppNumberDetails>;
+  numberDetails(phoneNumberId: string, token: string, wabaId?: string): Promise<WhatsAppNumberDetails>;
 }
 
 export class LiveWhatsAppSignupClient implements WhatsAppSignupClient {
@@ -69,7 +69,19 @@ export class LiveWhatsAppSignupClient implements WhatsAppSignupClient {
     await graphRequest(this.fetchImpl, `${phoneNumberId}/register`, token, { method: "POST", body: { messaging_product: "whatsapp", pin } });
   }
 
-  async numberDetails(phoneNumberId: string, token: string): Promise<WhatsAppNumberDetails> {
+  async numberDetails(phoneNumberId: string, token: string, wabaId?: string): Promise<WhatsAppNumberDetails> {
+    if (!/^\d+$/.test(phoneNumberId) || (wabaId && !/^\d+$/.test(wabaId))) throw new ConnectorError("Invalid WhatsApp account or number", { retryable: false });
+    if (wabaId) {
+      let after: string | undefined;
+      let matched = false;
+      for (let n = 0; n < 100; n++) {
+        const page = await graphRequest<{ data?: { id: string }[]; paging?: { next?: string; cursors?: { after?: string } } }>(this.fetchImpl, `${wabaId}/phone_numbers?fields=id&limit=100${after ? `&after=${encodeURIComponent(after)}` : ""}`, token);
+        if (page.data?.some((number) => number.id === phoneNumberId)) { matched = true; break; }
+        if (!page.paging?.next || !page.paging.cursors?.after || page.paging.cursors.after === after) break;
+        after = page.paging.cursors.after;
+      }
+      if (!matched) throw new ConnectorError("This number does not belong to the selected WhatsApp business account", { retryable: false });
+    }
     const data = await graphRequest<{ display_phone_number?: string; verified_name?: string }>(
       this.fetchImpl, `${phoneNumberId}?fields=display_phone_number,verified_name`, token,
     );
