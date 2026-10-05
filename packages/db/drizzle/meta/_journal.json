@@ -134,6 +134,13 @@
       "when": 1791209774597,
       "tag": "0018_thankful_norrin_radd",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791211116412,
+      "tag": "0019_serious_norrin_radd",
+      "breakpoints": true
     }
   ]
 }

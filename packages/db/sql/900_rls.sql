@@ -76,7 +76,11 @@ declare
     'feedback_destinations',
     'feedback_events',
     -- Saved list views
-    'saved_views'
+    'saved_views',
+    -- Calendar sync (D-94)
+    'calendar_connections',
+    'calendar_event_links',
+    'external_busy'
   ];
 begin
   foreach tbl in array tenant_tables loop

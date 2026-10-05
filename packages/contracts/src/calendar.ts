@@ -195,8 +195,8 @@ export const availabilitySlotSchema = z.object({
   startsAt: isoDateTime,
   endsAt: isoDateTime,
   available: z.boolean(),
-  /** Why not, when unavailable: `booked` or `outside_hours`. */
-  reason: z.enum(["booked", "outside_hours", "in_past"]).nullable(),
+  /** Why not: booked here, busy in their own calendar (D-94), outside hours, or past. */
+  reason: z.enum(["booked", "busy_elsewhere", "outside_hours", "in_past"]).nullable(),
 });
 export type AvailabilitySlot = z.infer<typeof availabilitySlotSchema>;
 

@@ -12,3 +12,4 @@ export * from "./ops";
 export * from "./notifications";
 export * from "./feedback";
 export * from "./views";
+export * from "./calendar-sync";

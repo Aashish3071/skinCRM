@@ -268,3 +268,31 @@ export function setMetaAdvertisingClient(
   whatsappAdvertising = client;
 }
 export { listWhatsAppTemplates, type WhatsAppTemplate } from "./whatsapp/templates";
+
+export * from "./calendar/index";
+import { GoogleCalendarClient, MicrosoftCalendarClient, MockCalendarClient, type CalendarClient, type CalendarProvider } from "./calendar/index";
+
+const calendarClients = new Map<CalendarProvider, CalendarClient>();
+
+/** Staff calendar sync clients, from CONNECTOR_CALENDAR (D-94). */
+export function getCalendarClient(provider: CalendarProvider): CalendarClient {
+  const existing = calendarClients.get(provider);
+  if (existing) return existing;
+  const env = getEnv();
+  let client: CalendarClient;
+  if (env.CONNECTOR_CALENDAR !== "live") client = new MockCalendarClient(provider);
+  else if (provider === "google") {
+    if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.GOOGLE_OAUTH_CLIENT_SECRET) throw new ConnectorError("Google Calendar needs GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET on the server.", { retryable: false, providerCode: "not_configured" });
+    client = new GoogleCalendarClient({ clientId: env.GOOGLE_OAUTH_CLIENT_ID, clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET });
+  } else {
+    if (!env.MICROSOFT_OAUTH_CLIENT_ID || !env.MICROSOFT_OAUTH_CLIENT_SECRET) throw new ConnectorError("Outlook calendar needs MICROSOFT_OAUTH_CLIENT_ID and MICROSOFT_OAUTH_CLIENT_SECRET on the server.", { retryable: false, providerCode: "not_configured" });
+    client = new MicrosoftCalendarClient({ clientId: env.MICROSOFT_OAUTH_CLIENT_ID, clientSecret: env.MICROSOFT_OAUTH_CLIENT_SECRET, tenant: env.MICROSOFT_OAUTH_TENANT });
+  }
+  calendarClients.set(provider, client);
+  return client;
+}
+
+export function setCalendarClient(provider: CalendarProvider, client: CalendarClient | undefined): void {
+  if (client) calendarClients.set(provider, client);
+  else calendarClients.delete(provider);
+}

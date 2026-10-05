@@ -892,6 +892,10 @@ export async function daySlots(p: {
       ),
     );
 
+  // Their own calendar's commitments (Google/Outlook, D-94) block time too.
+  const { externalBusyFor } = await import("./sync");
+  const elsewhere = await externalBusyFor(p.staffUserId, start, end);
+
   const dayOfWeek = clinicLocalDayOfWeek(start, p.tz);
   const todaysHours = hours.filter((h) => h.dayOfWeek === dayOfWeek && h.isActive);
 
@@ -910,13 +914,16 @@ export async function daySlots(p: {
       const overlaps = booked.some(
         (b) => b.startsAt.getTime() < slotEnd.getTime() && b.endsAt.getTime() > slotStart.getTime(),
       );
+      const busyElsewhere = !overlaps && elsewhere.some(
+        (b) => b.startsAt.getTime() < slotEnd.getTime() && b.endsAt.getTime() > slotStart.getTime(),
+      );
       const inPast = slotStart.getTime() < Date.now();
 
       slots.push({
         startsAt: slotStart.toISOString(),
         endsAt: slotEnd.toISOString(),
-        available: !overlaps && !inPast,
-        reason: overlaps ? "booked" : inPast ? "in_past" : null,
+        available: !overlaps && !busyElsewhere && !inPast,
+        reason: overlaps ? "booked" : busyElsewhere ? "busy_elsewhere" : inPast ? "in_past" : null,
       });
     }
   }

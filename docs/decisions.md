@@ -776,3 +776,17 @@ it never damages rows from an unknown key (it reports them). Link signing
 (unsubscribe, appointment links) uses the root key's signing secret, byte-
 compatible with the old local scheme, and verifies against previous keys too.
 
+**D-94. Two-way staff calendar sync: reconcile, and read times only (2026-10-05).**
+Each staff member connects one Google Calendar or Outlook calendar (My profile).
+A worker job every 5 minutes reconciles their appointments (yesterday → 90
+days) with events we created: create, update when `appointments.updated_at`
+is newer than the link's `synced_version`, delete when cancelled, moved or
+reassigned — so a missed run self-heals. Event text is the appointment type and
+"First L." plus a link back; never notes, contact details or services. Inbound,
+only start/end times of their other busy events are read (Google `fields`
+restricted; Graph `$select`), skipping free/cancelled events and our own; they
+are stored in `external_busy` and make slots unavailable (`busy_elsewhere`) in
+staff booking and online booking. They don't block the database constraint, so
+an admin can still force a booking. Microsoft rotates refresh tokens; the newest
+is stored each run. Disconnect removes our events. Demo client for local/tests.
+

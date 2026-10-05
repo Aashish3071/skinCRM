@@ -7,6 +7,7 @@ import { housekeeping, processDueAutomations } from "./jobs";
 import { heartbeat, runMonitor } from "../ops/monitor";
 import { processTimedNotifications } from "../notifications/service";
 import { processFeedbackOutbox } from "../feedback/service";
+import { syncDueCalendars } from "../calendar/sync";
 
 const HOUSEKEEPING_MS = 60 * 60 * 1000;
 const MONITOR_MS = 5 * 60 * 1000;
@@ -42,6 +43,8 @@ export function startWorker(pollMs: number): () => Promise<void> {
         if (Date.now() - lastTimed > 60_000) {
           lastTimed = Date.now();
           await processTimedNotifications();
+          // Staff Google/Outlook calendars: each connection every few minutes (D-94).
+          await syncDueCalendars();
         }
         if (Date.now() - lastMonitor > MONITOR_MS) {
           lastMonitor = Date.now();

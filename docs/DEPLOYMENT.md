@@ -140,6 +140,26 @@ token, or a webhook key into the form — remain under "…by hand instead".
 - **Email:** "Send yourself a test". Set up SPF/DKIM for the sending domain
   with your relay first, or mail will land in spam.
 
+## Staff calendar sync (D-94)
+
+Each staff member connects their own calendar in **My profile → Calendar sync**.
+Set `CONNECTOR_CALENDAR=live`, then:
+
+- **Google Calendar** — the same Google Cloud OAuth client as Google Ads: enable
+  the **Google Calendar API**, add the scope `…/auth/calendar.events` to the
+  consent screen, and register the redirect URI
+  `https://crm.yourclinic.com/settings/profile/calendar/google/callback`.
+- **Outlook / Microsoft 365** — in Microsoft Entra ID register an app (accounts in
+  any organizational directory and personal accounts), add the Web redirect URI
+  `https://crm.yourclinic.com/settings/profile/calendar/microsoft/callback`, the
+  delegated Graph permissions `Calendars.ReadWrite`, `User.Read`, `offline_access`,
+  and a client secret. Set `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET`
+  (and `MICROSOFT_OAUTH_TENANT` to the clinic's tenant id to restrict sign-in).
+
+The worker syncs each calendar every 5 minutes. Events show the appointment type
+and the patient's first name and last initial; consider whether the clinic's
+Google Workspace / Microsoft 365 is covered by a BAA before connecting.
+
 ## Encryption keys (D-93)
 
 Connected-account tokens, two-step sign-in secrets and raw provider payloads are

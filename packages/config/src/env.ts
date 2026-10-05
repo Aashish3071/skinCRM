@@ -107,6 +107,10 @@ const schema = z.object({
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   GOOGLE_ADS_DEVELOPER_TOKEN: z.string().optional(),
+  /** Outlook calendar sync (CONNECTOR_CALENDAR=live): an Entra ID app registration. */
+  MICROSOFT_OAUTH_CLIENT_ID: z.string().optional(),
+  MICROSOFT_OAUTH_CLIENT_SECRET: z.string().optional(),
+  MICROSOFT_OAUTH_TENANT: z.string().default("common"),
   GOOGLE_LEAD_FORM_KEY: z.string().default("dev_google_key"),
 
   /** Where operational alerts go (queue backlog, failing webhooks, backups…). */
